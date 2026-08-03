@@ -1,3 +1,4 @@
+import { uuidv7 } from '@nestio/shared';
 import type {
   FolderWritableFields,
   ListWritableFields,
@@ -11,6 +12,8 @@ import type {
 } from '@nestio/shared';
 import { upsertLocal, deleteLocal, upsertUserSettingsLocal, commitAndSync } from '../db/local-mutations.js';
 import { computeNextOccurrence } from '../lib/recurrence.js';
+import { savePendingAttachmentBlob } from '../db/attachment-blobs.js';
+import type { ProcessedImage } from '../lib/image-processing.js';
 
 export function upsertFolder(userId: string, id: string, fields: FolderWritableFields): void {
   commitAndSync(upsertLocal(userId, 'folders', id, fields));
@@ -81,4 +84,30 @@ export function deleteAttachment(id: string): void {
   commitAndSync(deleteLocal('attachments', id));
 }
 
-export { uuidv7 } from '@nestio/shared';
+/**
+ * Blobを保留ストアに保存してから添付メタデータのopをoutboxに積む。
+ * 実際のアップロードは sync/engine.ts の pushLoop が「実体→メタデータ」の順を保証して行う
+ * （順序が逆になるとメタデータだけあって実体がない状態が発生するため。sync-protocol.md 9章）。
+ */
+export async function createAttachment(
+  userId: string,
+  ownerType: 'task' | 'note',
+  ownerId: string,
+  processed: ProcessedImage,
+  filename: string,
+): Promise<void> {
+  await savePendingAttachmentBlob(processed.sha256, processed.blob);
+  const id = uuidv7();
+  upsertAttachment(userId, id, {
+    owner_type: ownerType,
+    owner_id: ownerId,
+    sha256: processed.sha256,
+    filename,
+    mime: processed.blob.type,
+    bytes: processed.blob.size,
+    width: processed.width,
+    height: processed.height,
+  });
+}
+
+export { uuidv7 };

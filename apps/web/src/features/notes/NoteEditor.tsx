@@ -3,6 +3,7 @@ import type { NoteWritableFields } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
 import { useNote } from '../../db/queries.js';
 import { upsertNote, deleteNote } from '../../state/actions.js';
+import { AttachmentList } from '../attachments/AttachmentList.js';
 
 const NOTE_COLORS = ['#FFF7C0', '#FFD6D6', '#D6FFE0', '#D6E8FF', '#E8D6FF', '#FFFFFF'];
 
@@ -78,6 +79,8 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           />
         ))}
       </div>
+
+      <AttachmentList ownerType="note" ownerId={noteId} />
     </aside>
   );
 }

@@ -61,3 +61,11 @@ export function useAttachmentsFor(ownerType: 'task' | 'note', ownerId: string | 
     ) ?? []
   );
 }
+
+/**
+ * pushLoopでのアップロードが完了するまでの間、サーバーへの GET が404になるタイミング問題を避けるため、
+ * ローカルに残っているBlobがあればそちらを返す（無ければアップロード済みとみなしnull）。
+ */
+export function usePendingAttachmentBlob(sha256: string): Blob | null {
+  return useLiveQuery(async () => (await db.pendingAttachmentBlobs.get(sha256))?.blob ?? null, [sha256], null);
+}

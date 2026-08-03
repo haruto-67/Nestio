@@ -69,6 +69,27 @@ GCワーカーと一緒に実装する（境界seqをどこかに記録する必
 Phase 5のICSフィード出力時は `rrule` カラムの値をそのまま `RRULE:` 行に使う想定だったが、DTSTART込みの文字列になっているため、
 ICS出力時はDTSTART行とRRULE行を分離するか、そのまま両方出力するかの実装調整が必要（Phase 5で対応）。
 
+### 9. 添付の総容量チェックは `POST /attachments` のみ、`/sync/push` 側では未実装
+
+`docs/sync-protocol.md` 5章のバリデーション表に「添付の総容量：ユーザー上限を超えたらreject」とあり、
+これは `/sync/push` での `attachments` upsert時のバリデーションとしても読める。
+**判断**：実ディスク使用量を直接制限できる `POST /api/v1/attachments/:sha256`（実体アップロード時）でのみ
+容量チェックを実装した（`apps/api/src/routes/attachments.ts`）。`/sync/push` 側で `attachments.bytes`
+フィールドの二重チェックは行っていない（`apps/api/src/sync/apply.ts` の `applyOneOp` は現状 `env` を
+受け取らない設計で、容量上限値にアクセスするには関数シグネチャの変更が必要なため、実装コストと
+得られる安全性の比較でPOST側のチェックのみに留めた）。実体を伴わないメタデータ単体の不正なbytes値送信で
+容量上限を回避できる可能性は残るため、必要になれば `applyOneOp` に `env` を渡す形に拡張する。
+
+### 10. 添付プレビューのタイミング問題 — 解決済み
+
+当初 `apps/web/src/features/attachments/AttachmentList.tsx` は常に `GET /attachments/{sha256}` のURLを
+`<img src>` に指定するだけの実装にしていたが、実機確認で `pushLoop`（`apps/web/src/sync/engine.ts`）による
+実体アップロードが完了する前にブラウザが画像を取得しようとして404になる問題が頻発することが分かった
+（オフライン時に限らず、オンラインでも作成直後は必ず発生する）。
+**対応**：`db/queries.ts` に `usePendingAttachmentBlob(sha256)` を追加し、`pendingAttachmentBlobs` に
+Blobが残っている間は `URL.createObjectURL` でローカルプレビューを表示、アップロード完了後（Blobが
+削除された後）にサーバーURLへ自動的に切り替わるようにした（`AttachmentThumbnail` コンポーネント）。
+
 ### 4. URLルーティングを実装していない
 
 `docs/phases.md` Phase 1に「React 側の骨組み：2 ペインレイアウト、ルーティング、ダーク / ライト切替」とあるが、

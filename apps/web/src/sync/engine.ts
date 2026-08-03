@@ -1,7 +1,9 @@
 import { pullChanges, pushOps } from '../api/sync.js';
+import { uploadAttachmentBlob } from '../api/attachments.js';
 import { applyPullResponse } from '../db/merge.js';
-import { drainOutboxBatch, removeFromOutbox } from '../db/outbox.js';
+import { drainOutboxBatch, removeFromOutbox, type MergedOutboxOp } from '../db/outbox.js';
 import { getMeta, setMeta, META_KEYS, resetLocalDataKeepingOutbox } from '../db/schema.js';
+import { getPendingAttachmentBlob, removePendingAttachmentBlob } from '../db/attachment-blobs.js';
 import { logClientEvent } from './log-buffer.js';
 
 let clockSkewMs = 0;
@@ -42,6 +44,39 @@ export async function pullLoop(): Promise<void> {
   }
 }
 
+/**
+ * 保留Blobがあれば先にアップロードする。成功/不要ならtrue、失敗ならfalseを返す。
+ * 順序が逆になるとメタデータだけあって実体がない状態が発生するため（sync-protocol.md 9章）、
+ * アップロードが済んでいない添付opはこのバッチの送信対象から外し、次回のpushLoopで再試行する。
+ */
+async function ensureAttachmentUploaded(sha256: string): Promise<boolean> {
+  const blob = await getPendingAttachmentBlob(sha256);
+  if (!blob) return true; // 保留Blobが無い＝既にアップロード済み（他デバイスからの変更等）
+
+  try {
+    await uploadAttachmentBlob(sha256, blob);
+    await removePendingAttachmentBlob(sha256);
+    return true;
+  } catch (err) {
+    logClientEvent('warn', 'attachment_upload_failed', { sha256, error: String(err) });
+    return false;
+  }
+}
+
+async function filterAttachmentReady(batch: MergedOutboxOp[]): Promise<MergedOutboxOp[]> {
+  const ready: MergedOutboxOp[] = [];
+  for (const entry of batch) {
+    if (entry.op.table === 'attachments' && entry.op.op === 'upsert') {
+      const sha256 = entry.op.fields.sha256;
+      if (typeof sha256 === 'string' && !(await ensureAttachmentUploaded(sha256))) {
+        continue;
+      }
+    }
+    ready.push(entry);
+  }
+  return ready;
+}
+
 /** outboxをFIFOで送信する。ネットワーク失敗時は残りをoutboxに残したまま終了する */
 export async function pushLoop(): Promise<void> {
   if (!deviceId) return;
@@ -50,9 +85,12 @@ export async function pushLoop(): Promise<void> {
     const batch = await drainOutboxBatch(200);
     if (batch.length === 0) return;
 
+    const readyBatch = await filterAttachmentReady(batch);
+    if (readyBatch.length === 0) return; // 全件が添付アップロード待ち
+
     let res;
     try {
-      res = await pushOps(deviceId, batch.map((b) => b.op));
+      res = await pushOps(deviceId, readyBatch.map((b) => b.op));
     } catch (err) {
       logClientEvent('warn', 'outbox_push_failed', { error: String(err) });
       return;
@@ -68,7 +106,7 @@ export async function pushLoop(): Promise<void> {
 
     // applied/rejected問わず応答が返ってきたopはoutboxから消す（rejectedはpullで正しい状態を取り直す）
     const respondedOpIds = new Set([...res.applied, ...res.rejected.map((r) => r.op_id)]);
-    const idsToRemove = batch
+    const idsToRemove = readyBatch
       .filter((b) => respondedOpIds.has(b.op.op_id))
       .flatMap((b) => b.sourceEntryIds);
     await removeFromOutbox(idsToRemove);

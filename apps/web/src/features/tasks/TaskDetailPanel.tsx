@@ -6,6 +6,7 @@ import { upsertTask, deleteTask, upsertTag, upsertTaskTag, deleteTaskTag, comple
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { naturalCollator, todayJstDateString } from '../../lib/datetime.js';
 import { RecurrenceEditor } from './RecurrenceEditor.js';
+import { AttachmentList } from '../attachments/AttachmentList.js';
 
 const PRIORITY_LABELS = ['なし', '低', '中', '高'] as const;
 
@@ -166,6 +167,8 @@ export function TaskDetailPanel({ taskId, onClose }: TaskDetailPanelProps) {
         </div>
         <SubtaskList parentId={taskId} />
       </div>
+
+      <AttachmentList ownerType="task" ownerId={taskId} />
     </aside>
   );
 }

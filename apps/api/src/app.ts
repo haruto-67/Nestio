@@ -10,6 +10,7 @@ import { authRoute } from './routes/auth.js';
 import { syncRoute } from './routes/sync.js';
 import { clientLogsRoute } from './routes/client-logs.js';
 import { searchRoute } from './routes/search.js';
+import { attachmentsRoute } from './routes/attachments.js';
 
 export function createApp(env: Env, db: Database.Database, logger: Logger) {
   const app = new Hono<{ Variables: AppVariables }>();
@@ -20,12 +21,14 @@ export function createApp(env: Env, db: Database.Database, logger: Logger) {
   app.use('/api/v1/auth/*', rateLimit(env.RATE_LIMIT_AUTH));
   app.use('/api/v1/sync/*', rateLimit(env.RATE_LIMIT_SYNC));
   app.use('/api/v1/client-logs', rateLimit(env.RATE_LIMIT_CLIENT_LOGS));
+  app.use('/api/v1/attachments/*', rateLimit(env.RATE_LIMIT_ATTACHMENT));
 
   app.route('/api/v1', healthRoute);
   app.route('/api/v1', authRoute);
   app.route('/api/v1', syncRoute);
   app.route('/api/v1', clientLogsRoute);
   app.route('/api/v1', searchRoute);
+  app.route('/api/v1', attachmentsRoute);
 
   return app;
 }
