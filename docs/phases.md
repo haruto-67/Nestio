@@ -7,14 +7,14 @@
 
 ## Phase 0：土台
 
-- [ ] pnpm workspaces でモノレポ初期化（`apps/web`, `apps/api`, `packages/shared`）
-- [ ] TypeScript strict 設定、ESLint、Prettier、Vitest
-- [ ] `packages/shared` に全テーブルの型と Zod スキーマを定義（`docs/schema.sql` と 1:1）
-- [ ] UUIDv7 生成ユーティリティ（`packages/shared`）
-- [ ] `apps/api` に Hono の雛形、ヘルスチェック `/api/v1/health`
-- [ ] pino による構造化ログ基盤（`request_id` ミドルウェア、例外ハンドラ、秘密情報マスク、日次ローテーション）
-- [ ] マイグレーション実行器（`docs/schema.sql` を適用し、バージョンを記録）
-- [ ] `.env.example` を作成
+- [x] pnpm workspaces でモノレポ初期化（`apps/web`, `apps/api`, `packages/shared`）
+- [x] TypeScript strict 設定、ESLint、Prettier、Vitest
+- [x] `packages/shared` に全テーブルの型と Zod スキーマを定義（`docs/schema.sql` と 1:1）
+- [x] UUIDv7 生成ユーティリティ（`packages/shared`）
+- [x] `apps/api` に Hono の雛形、ヘルスチェック `/api/v1/health`
+- [x] pino による構造化ログ基盤（`request_id` ミドルウェア、例外ハンドラ、秘密情報マスク、日次ローテーション）
+- [x] マイグレーション実行器（`docs/schema.sql` を適用し、バージョンを記録）
+- [x] `.env.example` を作成
 
 **完了条件**：`pnpm dev` で API が起動し `/health` が 200 を返す
 
