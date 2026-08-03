@@ -86,13 +86,9 @@ attachmentsRoute.get('/attachments/:sha256', (c) => {
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Content-Disposition', 'inline');
 
-  if (env.NODE_ENV === 'production') {
-    // 実配信はnginxの internal location（alias /var/lib/nestio/attachments/）に委譲する
-    c.header('X-Accel-Redirect', `/internal-attachments/${sha256Param.slice(0, 2)}/${sha256Param}`);
-    return c.body(null, 200);
-  }
-
-  // 開発環境ではnginxが無いため直接返す
+  // リバースプロキシがCaddy（X-Accel-Redirectのようなnginx専用の委譲機構を持たない）のため、
+  // 環境を問わずアプリから直接返す。添付サイズはATTACHMENT_MAX_BYTES（既定10MB）で
+  // 上限があるため、同期的な読み込みでも実用上問題にならない。
   const data = fs.readFileSync(attachmentFilePath(env.ATTACHMENT_DIR, sha256Param));
   return c.body(data);
 });

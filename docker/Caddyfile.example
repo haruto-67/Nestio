@@ -1,0 +1,16 @@
+# このPiの実際の稼働環境ではnginxではなくCaddyがポート80/443を握っている
+# （既存の niwatorimc.com { reverse_proxy 127.0.0.1:8765 } と共存させる必要があったため）。
+# docker/nginx.conf は他環境向けの参考として残しつつ、実運用はこちらを使う。
+#
+# 使い方: /etc/caddy/Caddyfile の末尾にこのブロックを追記し、
+#   sudo systemctl reload caddy
+# Caddyは自動でLet's Encrypt証明書を取得・更新する（certbot不要）。
+
+nestio.niwatorimc.com {
+	reverse_proxy 127.0.0.1:3000
+
+	header {
+		Strict-Transport-Security "max-age=63072000"
+		X-Content-Type-Options "nosniff"
+	}
+}
