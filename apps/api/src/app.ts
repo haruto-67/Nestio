@@ -17,6 +17,7 @@ import { calendarRoute } from './routes/calendar.js';
 import { mcpRoute } from './routes/mcp.js';
 import { hatchRoute } from './routes/hatch.js';
 import { logsRoute } from './routes/logs.js';
+import { buildAuthServerMetadata, buildProtectedResourceMetadata } from './mcp/metadata.js';
 
 export function createApp(env: Env, db: Database.Database, logger: Logger) {
   const app = new Hono<{ Variables: AppVariables }>();
@@ -42,6 +43,14 @@ export function createApp(env: Env, db: Database.Database, logger: Logger) {
   app.route('/api/v1', mcpRoute);
   app.route('/api/v1', hatchRoute);
   app.route('/api/v1', logsRoute);
+
+  // MCP Authorization仕様（RFC 9728 / RFC 8414）のディスカバリー用エンドポイントはドメイン
+  // ルート直下に置く必要があり、/api/v1配下のmcpRouteからは生やせない。
+  // クライアントは401のWWW-Authenticateヘッダーからここを辿る（apps/api/src/mcp/metadata.ts参照）。
+  app.get('/.well-known/oauth-protected-resource', (c) => c.json(buildProtectedResourceMetadata(env)));
+  // RFC 8414の正規パス（issuerのオリジン + well-known + issuerのpath）。
+  // apps/api/src/routes/mcp.tsにも同内容を /api/v1/mcp/.well-known/... として残している。
+  app.get('/.well-known/oauth-authorization-server/api/v1/mcp', (c) => c.json(buildAuthServerMetadata(env)));
 
   // 本番のみ：ビルド済みPWAをこのプロセスから直接配信する（nginxはlocation /をここへ丸ごとproxy_passする構成、
   // docs/manual-setup.md C-3）。/api/v1/* に一致しないパスだけを対象にする。

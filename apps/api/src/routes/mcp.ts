@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import crypto from 'node:crypto';
 import type Database from 'better-sqlite3';
@@ -11,23 +11,12 @@ import { issueAuthorizationCode, consumeAuthorizationCode } from '../mcp/authori
 import { issueAccessToken, verifyAccessToken } from '../mcp/tokens.js';
 import { handleMcpRequest, type JsonRpcRequest } from '../mcp/jsonrpc.js';
 import { renderConsentPage } from '../mcp/consent-page.js';
+import { buildAuthServerMetadata } from '../mcp/metadata.js';
 
 export const mcpRoute = new Hono<{ Variables: AppVariables }>();
 
 mcpRoute.get('/mcp/.well-known/oauth-authorization-server', (c) => {
-  const env = c.get('env');
-  const base = `${new URL(env.APP_ORIGIN).origin}/api/v1/mcp`;
-  return c.json({
-    issuer: base,
-    authorization_endpoint: `${base}/oauth/authorize`,
-    token_endpoint: `${base}/oauth/token`,
-    registration_endpoint: `${base}/oauth/register`,
-    scopes_supported: ['read', 'write'],
-    response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code'],
-    code_challenge_methods_supported: ['S256'],
-    token_endpoint_auth_methods_supported: ['none'],
-  });
+  return c.json(buildAuthServerMetadata(c.get('env')));
 });
 
 mcpRoute.post('/mcp/oauth/register', async (c) => {
@@ -153,11 +142,22 @@ const jsonRpcRequestSchema = z.object({
   params: z.record(z.string(), z.unknown()).optional(),
 });
 
+/** RFC 9728：401にWWW-Authenticateを付け、Protected Resource Metadataへ辿れるようにする */
+function unauthorizedWithResourceMetadata(c: Context<{ Variables: AppVariables }>): never {
+  const env = c.get('env');
+  const origin = new URL(env.APP_ORIGIN).origin;
+  c.header(
+    'WWW-Authenticate',
+    `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+  );
+  throw new ApiError('unauthenticated', 'Bearerトークンが必要です');
+}
+
 mcpRoute.post('/mcp', async (c) => {
   const db = c.get('db');
   const authHeader = c.req.header('authorization');
   if (!authHeader?.startsWith('Bearer ')) {
-    throw new ApiError('unauthenticated', 'Bearerトークンが必要です');
+    unauthorizedWithResourceMetadata(c);
   }
 
   const verified = verifyAccessToken(db, authHeader.slice('Bearer '.length));

@@ -269,4 +269,43 @@ describe('MCP OAuth + tools', () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it('Bearerヘッダー無しの401はWWW-AuthenticateでProtected Resource Metadataへ誘導する', async () => {
+    db = createTestDb();
+    const app = setupApp(db);
+    const res = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    });
+    const wwwAuth = res.headers.get('WWW-Authenticate');
+    expect(wwwAuth).toContain('resource_metadata=');
+    expect(wwwAuth).toContain('/.well-known/oauth-protected-resource');
+  });
+
+  it('GET /.well-known/oauth-protected-resource はauthorization_serversを返す（RFC 9728）', async () => {
+    db = createTestDb();
+    const app = setupApp(db);
+    const res = await app.request('/.well-known/oauth-protected-resource');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { resource: string; authorization_servers: string[] };
+    expect(body.resource).toContain('/api/v1/mcp');
+    expect(body.authorization_servers[0]).toBe(body.resource);
+  });
+
+  it('GET /.well-known/oauth-authorization-server/api/v1/mcp はRFC 8414の正規パスで応答する', async () => {
+    db = createTestDb();
+    const app = setupApp(db);
+    const res = await app.request('/.well-known/oauth-authorization-server/api/v1/mcp');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { registration_endpoint: string };
+    expect(body.registration_endpoint).toContain('/api/v1/mcp/oauth/register');
+  });
+
+  it('GET /api/v1/mcp/.well-known/oauth-authorization-server は引き続き既存パスでも応答する', async () => {
+    db = createTestDb();
+    const app = setupApp(db);
+    const res = await app.request('/api/v1/mcp/.well-known/oauth-authorization-server');
+    expect(res.status).toBe(200);
+  });
 });
