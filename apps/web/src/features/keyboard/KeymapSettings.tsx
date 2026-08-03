@@ -4,6 +4,7 @@ import { useKeymap } from '../../state/useKeymap.js';
 import { useApp } from '../../state/AppProvider.js';
 import { sendClientLogs } from '../../api/client-logs.js';
 import { enablePushNotifications, getPushPermissionState } from '../../lib/push-subscription.js';
+import { createCalendarFeed, listCalendarFeeds, revokeCalendarFeed, type CalendarFeed } from '../../api/calendar.js';
 
 export function KeymapSettings({ onClose }: { onClose: () => void }) {
   const { keymap, setKey } = useKeymap();
@@ -12,9 +13,12 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
   const [logStatus, setLogStatus] = useState<string | null>(null);
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [feeds, setFeeds] = useState<CalendarFeed[]>([]);
+  const [calendarStatus, setCalendarStatus] = useState<string | null>(null);
 
   useEffect(() => {
     getPushPermissionState().then(setPermission).catch(() => setPermission('unsupported'));
+    listCalendarFeeds().then(setFeeds).catch(() => {});
   }, []);
 
   const conflicts = findKeymapConflicts(keymap);
@@ -48,6 +52,31 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
       setPermission(await getPushPermissionState());
     } catch (err) {
       setNotificationStatus(err instanceof Error ? err.message : '有効化に失敗しました');
+    }
+  };
+
+  const handleCreateFeed = async () => {
+    try {
+      const { url } = await createCalendarFeed();
+      try {
+        await navigator.clipboard.writeText(url);
+        setCalendarStatus('URLをコピーしました');
+      } catch {
+        setCalendarStatus(url);
+      }
+      setFeeds(await listCalendarFeeds());
+    } catch (err) {
+      setCalendarStatus('作成に失敗しました');
+      console.error(err);
+    }
+  };
+
+  const handleRevokeFeed = async (id: string) => {
+    try {
+      await revokeCalendarFeed(id);
+      setFeeds(await listCalendarFeeds());
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -115,6 +144,31 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
             )}
           </div>
           {notificationStatus && <p className="mt-1 text-xs text-neutral-400">{notificationStatus}</p>}
+        </div>
+
+        <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">カレンダー購読（ICS）</span>
+            <button
+              onClick={handleCreateFeed}
+              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            >
+              + URLを作成
+            </button>
+          </div>
+          {feeds.length > 0 && (
+            <ul className="mt-2 flex flex-col gap-1">
+              {feeds.map((f) => (
+                <li key={f.id} className="flex items-center justify-between text-xs text-neutral-400">
+                  <span className="truncate">{f.token.slice(0, 16)}…</span>
+                  <button onClick={() => handleRevokeFeed(f.id)} className="text-red-500">
+                    失効
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {calendarStatus && <p className="mt-1 break-all text-xs text-neutral-400">{calendarStatus}</p>}
         </div>
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">

@@ -12,6 +12,7 @@ import { clientLogsRoute } from './routes/client-logs.js';
 import { searchRoute } from './routes/search.js';
 import { attachmentsRoute } from './routes/attachments.js';
 import { pushRoute } from './routes/push.js';
+import { calendarRoute } from './routes/calendar.js';
 
 export function createApp(env: Env, db: Database.Database, logger: Logger) {
   const app = new Hono<{ Variables: AppVariables }>();
@@ -31,6 +32,7 @@ export function createApp(env: Env, db: Database.Database, logger: Logger) {
   app.route('/api/v1', searchRoute);
   app.route('/api/v1', attachmentsRoute);
   app.route('/api/v1', pushRoute);
+  app.route('/api/v1', calendarRoute);
 
   return app;
 }
