@@ -6,6 +6,7 @@ import { runMigrations } from './db/migrate.js';
 import { createApp } from './app.js';
 import { startPushWorker } from './push/worker.js';
 import { startHatchWorker } from './hatch/worker.js';
+import { startGcWorker } from './gc/worker.js';
 
 const env = loadEnv();
 const logger = createLogger(env);
@@ -24,12 +25,14 @@ serve({ fetch: app.fetch, port: env.PORT }, (info) => {
 
 const stopPushWorker = startPushWorker(db, env, logger);
 const stopHatchWorker = startHatchWorker(db, env, logger);
+const stopGcWorker = startGcWorker(db, env, logger);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
     logger.info({ signal }, 'server_shutting_down');
     stopPushWorker();
     stopHatchWorker();
+    stopGcWorker();
     db.close();
     process.exit(0);
   });

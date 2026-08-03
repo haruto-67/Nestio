@@ -5,6 +5,7 @@ import { useApp } from '../../state/AppProvider.js';
 import { sendClientLogs } from '../../api/client-logs.js';
 import { enablePushNotifications, getPushPermissionState } from '../../lib/push-subscription.js';
 import { createCalendarFeed, listCalendarFeeds, revokeCalendarFeed, type CalendarFeed } from '../../api/calendar.js';
+import { LogViewer } from '../logs/LogViewer.js';
 
 export function KeymapSettings({ onClose }: { onClose: () => void }) {
   const { keymap, setKey } = useKeymap();
@@ -15,6 +16,7 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
   const [feeds, setFeeds] = useState<CalendarFeed[]>([]);
   const [calendarStatus, setCalendarStatus] = useState<string | null>(null);
+  const [showLogViewer, setShowLogViewer] = useState(false);
 
   useEffect(() => {
     getPushPermissionState().then(setPermission).catch(() => setPermission('unsupported'));
@@ -173,6 +175,18 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <div className="flex items-center justify-between">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">サーバーログ（自分専用）</span>
+            <button
+              onClick={() => setShowLogViewer(true)}
+              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            >
+              開く
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          <div className="flex items-center justify-between">
             <span className="text-xs text-neutral-500 dark:text-neutral-400">同期の不具合を報告</span>
             <button
               onClick={handleSendLogs}
@@ -184,6 +198,7 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
           {logStatus && <p className="mt-1 text-xs text-neutral-400">{logStatus}</p>}
         </div>
       </div>
+      {showLogViewer && <LogViewer onClose={() => setShowLogViewer(false)} />}
     </div>
   );
 }

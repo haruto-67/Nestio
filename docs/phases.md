@@ -122,8 +122,8 @@
 - [ ] Dockerfile（マルチステージ、**better-sqlite3 は Docker 内でビルド**）
 - [ ] docker-compose.yml（`127.0.0.1:3000:3000` バインド、named volume）
 - [ ] nginx 設定（リバースプロキシ、SSE 用の `proxy_buffering off`、`X-Accel-Redirect`、**TLS 1.2+ / HSTS / OCSP Stapling**）
-- [ ] GC ワーカー（tombstone 30 日、`applied_ops` 30 日、孤児添付の削除）
-- [ ] 簡易ログビューア（自分専用・直近エラーの時系列表示・`request_id` 絞り込み）
+- [x] GC ワーカー（tombstone 30 日、`applied_ops` 30 日、孤児添付の削除）
+- [x] 簡易ログビューア（自分専用・直近エラーの時系列表示・`request_id` 絞り込み）
 - [ ] バックアップ cron（`.backup` → rclone で外部へ）
 - [ ] `docs/使い方.md` の作成（`manual-setup.md` を元に、実際の値を埋めた完成版）
 

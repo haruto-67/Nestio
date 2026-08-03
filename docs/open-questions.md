@@ -49,15 +49,17 @@ Claude Codeでは行えない作業として元々ユーザー側のタスクに
 iOSの `apple-touch-icon` はSVGを認識しないため、実機のホーム画面追加では正式なPNG書き出しが必要
 （`docs/manual-setup.md` G章の作業は未完了のまま）。Phase 6でCanvaからの書き出し後にこのSVGを差し替える。
 
-### 7. `full_resync_required` はクライアント側ハンドリングのみ実装済み、サーバー側の判定はPhase 6待ち
+### 7. `full_resync_required` — Phase 6で解決済み
 
 `docs/sync-protocol.md` 6章：「`since` がサーバーのGC済み境界より古い場合、サーバーは `full_resync_required: true` を返す」。
-この判定には「30日以上前のtombstoneをGCした境界」の情報が必要だが、そのGCワーカー自体が `docs/phases.md` Phase 6のタスクであり、
-`sync_state` にも「境界seq」を保持するカラムが無い。
-**判断**：Phase 2では `apps/web/src/sync/engine.ts` の `pullLoop` にクライアント側の対応（`full_resync_required: true` を
-受け取ったらローカルDBを破棄してsince=0からやり直す、outboxは保持）のみ実装した。
-サーバー側で実際に `full_resync_required: true` を返す判定ロジック（`apps/api/src/sync/pull.ts`）はPhase 6で
-GCワーカーと一緒に実装する（境界seqをどこかに記録する必要がある）。
+この判定には「30日以上前のtombstoneをGCした境界」の情報が必要だが、`docs/schema.sql` の `sync_state` には
+それを保持するカラムが無かった（`docs/schema.sql` は確定版DDLとして勝手に変更しない方針のため）。
+**判断**：`docs/schema.sql` 自体は変更せず、`apps/api/src/db/migrations/0002_gc_boundary.sql` で
+`sync_state.gc_boundary_seq` を追加するマイグレーションを足した。GCワーカー（`apps/api/src/gc/tombstones.ts`）が
+tombstoneを物理削除する際、そのユーザーの削除行の最大seqを `raiseGcBoundarySeq` で記録し、
+`apps/api/src/sync/pull.ts` は `since < gc_boundary_seq` なら `full_resync_required: true` を返す。
+添付ファイルの実体GC（「参照ゼロになってから30日」）は、tombstoneを30日保持してから物理削除する
+既存の仕組みと組み合わせることで追加の状態を持たずに実現した（`apps/api/src/gc/attachments.ts` のコメント参照）。
 
 ### 8. `tasks.rrule` に DTSTART を含めて保存する
 

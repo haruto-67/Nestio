@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { syncableTableSchema, type SyncPullResponse } from '@nestio/shared';
 import { isImplementedSyncTable } from './tables.js';
-import { getLastSeq } from './seq.js';
+import { getLastSeq, getGcBoundarySeq } from './seq.js';
 
 const ALL_TABLES = syncableTableSchema.options;
 
@@ -16,6 +16,10 @@ export function pullChanges(
   since: number,
   limit: number,
 ): SyncPullResponse {
+  if (since > 0 && since < getGcBoundarySeq(db, userId)) {
+    return { changes: {}, next_seq: since, has_more: false, full_resync_required: true };
+  }
+
   const changes: Record<string, Row[]> = {};
   let maxSeq = since;
   let hasMore = false;
