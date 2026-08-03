@@ -1,102 +1,81 @@
-import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
-import type { SyncOp } from '@nestio/shared';
-import { createEmptyAppData, type AppData } from './types.js';
-import { mergeChanges } from './merge.js';
-import { pullChanges, pushOps } from '../api/sync.js';
-import { getOrCreateDeviceId } from '../api/device.js';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { fetchMe, type Me } from '../api/auth.js';
-
-const POLL_INTERVAL_MS = 10_000;
+import { getOrCreateDeviceId } from '../api/device.js';
+import { pullLoop, syncNow, setDeviceId } from '../sync/engine.js';
+import { connectSse } from '../sync/sse.js';
+import { logClientEvent } from '../sync/log-buffer.js';
 
 interface AppContextValue {
   me: Me | null;
   loading: boolean;
-  data: AppData;
   deviceId: string | null;
-  submitOps: (ops: SyncOp[]) => Promise<void>;
-  refresh: () => Promise<void>;
+  syncNow: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+/**
+ * 起動時に push→pull で同期してからSSE購読を開始する。
+ * データの読み取り自体はここでは持たず、各コンポーネントが db/queries.ts の
+ * useLiveQuery系フックでIndexedDBを直接見る（CLAUDE.md 絶対原則4）。
+ */
 export function AppProvider({ children }: { children: ReactNode }) {
-  const dataRef = useRef<AppData>(createEmptyAppData());
-  const [, forceRender] = useState(0);
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
-  const [deviceId, setDeviceId] = useState<string | null>(null);
-
-  const bump = useCallback(() => forceRender((n) => n + 1), []);
-
-  const pullLoop = useCallback(
-    async (targetSeq?: number) => {
-      let since = dataRef.current.since;
-      for (;;) {
-        const res = await pullChanges(since);
-        mergeChanges(dataRef.current, res);
-        since = res.next_seq;
-        dataRef.current.since = since;
-        if (!res.has_more) break;
-        if (targetSeq !== undefined && since >= targetSeq) break;
-      }
-      bump();
-    },
-    [bump],
-  );
+  const [deviceId, setDeviceIdState] = useState<string | null>(null);
+  const sseCleanupRef = useRef<(() => void) | null>(null);
+  const cleanupOnlineListenerRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       try {
         const meRes = await fetchMe();
         if (cancelled) return;
         setMe(meRes);
+
         const devId = await getOrCreateDeviceId();
         if (cancelled) return;
+        setDeviceIdState(devId);
         setDeviceId(devId);
-        await pullLoop();
+
+        await syncNow();
+        if (cancelled) return;
+
+        // 再接続時は必ずpullを1回走らせる（切断中の取りこぼし回収。sync-protocol.md 7章）。
+        // 切断中にオフラインで溜まったoutboxがあるかもしれないためpush→pullの順で行う
+        sseCleanupRef.current = connectSse({
+          onConnect: () => {
+            syncNow().catch((err) => logClientEvent('warn', 'sync_after_connect_failed', { error: String(err) }));
+          },
+          onBump: (_seq, originDevice) => {
+            if (originDevice === devId) return; // 自分の書き込みの反響は無視
+            pullLoop().catch((err) => logClientEvent('warn', 'pull_after_bump_failed', { error: String(err) }));
+          },
+        });
+
+        const handleOnline = () => {
+          logClientEvent('info', 'network_online');
+          syncNow().catch((err) => logClientEvent('warn', 'sync_after_online_failed', { error: String(err) }));
+        };
+        window.addEventListener('online', handleOnline);
+        cleanupOnlineListenerRef.current = () => window.removeEventListener('online', handleOnline);
       } catch {
         // 未ログイン、またはネットワークエラー。ログイン画面を表示する
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
+
     return () => {
       cancelled = true;
+      sseCleanupRef.current?.();
+      cleanupOnlineListenerRef.current?.();
     };
-  }, [pullLoop]);
+  }, []);
 
-  useEffect(() => {
-    if (!me) return;
-    const timer = setInterval(() => {
-      pullLoop().catch(() => {
-        /* 次のポーリングで再試行する */
-      });
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [me, pullLoop]);
-
-  const submitOps = useCallback(
-    async (ops: SyncOp[]) => {
-      if (!deviceId) throw new Error('device_id が未初期化です');
-      const res = await pushOps(deviceId, ops);
-      if (res.rejected.length > 0) {
-        await pullLoop();
-        throw new Error(`操作が拒否されました: ${res.rejected.map((r) => r.reason).join(', ')}`);
-      }
-      await pullLoop(res.next_seq);
-    },
-    [deviceId, pullLoop],
-  );
-
-  const value: AppContextValue = {
-    me,
-    loading,
-    data: dataRef.current,
-    deviceId,
-    submitOps,
-    refresh: () => pullLoop(),
-  };
+  const value: AppContextValue = { me, loading, deviceId, syncNow };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

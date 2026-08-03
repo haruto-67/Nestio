@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { AppProvider, useApp } from './state/AppProvider.js';
+import { useTasks } from './db/queries.js';
 import { LoginScreen } from './features/auth/LoginScreen.js';
 import { Sidebar } from './features/tree/Sidebar.js';
 import { TaskListView } from './features/tasks/TaskListView.js';
@@ -10,7 +11,7 @@ import type { ViewSelection } from './state/view.js';
 import { useKeyboardShortcuts } from './features/keyboard/useKeyboardShortcuts.js';
 import { ShortcutHelpModal } from './features/keyboard/ShortcutHelpModal.js';
 import { KeymapSettings } from './features/keyboard/KeymapSettings.js';
-import { upsertTaskOp, deleteTaskOp } from './state/actions.js';
+import { upsertTask, deleteTask } from './state/actions.js';
 import { nextSortOrder } from './lib/sort-order.js';
 
 export function App() {
@@ -36,7 +37,8 @@ function Root() {
 }
 
 function MainLayout() {
-  const { data, submitOps } = useApp();
+  const { me } = useApp();
+  const tasks = useTasks();
   const [view, setView] = useState<ViewSelection>({ type: 'smart', key: 'today' });
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -57,8 +59,6 @@ function MainLayout() {
     visibleTaskIdsRef.current = ids;
   }, []);
 
-  const report = (err: unknown) => console.error(err);
-
   const moveSelection = (delta: number) => {
     const ids = visibleTaskIdsRef.current;
     if (ids.length === 0) return;
@@ -67,24 +67,24 @@ function MainLayout() {
     setSelectedTaskId(ids[nextIdx] ?? null);
   };
 
+  const findTask = (id: string) => tasks.find((t) => t.id === id);
+
   useKeyboardShortcuts(keymap, {
     onQuickAdd: () => quickAddInputElRef.current?.focus(),
     onToggleComplete: () => {
-      if (!selectedTaskId) return;
-      const task = data.tasks.get(selectedTaskId);
+      if (!selectedTaskId || !me) return;
+      const task = findTask(selectedTaskId);
       if (!task) return;
-      submitOps([upsertTaskOp(selectedTaskId, { completed_at: task.completed_at ? null : Date.now() })]).catch(
-        report,
-      );
+      upsertTask(me.id, selectedTaskId, { completed_at: task.completed_at ? null : Date.now() });
     },
     onDelete: () => {
       if (!selectedTaskId) return;
-      submitOps([deleteTaskOp(selectedTaskId)]).catch(report);
+      deleteTask(selectedTaskId);
       setSelectedTaskId(null);
     },
     onSetPriority: (p) => {
-      if (!selectedTaskId) return;
-      submitOps([upsertTaskOp(selectedTaskId, { priority: p })]).catch(report);
+      if (!selectedTaskId || !me) return;
+      upsertTask(me.id, selectedTaskId, { priority: p });
     },
     onToggleTheme: toggleTheme,
     onShowHelp: () => setShowHelp(true),
@@ -92,23 +92,21 @@ function MainLayout() {
     onMoveUp: () => moveSelection(-1),
     onMoveDown: () => moveSelection(1),
     onIndent: () => {
-      if (!selectedTaskId || view.type !== 'list') return;
+      if (!selectedTaskId || !me || view.type !== 'list') return;
       const ids = visibleTaskIdsRef.current;
       const idx = ids.indexOf(selectedTaskId);
       if (idx <= 0) return;
       const newParentId = ids[idx - 1];
       if (!newParentId) return;
-      const siblings = [...data.tasks.values()].filter((t) => t.parent_id === newParentId);
-      submitOps([
-        upsertTaskOp(selectedTaskId, { parent_id: newParentId, sort_order: nextSortOrder(siblings) }),
-      ]).catch(report);
+      const siblings = tasks.filter((t) => t.parent_id === newParentId);
+      upsertTask(me.id, selectedTaskId, { parent_id: newParentId, sort_order: nextSortOrder(siblings) });
     },
     onOutdent: () => {
-      if (!selectedTaskId) return;
-      const task = data.tasks.get(selectedTaskId);
+      if (!selectedTaskId || !me) return;
+      const task = findTask(selectedTaskId);
       if (!task || !task.parent_id) return;
-      const grandParentId = data.tasks.get(task.parent_id)?.parent_id ?? null;
-      submitOps([upsertTaskOp(selectedTaskId, { parent_id: grandParentId })]).catch(report);
+      const grandParentId = findTask(task.parent_id)?.parent_id ?? null;
+      upsertTask(me.id, selectedTaskId, { parent_id: grandParentId });
     },
   });
 

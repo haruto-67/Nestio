@@ -1,10 +1,14 @@
 import { useState, type KeyboardEvent } from 'react';
 import { KEYMAP_ACTIONS, KEYMAP_ACTION_LABELS, findKeymapConflicts, normalizeKeyCombo, type KeymapAction } from '../../lib/keymap.js';
 import { useKeymap } from '../../state/useKeymap.js';
+import { useApp } from '../../state/AppProvider.js';
+import { sendClientLogs } from '../../api/client-logs.js';
 
 export function KeymapSettings({ onClose }: { onClose: () => void }) {
   const { keymap, setKey } = useKeymap();
+  const { deviceId } = useApp();
   const [capturing, setCapturing] = useState<KeymapAction | null>(null);
+  const [logStatus, setLogStatus] = useState<string | null>(null);
 
   const conflicts = findKeymapConflicts(keymap);
   const conflictActions = new Set(conflicts.flat());
@@ -15,6 +19,18 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     setKey(action, normalizeKeyCombo(e.nativeEvent));
     setCapturing(null);
+  };
+
+  const handleSendLogs = async () => {
+    if (!deviceId) return;
+    setLogStatus('送信中…');
+    try {
+      const count = await sendClientLogs(deviceId);
+      setLogStatus(count > 0 ? `${count}件のログを送信しました` : '送信するログはありませんでした');
+    } catch (err) {
+      setLogStatus('送信に失敗しました');
+      console.error(err);
+    }
   };
 
   return (
@@ -62,6 +78,19 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
           ))}
         </ul>
         <p className="mt-3 text-xs text-neutral-400">「今日」へ（G→T）・優先度変更（1〜4）は固定です</p>
+
+        <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">同期の不具合を報告</span>
+            <button
+              onClick={handleSendLogs}
+              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            >
+              ログを送信
+            </button>
+          </div>
+          {logStatus && <p className="mt-1 text-xs text-neutral-400">{logStatus}</p>}
+        </div>
       </div>
     </div>
   );

@@ -49,17 +49,17 @@
 
 **ここが最も壊れやすい。`docs/sync-protocol.md` を都度参照すること。**
 
-- [ ] Dexie スキーマ定義（サーバーと同じテーブル構成 + `outbox` + `meta`）
-- [ ] UI の読み取りを全て IndexedDB 経由に切り替え
-- [ ] outbox 実装（append / FIFO 送信 / マージ / 失敗時の保持）
-- [ ] pull ループ（`has_more` のページング、初回 `since=0`）
-- [ ] オンライン復帰時の順序制御（**push → pull**）
-- [ ] SSE 受信と自動 pull、指数バックオフ再接続、再接続時の pull
-- [ ] 時計ずれ補正（`clock_skew_ms`）
-- [ ] `full_resync_required` のハンドリング
-- [ ] PWA 化（manifest、Service Worker、アイコン一式、オフラインシェル）
-- [ ] 同期テスト一式（`sync-protocol.md` 第 10 章のチェックリスト全項目）
-- [ ] クライアント側リングバッファログ（同期障害の記録）と `POST /client-logs` への手動送信
+- [x] Dexie スキーマ定義（サーバーと同じテーブル構成 + `outbox` + `meta`）
+- [x] UI の読み取りを全て IndexedDB 経由に切り替え
+- [x] outbox 実装（append / FIFO 送信 / マージ / 失敗時の保持）
+- [x] pull ループ（`has_more` のページング、初回 `since=0`）
+- [x] オンライン復帰時の順序制御（**push → pull**）
+- [x] SSE 受信と自動 pull、指数バックオフ再接続、再接続時の pull
+- [x] 時計ずれ補正（`clock_skew_ms`）
+- [x] `full_resync_required` のハンドリング（クライアント側のみ。サーバー側の判定はPhase 6のGCワーカーと合わせて実装。`docs/open-questions.md` 7章）
+- [x] PWA 化（manifest、Service Worker、オフラインシェル。アイコンは仮のSVGプレースホルダ。`docs/open-questions.md` 6章）
+- [x] 同期テスト一式（`sync-protocol.md` 第 10 章のうち「31日オフライン→full_resync_required」以外は自動テスト化済み。機内モード実機確認はPlaywrightで実施）
+- [x] クライアント側リングバッファログ（同期障害の記録）と `POST /client-logs` への手動送信
 
 **完了条件**：機内モードで編集 → 復帰 → 別デバイスに反映される
 

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { uuidv7 } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
-import { upsertFolderOp, deleteFolderOp, upsertListOp, deleteListOp } from '../../state/actions.js';
+import { useFolders, useLists } from '../../db/queries.js';
+import { upsertFolder, deleteFolder, upsertList, deleteList } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { SMART_LISTS } from '../../lib/task-views.js';
 import { EditableLabel } from './EditableLabel.js';
@@ -13,11 +14,11 @@ interface SidebarProps {
 }
 
 export function Sidebar({ view, onSelectView }: SidebarProps) {
-  const { data, submitOps } = useApp();
+  const { me } = useApp();
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
 
-  const folders = [...data.folders.values()].sort((a, b) => a.sort_order - b.sort_order);
-  const lists = [...data.lists.values()];
+  const folders = [...useFolders()].sort((a, b) => a.sort_order - b.sort_order);
+  const lists = useLists();
 
   const listsByFolder = new Map<string | null, typeof lists>();
   for (const l of lists) {
@@ -37,32 +38,28 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
     });
   };
 
-  const report = (err: unknown) => {
-    console.error(err);
-  };
+  if (!me) return null;
+  const userId = me.id;
 
   const createFolder = () => {
     const id = uuidv7();
-    submitOps([upsertFolderOp(id, { name: '新しいフォルダ', sort_order: nextSortOrder(folders) })]).catch(report);
+    upsertFolder(userId, id, { name: '新しいフォルダ', sort_order: nextSortOrder(folders) });
     setOpenFolders((prev) => new Set(prev).add(id));
   };
 
   const createList = (folderId: string | null) => {
     const id = uuidv7();
     const siblings = listsByFolder.get(folderId) ?? [];
-    submitOps([
-      upsertListOp(id, { name: '新しいリスト', folder_id: folderId, sort_order: nextSortOrder(siblings) }),
-    ])
-      .then(() => onSelectView({ type: 'list', listId: id }))
-      .catch(report);
+    upsertList(userId, id, { name: '新しいリスト', folder_id: folderId, sort_order: nextSortOrder(siblings) });
+    onSelectView({ type: 'list', listId: id });
   };
 
-  const renameFolder = (id: string, name: string) => submitOps([upsertFolderOp(id, { name })]).catch(report);
-  const removeFolder = (id: string) => submitOps([deleteFolderOp(id)]).catch(report);
-  const renameList = (id: string, name: string) => submitOps([upsertListOp(id, { name })]).catch(report);
+  const renameFolder = (id: string, name: string) => upsertFolder(userId, id, { name });
+  const removeFolder = (id: string) => deleteFolder(id);
+  const renameList = (id: string, name: string) => upsertList(userId, id, { name });
   const removeList = (id: string) => {
     if (view.type === 'list' && view.listId === id) onSelectView({ type: 'smart', key: 'today' });
-    submitOps([deleteListOp(id)]).catch(report);
+    deleteList(id);
   };
 
   return (

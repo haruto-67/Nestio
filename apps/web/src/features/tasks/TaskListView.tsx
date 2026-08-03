@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { uuidv7, type ListSortMode, type TaskRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
+import { useLists, useTasks } from '../../db/queries.js';
 import type { ViewSelection } from '../../state/view.js';
-import type { AppData } from '../../state/types.js';
 import { filterTasksForView } from '../../lib/filter-tasks.js';
 import { buildTaskTree, flattenTaskTree } from '../../lib/task-tree.js';
 import { sortTasks } from '../../lib/task-sort.js';
 import { taskDueDateStringJst, SMART_LISTS } from '../../lib/task-views.js';
 import { todayJstDateString } from '../../lib/datetime.js';
-import { upsertTaskOp, upsertListOp } from '../../state/actions.js';
+import { upsertTask, upsertList } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { TaskItem } from './TaskItem.js';
 
@@ -20,8 +20,8 @@ interface TaskListViewProps {
   quickAddInputRef?: (el: HTMLInputElement | null) => void;
 }
 
-function firstListId(data: AppData): string | undefined {
-  const first = [...data.lists.values()].sort((a, b) => a.sort_order - b.sort_order)[0];
+function firstListId(lists: { id: string; sort_order: number }[]): string | undefined {
+  const first = [...lists].sort((a, b) => a.sort_order - b.sort_order)[0];
   return first?.id;
 }
 
@@ -32,15 +32,17 @@ export function TaskListView({
   onVisibleTasksChange,
   quickAddInputRef,
 }: TaskListViewProps) {
-  const { data, submitOps } = useApp();
+  const { me } = useApp();
+  const lists = useLists();
+  const tasks = useTasks();
   const [newTaskTitle, setNewTaskTitle] = useState('');
 
-  const list = view.type === 'list' ? data.lists.get(view.listId) : undefined;
+  const list = view.type === 'list' ? lists.find((l) => l.id === view.listId) : undefined;
   const title =
     view.type === 'list' ? (list?.name ?? '') : (SMART_LISTS.find((s) => s.key === view.key)?.label ?? '');
   const sortMode: ListSortMode = list?.sort_mode ?? 'due';
 
-  const tasksInView = filterTasksForView([...data.tasks.values()], view);
+  const tasksInView = filterTasksForView(tasks, view);
 
   useEffect(() => {
     if (!onVisibleTasksChange) return;
@@ -51,34 +53,33 @@ export function TaskListView({
     }
   }, [view, tasksInView, sortMode, onVisibleTasksChange]);
 
-  const report = (err: unknown) => console.error(err);
+  if (!me) return null;
+  const userId = me.id;
 
   const canComplete = (taskId: string): boolean => {
-    for (const t of data.tasks.values()) {
+    for (const t of tasks) {
       if (t.parent_id === taskId && t.completed_at === null) return false;
     }
     return true;
   };
 
   const toggleComplete = (taskId: string, completing: boolean) => {
-    submitOps([upsertTaskOp(taskId, { completed_at: completing ? Date.now() : null })]).catch(report);
+    upsertTask(userId, taskId, { completed_at: completing ? Date.now() : null });
   };
 
-  const targetListId = view.type === 'list' ? view.listId : firstListId(data);
+  const targetListId = view.type === 'list' ? view.listId : firstListId(lists);
 
   const createTask = () => {
     const trimmed = newTaskTitle.trim();
     if (!trimmed || !targetListId) return;
-    const siblings = [...data.tasks.values()].filter((t) => t.list_id === targetListId && t.parent_id === null);
+    const siblings = tasks.filter((t) => t.list_id === targetListId && t.parent_id === null);
     const id = uuidv7();
-    submitOps([upsertTaskOp(id, { list_id: targetListId, title: trimmed, sort_order: nextSortOrder(siblings) })]).catch(
-      report,
-    );
+    upsertTask(userId, id, { list_id: targetListId, title: trimmed, sort_order: nextSortOrder(siblings) });
     setNewTaskTitle('');
   };
 
   const changeSortMode = (mode: ListSortMode) => {
-    if (view.type === 'list') submitOps([upsertListOp(view.listId, { sort_mode: mode })]).catch(report);
+    if (view.type === 'list') upsertList(userId, view.listId, { sort_mode: mode });
   };
 
   if (view.type === 'list' && !list) {

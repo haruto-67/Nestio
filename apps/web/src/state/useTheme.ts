@@ -1,16 +1,18 @@
 import { useEffect } from 'react';
 import { useApp } from './AppProvider.js';
-import { upsertUserSettingsOp } from './actions.js';
+import { useUserSettings } from '../db/queries.js';
+import { upsertUserSettings } from './actions.js';
 
 type Theme = 'light' | 'dark';
 const STORAGE_KEY = 'nestio_theme';
 
 /** user_settings.theme を正として使う。未ログイン/未同期時は localStorage → OS設定へフォールバック */
 export function useTheme(): { theme: Theme; toggleTheme: () => void } {
-  const { data, me, submitOps } = useApp();
+  const { me } = useApp();
+  const settings = useUserSettings();
 
   const theme: Theme =
-    data.userSettings?.theme ??
+    (settings?.theme as Theme | undefined) ??
     (localStorage.getItem(STORAGE_KEY) as Theme | null) ??
     (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 
@@ -22,7 +24,7 @@ export function useTheme(): { theme: Theme; toggleTheme: () => void } {
   const toggleTheme = () => {
     const next: Theme = theme === 'dark' ? 'light' : 'dark';
     if (me) {
-      submitOps([upsertUserSettingsOp(me.id, { theme: next })]).catch((err) => console.error(err));
+      upsertUserSettings(me.id, { theme: next });
     } else {
       localStorage.setItem(STORAGE_KEY, next);
     }

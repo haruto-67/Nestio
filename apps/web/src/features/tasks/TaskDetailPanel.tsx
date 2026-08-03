@@ -1,13 +1,8 @@
 import { useState, useEffect } from 'react';
 import { uuidv7, type TaskWritableFields, type TaskRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
-import {
-  upsertTaskOp,
-  deleteTaskOp,
-  upsertTagOp,
-  upsertTaskTagOp,
-  deleteTaskTagOp,
-} from '../../state/actions.js';
+import { useLists, useTags, useTaskTags, useTasks, useTask } from '../../db/queries.js';
+import { upsertTask, deleteTask, upsertTag, upsertTaskTag, deleteTaskTag } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { naturalCollator, todayJstDateString } from '../../lib/datetime.js';
 
@@ -19,56 +14,55 @@ interface TaskDetailPanelProps {
 }
 
 export function TaskDetailPanel({ taskId, onClose }: TaskDetailPanelProps) {
-  const { data, submitOps } = useApp();
-  const task = data.tasks.get(taskId);
+  const { me } = useApp();
+  const task = useTask(taskId);
+  const lists = useLists();
+  const allTags = useTags();
+  const taskTags = useTaskTags();
+  const tasks = useTasks();
   const [titleDraft, setTitleDraft] = useState(task?.title ?? '');
 
   useEffect(() => {
     setTitleDraft(task?.title ?? '');
   }, [task?.title, taskId]);
 
-  if (!task) return null;
+  if (!task || !me) return null;
+  const userId = me.id;
 
-  const report = (err: unknown) => console.error(err);
-  const update = (fields: TaskWritableFields) => submitOps([upsertTaskOp(taskId, fields)]).catch(report);
+  const update = (fields: TaskWritableFields) => upsertTask(userId, taskId, fields);
 
-  const lists = [...data.lists.values()].sort((a, b) => naturalCollator.compare(a.name, b.name));
-  const allTags = [...data.tags.values()];
-  const taskTags = [...data.taskTags.values()].filter((tt) => tt.task_id === taskId);
-  const taskTagByTagId = new Map(taskTags.map((tt) => [tt.tag_id, tt]));
+  const sortedLists = [...lists].sort((a, b) => naturalCollator.compare(a.name, b.name));
+  const taskTagByTagId = new Map(taskTags.filter((tt) => tt.task_id === taskId).map((tt) => [tt.tag_id, tt]));
 
   const removeTask = () => {
-    submitOps([deleteTaskOp(taskId)]).catch(report);
+    deleteTask(taskId);
     onClose();
   };
 
   const addSubtask = () => {
     const id = uuidv7();
-    const siblings = [...data.tasks.values()].filter((t) => t.parent_id === taskId);
-    submitOps([
-      upsertTaskOp(id, {
-        list_id: task.list_id,
-        parent_id: taskId,
-        title: '新しいサブタスク',
-        sort_order: nextSortOrder(siblings),
-      }),
-    ]).catch(report);
+    const siblings = tasks.filter((t) => t.parent_id === taskId);
+    upsertTask(userId, id, {
+      list_id: task.list_id,
+      parent_id: taskId,
+      title: '新しいサブタスク',
+      sort_order: nextSortOrder(siblings),
+    });
   };
 
   const toggleTag = (tagId: string) => {
     const existing = taskTagByTagId.get(tagId);
     if (existing) {
-      submitOps([deleteTaskTagOp(existing.id)]).catch(report);
+      deleteTaskTag(existing.id);
     } else {
-      submitOps([upsertTaskTagOp(uuidv7(), { task_id: taskId, tag_id: tagId })]).catch(report);
+      upsertTaskTag(userId, uuidv7(), { task_id: taskId, tag_id: tagId });
     }
   };
 
   const createAndAttachTag = (name: string) => {
     const tagId = uuidv7();
-    submitOps([upsertTagOp(tagId, { name, color: '#888888' })])
-      .then(() => submitOps([upsertTaskTagOp(uuidv7(), { task_id: taskId, tag_id: tagId })]))
-      .catch(report);
+    upsertTag(userId, tagId, { name, color: '#888888' });
+    upsertTaskTag(userId, uuidv7(), { task_id: taskId, tag_id: tagId });
   };
 
   return (
@@ -109,7 +103,7 @@ export function TaskDetailPanel({ taskId, onClose }: TaskDetailPanelProps) {
           onChange={(e) => update({ list_id: e.target.value })}
           className="rounded border border-neutral-200 bg-transparent p-1.5 text-sm dark:border-neutral-700"
         >
-          {lists.map((l) => (
+          {sortedLists.map((l) => (
             <option key={l.id} value={l.id}>
               {l.name}
             </option>
@@ -247,15 +241,13 @@ function TagCreator({ onCreate }: { onCreate: (name: string) => void }) {
 }
 
 function SubtaskList({ parentId }: { parentId: string }) {
-  const { data, submitOps } = useApp();
-  const children = [...data.tasks.values()]
-    .filter((t) => t.parent_id === parentId)
-    .sort((a, b) => a.sort_order - b.sort_order);
+  const { me } = useApp();
+  const tasks = useTasks();
+  const children = tasks.filter((t) => t.parent_id === parentId).sort((a, b) => a.sort_order - b.sort_order);
 
   const toggle = (id: string, completing: boolean) => {
-    submitOps([upsertTaskOp(id, { completed_at: completing ? Date.now() : null })]).catch((err) =>
-      console.error(err),
-    );
+    if (!me) return;
+    upsertTask(me.id, id, { completed_at: completing ? Date.now() : null });
   };
 
   return (

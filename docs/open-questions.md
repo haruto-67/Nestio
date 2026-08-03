@@ -40,6 +40,25 @@
 カスタマイズ対象外・固定ショートカットのままとした（`apps/web/src/features/keyboard/useKeyboardShortcuts.ts`）。
 将来ここもカスタマイズ可能にするなら、キーマップの値を配列や複合ステップに対応する形へスキーマ変更が必要になる。
 
+### 6. PWAアイコンは仮のSVGプレースホルダ
+
+`docs/manual-setup.md` G章の通り、確定アイコン（Canva `https://www.canva.com/d/3-dI-GIjYx1e-ML`）からのPNG書き出し（192/512の通常・マスカブル版、apple-touch-icon 180px、favicon.ico）は
+Claude Codeでは行えない作業として元々ユーザー側のタスクに分類されている。
+**判断**：Phase 2ではPWA化の技術基盤（manifest・Service Worker・オフラインシェル）を優先し、
+`apps/web/public/icons/icon.svg` に巣+卵モチーフの簡易SVGを1枚だけ置いて `manifest.webmanifest` から `purpose: "any"` で参照した。
+iOSの `apple-touch-icon` はSVGを認識しないため、実機のホーム画面追加では正式なPNG書き出しが必要
+（`docs/manual-setup.md` G章の作業は未完了のまま）。Phase 6でCanvaからの書き出し後にこのSVGを差し替える。
+
+### 7. `full_resync_required` はクライアント側ハンドリングのみ実装済み、サーバー側の判定はPhase 6待ち
+
+`docs/sync-protocol.md` 6章：「`since` がサーバーのGC済み境界より古い場合、サーバーは `full_resync_required: true` を返す」。
+この判定には「30日以上前のtombstoneをGCした境界」の情報が必要だが、そのGCワーカー自体が `docs/phases.md` Phase 6のタスクであり、
+`sync_state` にも「境界seq」を保持するカラムが無い。
+**判断**：Phase 2では `apps/web/src/sync/engine.ts` の `pullLoop` にクライアント側の対応（`full_resync_required: true` を
+受け取ったらローカルDBを破棄してsince=0からやり直す、outboxは保持）のみ実装した。
+サーバー側で実際に `full_resync_required: true` を返す判定ロジック（`apps/api/src/sync/pull.ts`）はPhase 6で
+GCワーカーと一緒に実装する（境界seqをどこかに記録する必要がある）。
+
 ### 4. URLルーティングを実装していない
 
 `docs/phases.md` Phase 1に「React 側の骨組み：2 ペインレイアウト、ルーティング、ダーク / ライト切替」とあるが、

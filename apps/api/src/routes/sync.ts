@@ -7,6 +7,7 @@ import { ApiError } from '../errors.js';
 import { applySyncOps } from '../sync/apply.js';
 import { pullChanges } from '../sync/pull.js';
 import { subscribeSse, broadcastBump } from '../sync/sse-hub.js';
+import { detectClockSkewMs } from '../sync/clock-skew.js';
 
 const SSE_KEEPALIVE_MS = 30_000;
 
@@ -23,6 +24,11 @@ syncRoute.post('/sync/push', async (c) => {
   const body = syncPushRequestSchema.parse(await c.req.json());
   const result = applySyncOps(db, userId, body.ops);
 
+  const clockSkewMs = detectClockSkewMs(body.ops.map((op) => op.updated_at));
+  if (clockSkewMs !== undefined) {
+    logger.warn({ clock_skew_ms: clockSkewMs, device_id: body.device_id }, 'clock_skew_detected');
+  }
+
   if (result.rejected.length > 0) {
     logger.info({ rejected: result.rejected }, 'sync_push_rejected_ops');
   }
@@ -30,7 +36,7 @@ syncRoute.post('/sync/push', async (c) => {
     broadcastBump(userId, result.next_seq, body.device_id);
   }
 
-  return c.json(result);
+  return c.json(clockSkewMs !== undefined ? { ...result, clock_skew_ms: clockSkewMs } : result);
 });
 
 syncRoute.get('/sync/pull', (c) => {
