@@ -4,7 +4,10 @@ import type { Env } from './env.js';
 import type { Logger } from './logger.js';
 import { requestContext, type AppVariables } from './middleware/request-context.js';
 import { handleError } from './middleware/error-handler.js';
+import { rateLimit } from './middleware/rate-limit.js';
 import { healthRoute } from './routes/health.js';
+import { authRoute } from './routes/auth.js';
+import { syncRoute } from './routes/sync.js';
 
 export function createApp(env: Env, db: Database.Database, logger: Logger) {
   const app = new Hono<{ Variables: AppVariables }>();
@@ -12,7 +15,12 @@ export function createApp(env: Env, db: Database.Database, logger: Logger) {
   app.use('*', requestContext(logger, env, db));
   app.onError(handleError);
 
+  app.use('/api/v1/auth/*', rateLimit(env.RATE_LIMIT_AUTH));
+  app.use('/api/v1/sync/*', rateLimit(env.RATE_LIMIT_SYNC));
+
   app.route('/api/v1', healthRoute);
+  app.route('/api/v1', authRoute);
+  app.route('/api/v1', syncRoute);
 
   return app;
 }

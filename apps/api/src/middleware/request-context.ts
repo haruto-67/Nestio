@@ -9,6 +9,7 @@ export type AppVariables = {
   logger: Logger;
   env: Env;
   db: Database.Database;
+  userId?: string;
 };
 
 /** request_id を発番し、全リクエストの開始・終了をstructured logで記録する */

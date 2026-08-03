@@ -8,6 +8,7 @@ const envSchema = z.object({
 
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
+  GOOGLE_REDIRECT_URI: z.string().url().default('http://localhost:3000/api/v1/auth/google/callback'),
   SESSION_SECRET: z.string().default('dev-insecure-session-secret-change-me'),
 
   VAPID_PUBLIC_KEY: z.string().default(''),

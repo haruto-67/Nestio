@@ -25,6 +25,7 @@ Phase 6 でこの内容を実際の値を埋めた `docs/使い方.md` に仕上
 ```
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=     # 上記の承認済みリダイレクトURIと完全一致させる
 SESSION_SECRET=          # openssl rand -base64 32
 ```
 
@@ -186,6 +187,7 @@ DISCORD_WEBHOOKS=default:https://discord.com/api/webhooks/...
 # 認証
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=
 SESSION_SECRET=
 APP_ORIGIN=https://nestio.niwatorimc.com
 
