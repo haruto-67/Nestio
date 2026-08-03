@@ -8,7 +8,7 @@ import { buildTaskTree, flattenTaskTree } from '../../lib/task-tree.js';
 import { sortTasks } from '../../lib/task-sort.js';
 import { taskDueDateStringJst, SMART_LISTS } from '../../lib/task-views.js';
 import { todayJstDateString } from '../../lib/datetime.js';
-import { upsertTask, upsertList } from '../../state/actions.js';
+import { upsertTask, upsertList, completeTask } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { TaskItem } from './TaskItem.js';
 
@@ -64,7 +64,9 @@ export function TaskListView({
   };
 
   const toggleComplete = (taskId: string, completing: boolean) => {
-    upsertTask(userId, taskId, { completed_at: completing ? Date.now() : null });
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    completeTask(userId, task, completing);
   };
 
   const targetListId = view.type === 'list' ? view.listId : firstListId(lists);

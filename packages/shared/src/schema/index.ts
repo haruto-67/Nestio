@@ -11,3 +11,4 @@ export * from './settings.js';
 export * from './oauth.js';
 export * from './errors.js';
 export * from './client-logs.js';
+export * from './search.js';

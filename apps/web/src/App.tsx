@@ -11,7 +11,8 @@ import type { ViewSelection } from './state/view.js';
 import { useKeyboardShortcuts } from './features/keyboard/useKeyboardShortcuts.js';
 import { ShortcutHelpModal } from './features/keyboard/ShortcutHelpModal.js';
 import { KeymapSettings } from './features/keyboard/KeymapSettings.js';
-import { upsertTask, deleteTask } from './state/actions.js';
+import { SearchModal } from './features/search/SearchModal.js';
+import { upsertTask, deleteTask, completeTask } from './state/actions.js';
 import { nextSortOrder } from './lib/sort-order.js';
 
 export function App() {
@@ -44,6 +45,7 @@ function MainLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showKeymapSettings, setShowKeymapSettings] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const { keymap } = useKeymap();
   const visibleTaskIdsRef = useRef<string[]>([]);
@@ -71,11 +73,12 @@ function MainLayout() {
 
   useKeyboardShortcuts(keymap, {
     onQuickAdd: () => quickAddInputElRef.current?.focus(),
+    onSearch: () => setShowSearch(true),
     onToggleComplete: () => {
       if (!selectedTaskId || !me) return;
       const task = findTask(selectedTaskId);
       if (!task) return;
-      upsertTask(me.id, selectedTaskId, { completed_at: task.completed_at ? null : Date.now() });
+      completeTask(me.id, task, task.completed_at === null);
     },
     onDelete: () => {
       if (!selectedTaskId) return;
@@ -117,18 +120,28 @@ function MainLayout() {
           ☰ メニュー
         </button>
         <span className="text-sm font-semibold">Nestio</span>
-        <button onClick={toggleTheme} className="text-sm">
-          {theme === 'dark' ? '🌙' : '☀️'}
-        </button>
+        <div className="flex gap-3">
+          <button onClick={() => setShowSearch(true)} title="検索" className="text-sm">
+            🔍
+          </button>
+          <button onClick={toggleTheme} className="text-sm">
+            {theme === 'dark' ? '🌙' : '☀️'}
+          </button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
         <div className="hidden w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 md:block">
           <div className="flex items-center justify-between border-b border-neutral-200 p-3 dark:border-neutral-800">
             <span className="text-sm font-semibold">Nestio</span>
-            <button onClick={toggleTheme} title="テーマ切替" className="text-sm">
-              {theme === 'dark' ? '🌙' : '☀️'}
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => setShowSearch(true)} title="検索" className="text-sm">
+                🔍
+              </button>
+              <button onClick={toggleTheme} title="テーマ切替" className="text-sm">
+                {theme === 'dark' ? '🌙' : '☀️'}
+              </button>
+            </div>
           </div>
           <Sidebar view={view} onSelectView={selectView} />
         </div>
@@ -165,6 +178,15 @@ function MainLayout() {
         />
       )}
       {showKeymapSettings && <KeymapSettings onClose={() => setShowKeymapSettings(false)} />}
+      {showSearch && (
+        <SearchModal
+          onClose={() => setShowSearch(false)}
+          onSelectTask={(taskId, listId) => {
+            selectView({ type: 'list', listId });
+            setSelectedTaskId(taskId);
+          }}
+        />
+      )}
     </div>
   );
 }

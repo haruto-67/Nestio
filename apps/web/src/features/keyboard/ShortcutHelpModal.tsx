@@ -4,6 +4,7 @@ import { useKeymap } from '../../state/useKeymap.js';
 const FIXED_SHORTCUTS: { keys: string; label: string }[] = [
   { keys: '1〜4', label: '優先度を変更（なし/低/中/高）' },
   { keys: 'G → T', label: '「今日」ビューへ' },
+  { keys: 'Cmd/Ctrl + K', label: '検索（キーマップの割り当てに加えて常に有効）' },
 ];
 
 export function ShortcutHelpModal({ onClose, onOpenSettings }: { onClose: () => void; onOpenSettings: () => void }) {

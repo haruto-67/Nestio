@@ -9,6 +9,7 @@ import { healthRoute } from './routes/health.js';
 import { authRoute } from './routes/auth.js';
 import { syncRoute } from './routes/sync.js';
 import { clientLogsRoute } from './routes/client-logs.js';
+import { searchRoute } from './routes/search.js';
 
 export function createApp(env: Env, db: Database.Database, logger: Logger) {
   const app = new Hono<{ Variables: AppVariables }>();
@@ -24,6 +25,7 @@ export function createApp(env: Env, db: Database.Database, logger: Logger) {
   app.route('/api/v1', authRoute);
   app.route('/api/v1', syncRoute);
   app.route('/api/v1', clientLogsRoute);
+  app.route('/api/v1', searchRoute);
 
   return app;
 }

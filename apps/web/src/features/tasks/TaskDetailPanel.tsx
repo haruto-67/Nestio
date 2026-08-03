@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { uuidv7, type TaskWritableFields, type TaskRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
 import { useLists, useTags, useTaskTags, useTasks, useTask } from '../../db/queries.js';
-import { upsertTask, deleteTask, upsertTag, upsertTaskTag, deleteTaskTag } from '../../state/actions.js';
+import { upsertTask, deleteTask, upsertTag, upsertTaskTag, deleteTaskTag, completeTask } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { naturalCollator, todayJstDateString } from '../../lib/datetime.js';
+import { RecurrenceEditor } from './RecurrenceEditor.js';
 
 const PRIORITY_LABELS = ['なし', '低', '中', '高'] as const;
 
@@ -132,6 +133,8 @@ export function TaskDetailPanel({ taskId, onClose }: TaskDetailPanelProps) {
 
       <DueEditor task={task} onChange={update} />
 
+      <RecurrenceEditor task={task} onChange={update} />
+
       <div className="flex flex-col gap-1 text-xs text-neutral-500">
         タグ
         <div className="flex flex-wrap gap-1">
@@ -245,16 +248,16 @@ function SubtaskList({ parentId }: { parentId: string }) {
   const tasks = useTasks();
   const children = tasks.filter((t) => t.parent_id === parentId).sort((a, b) => a.sort_order - b.sort_order);
 
-  const toggle = (id: string, completing: boolean) => {
+  const toggle = (task: TaskRow, completing: boolean) => {
     if (!me) return;
-    upsertTask(me.id, id, { completed_at: completing ? Date.now() : null });
+    completeTask(me.id, task, completing);
   };
 
   return (
     <div className="flex flex-col gap-1">
       {children.map((c) => (
         <label key={c.id} className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={c.completed_at !== null} onChange={(e) => toggle(c.id, e.target.checked)} />
+          <input type="checkbox" checked={c.completed_at !== null} onChange={(e) => toggle(c, e.target.checked)} />
           <span className={c.completed_at !== null ? 'text-neutral-400 line-through' : ''}>{c.title}</span>
         </label>
       ))}

@@ -5,6 +5,7 @@
  */
 export const KEYMAP_ACTIONS = [
   'quick_add',
+  'search',
   'toggle_complete',
   'move_up',
   'move_down',
@@ -19,6 +20,7 @@ export type KeymapAction = (typeof KEYMAP_ACTIONS)[number];
 
 export const DEFAULT_KEYMAP: Record<KeymapAction, string> = {
   quick_add: 'n',
+  search: '/',
   toggle_complete: 'Space',
   move_up: 'k',
   move_down: 'j',
@@ -31,6 +33,7 @@ export const DEFAULT_KEYMAP: Record<KeymapAction, string> = {
 
 export const KEYMAP_ACTION_LABELS: Record<KeymapAction, string> = {
   quick_add: 'クイック追加',
+  search: '検索',
   toggle_complete: '選択中タスクを完了',
   move_up: '上へ移動',
   move_down: '下へ移動',

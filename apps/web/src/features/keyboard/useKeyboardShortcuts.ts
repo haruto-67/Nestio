@@ -3,6 +3,7 @@ import { normalizeKeyCombo, type KeymapAction } from '../../lib/keymap.js';
 
 export interface ShortcutHandlers {
   onQuickAdd: () => void;
+  onSearch: () => void;
   onToggleComplete: () => void;
   onDelete: () => void;
   onSetPriority: (p: 0 | 1 | 2 | 3) => void;
@@ -29,6 +30,7 @@ type NoArgHandlerKey = {
 
 const ACTION_HANDLER_KEYS: Record<KeymapAction, NoArgHandlerKey> = {
   quick_add: 'onQuickAdd',
+  search: 'onSearch',
   toggle_complete: 'onToggleComplete',
   move_up: 'onMoveUp',
   move_down: 'onMoveDown',
@@ -65,6 +67,12 @@ export function useKeyboardShortcuts(keymap: Record<KeymapAction, string>, handl
           e.preventDefault();
           h.onGotoToday();
         }
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        h.onSearch();
         return;
       }
 

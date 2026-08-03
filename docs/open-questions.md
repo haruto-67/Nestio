@@ -59,6 +59,16 @@ iOSの `apple-touch-icon` はSVGを認識しないため、実機のホーム画
 サーバー側で実際に `full_resync_required: true` を返す判定ロジック（`apps/api/src/sync/pull.ts`）はPhase 6で
 GCワーカーと一緒に実装する（境界seqをどこかに記録する必要がある）。
 
+### 8. `tasks.rrule` に DTSTART を含めて保存する
+
+`docs/schema.sql` のコメントは `rrule` を「RFC 5545 の RRULE 文字列」とだけ説明しており、DTSTARTの保持方法は明記されていない。
+「遅れて完了しても次回期限は元の予定日基準（dtstartをズラさない）」を実現するには、繰り返しの起点（最初の予定日）をどこかに固定して覚えておく必要がある。
+**判断**：`apps/web/src/lib/recurrence.ts` で `tasks.rrule` に `"DTSTART:...\nRRULE:..."` の複合文字列を保存する設計にした。
+繰り返し設定時の現在の `due_at`/`due_date` をDTSTARTとして焼き込み、以後はそのDTSTARTを基準に `rrule.after(now, false)` で
+「今日以降の直近1件」を計算する（何日サボっても1回のafter()呼び出しで済むため過去分は溜まらない）。
+Phase 5のICSフィード出力時は `rrule` カラムの値をそのまま `RRULE:` 行に使う想定だったが、DTSTART込みの文字列になっているため、
+ICS出力時はDTSTART行とRRULE行を分離するか、そのまま両方出力するかの実装調整が必要（Phase 5で対応）。
+
 ### 4. URLルーティングを実装していない
 
 `docs/phases.md` Phase 1に「React 側の骨組み：2 ペインレイアウト、ルーティング、ダーク / ライト切替」とあるが、
