@@ -1,5 +1,14 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { FolderRow, ListRow, TaskRow, TagRow, TaskTagRow, UserSettingsRow } from '@nestio/shared';
+import type {
+  FolderRow,
+  ListRow,
+  TaskRow,
+  TagRow,
+  TaskTagRow,
+  UserSettingsRow,
+  NoteRow,
+  AttachmentRow,
+} from '@nestio/shared';
 import { db } from './schema.js';
 
 export function useFolders(): FolderRow[] {
@@ -28,4 +37,27 @@ export function useTaskTags(): TaskTagRow[] {
 
 export function useUserSettings(): UserSettingsRow | undefined {
   return useLiveQuery(() => db.user_settings.toCollection().first(), [], undefined);
+}
+
+export function useNotes(): NoteRow[] {
+  return useLiveQuery(() => db.notes.filter((n) => n.deleted_at === null).toArray(), [], []) ?? [];
+}
+
+export function useNote(id: string | null): NoteRow | undefined {
+  return useLiveQuery(() => (id ? db.notes.get(id) : undefined), [id], undefined);
+}
+
+export function useAttachmentsFor(ownerType: 'task' | 'note', ownerId: string | null): AttachmentRow[] {
+  return (
+    useLiveQuery(
+      () =>
+        ownerId
+          ? db.attachments
+              .filter((a) => a.owner_type === ownerType && a.owner_id === ownerId && a.deleted_at === null)
+              .toArray()
+          : [],
+      [ownerType, ownerId],
+      [],
+    ) ?? []
+  );
 }

@@ -5,6 +5,8 @@ import type {
   TagWritableFields,
   TaskTagWritableFields,
   UserSettingsWritableFields,
+  NoteWritableFields,
+  AttachmentWritableFields,
   TaskRow,
 } from '@nestio/shared';
 import { upsertLocal, deleteLocal, upsertUserSettingsLocal, commitAndSync } from '../db/local-mutations.js';
@@ -63,6 +65,20 @@ export function deleteTaskTag(id: string): void {
 
 export function upsertUserSettings(userId: string, fields: UserSettingsWritableFields): void {
   commitAndSync(upsertUserSettingsLocal(userId, fields));
+}
+
+export function upsertNote(userId: string, id: string, fields: NoteWritableFields): void {
+  commitAndSync(upsertLocal(userId, 'notes', id, fields));
+}
+export function deleteNote(id: string): void {
+  commitAndSync(deleteLocal('notes', id));
+}
+
+export function upsertAttachment(userId: string, id: string, fields: AttachmentWritableFields): void {
+  commitAndSync(upsertLocal(userId, 'attachments', id, fields));
+}
+export function deleteAttachment(id: string): void {
+  commitAndSync(deleteLocal('attachments', id));
 }
 
 export { uuidv7 } from '@nestio/shared';

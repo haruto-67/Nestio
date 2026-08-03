@@ -5,13 +5,15 @@ import {
   taskWritableFields,
   tagWritableFields,
   taskTagWritableFields,
+  noteWritableFields,
+  attachmentWritableFields,
 } from '@nestio/shared';
 
 /**
  * /sync/push で汎用UPSERT/DELETEを扱えるテーブルのメタデータ。
  * user_settings は id を持たず PK が user_id 自体で構造が異なるため対象外
- * （Phase 4 でキーマップ同期を実装する際に専用ロジックを追加する）。
- * notes / attachments / triggers は Phase 4/5 でここに追加する。
+ * （Phase 1 でキーマップ同期を実装した際に専用ロジックを追加済み。apply.ts参照）。
+ * triggers は Phase 5 でここに追加する。
  */
 export const SYNC_TABLES = {
   folders: {
@@ -49,6 +51,16 @@ export const SYNC_TABLES = {
     columns: ['task_id', 'tag_id'],
     requiredOnInsert: ['task_id', 'tag_id'],
     writableSchema: taskTagWritableFields,
+  },
+  notes: {
+    columns: ['title', 'body', 'color', 'pinned', 'sort_order'],
+    requiredOnInsert: ['sort_order'],
+    writableSchema: noteWritableFields,
+  },
+  attachments: {
+    columns: ['owner_type', 'owner_id', 'sha256', 'filename', 'mime', 'bytes', 'width', 'height'],
+    requiredOnInsert: ['owner_type', 'owner_id', 'sha256', 'filename', 'mime', 'bytes'],
+    writableSchema: attachmentWritableFields,
   },
 } as const satisfies Record<
   string,

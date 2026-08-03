@@ -12,8 +12,11 @@ import { useKeyboardShortcuts } from './features/keyboard/useKeyboardShortcuts.j
 import { ShortcutHelpModal } from './features/keyboard/ShortcutHelpModal.js';
 import { KeymapSettings } from './features/keyboard/KeymapSettings.js';
 import { SearchModal } from './features/search/SearchModal.js';
+import { NotesScreen } from './features/notes/NotesScreen.js';
 import { upsertTask, deleteTask, completeTask } from './state/actions.js';
 import { nextSortOrder } from './lib/sort-order.js';
+
+type Screen = 'tasks' | 'notes';
 
 export function App() {
   return (
@@ -40,6 +43,7 @@ function Root() {
 function MainLayout() {
   const { me } = useApp();
   const tasks = useTasks();
+  const [screen, setScreen] = useState<Screen>('tasks');
   const [view, setView] = useState<ViewSelection>({ type: 'smart', key: 'today' });
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -131,7 +135,7 @@ function MainLayout() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <div className="hidden w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 md:block">
+        <div className="hidden w-64 shrink-0 flex-col border-r border-neutral-200 dark:border-neutral-800 md:flex">
           <div className="flex items-center justify-between border-b border-neutral-200 p-3 dark:border-neutral-800">
             <span className="text-sm font-semibold">Nestio</span>
             <div className="flex gap-2">
@@ -143,29 +147,62 @@ function MainLayout() {
               </button>
             </div>
           </div>
-          <Sidebar view={view} onSelectView={selectView} />
+          <div className="flex border-b border-neutral-200 text-sm dark:border-neutral-800">
+            <button
+              onClick={() => setScreen('tasks')}
+              className={`flex-1 py-2 ${screen === 'tasks' ? 'border-b-2 border-blue-500 font-medium' : 'text-neutral-400'}`}
+            >
+              タスク
+            </button>
+            <button
+              onClick={() => setScreen('notes')}
+              className={`flex-1 py-2 ${screen === 'notes' ? 'border-b-2 border-blue-500 font-medium' : 'text-neutral-400'}`}
+            >
+              メモ
+            </button>
+          </div>
+          {screen === 'tasks' && <Sidebar view={view} onSelectView={selectView} />}
         </div>
 
         {drawerOpen && (
           <div className="fixed inset-0 z-50 flex md:hidden">
-            <div className="w-72 bg-white dark:bg-neutral-900">
-              <Sidebar view={view} onSelectView={selectView} />
+            <div className="flex w-72 flex-col bg-white dark:bg-neutral-900">
+              <div className="flex border-b border-neutral-200 text-sm dark:border-neutral-800">
+                <button
+                  onClick={() => setScreen('tasks')}
+                  className={`flex-1 py-2 ${screen === 'tasks' ? 'border-b-2 border-blue-500 font-medium' : 'text-neutral-400'}`}
+                >
+                  タスク
+                </button>
+                <button
+                  onClick={() => setScreen('notes')}
+                  className={`flex-1 py-2 ${screen === 'notes' ? 'border-b-2 border-blue-500 font-medium' : 'text-neutral-400'}`}
+                >
+                  メモ
+                </button>
+              </div>
+              {screen === 'tasks' && <Sidebar view={view} onSelectView={selectView} />}
             </div>
             <div className="flex-1 bg-black/40" onClick={() => setDrawerOpen(false)} />
           </div>
         )}
 
-        <TaskListView
-          view={view}
-          selectedTaskId={selectedTaskId}
-          onSelectTask={setSelectedTaskId}
-          onVisibleTasksChange={handleVisibleTasksChange}
-          quickAddInputRef={(el) => {
-            quickAddInputElRef.current = el;
-          }}
-        />
-
-        {selectedTaskId && <TaskDetailPanel taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />}
+        {screen === 'tasks' ? (
+          <>
+            <TaskListView
+              view={view}
+              selectedTaskId={selectedTaskId}
+              onSelectTask={setSelectedTaskId}
+              onVisibleTasksChange={handleVisibleTasksChange}
+              quickAddInputRef={(el) => {
+                quickAddInputElRef.current = el;
+              }}
+            />
+            {selectedTaskId && <TaskDetailPanel taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />}
+          </>
+        ) : (
+          <NotesScreen />
+        )}
       </div>
 
       {showHelp && (
