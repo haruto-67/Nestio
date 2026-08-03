@@ -174,7 +174,8 @@ DISCORD_WEBHOOKS=default:https://discord.com/api/webhooks/...
 ### D-3. MCP 接続
 
 1. Claude 側にリモート MCP サーバーとして URL を登録
-   - URL：`https://nestio.niwatorimc.com/mcp`
+   - URL：`https://nestio.niwatorimc.com/api/v1/mcp`（`mcpRoute` は `/api/v1` 配下にマウントされている。
+     `/mcp` 単体だとSPAの `index.html` にフォールバックしてしまうので注意）
 2. 接続時に Nestio の認可画面が開くので、ログインして許可する（OAuth）
    - 固定トークンの貼り付けではなく、この認可フローで接続する
    - 既存の `niwatorimc.com/mcp`（Discord）で OAuth Client が必要だったのと同じ理由
