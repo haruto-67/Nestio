@@ -1,4 +1,4 @@
-import type { FolderRow, ListRow, TaskRow, TagRow, TaskTagRow } from '@nestio/shared';
+import type { FolderRow, ListRow, TaskRow, TagRow, TaskTagRow, UserSettingsRow } from '@nestio/shared';
 
 export interface AppData {
   since: number;
@@ -7,6 +7,7 @@ export interface AppData {
   tasks: Map<string, TaskRow>;
   tags: Map<string, TagRow>;
   taskTags: Map<string, TaskTagRow>;
+  userSettings: UserSettingsRow | null;
 }
 
 export function createEmptyAppData(): AppData {
@@ -17,5 +18,6 @@ export function createEmptyAppData(): AppData {
     tasks: new Map(),
     tags: new Map(),
     taskTags: new Map(),
+    userSettings: null,
   };
 }

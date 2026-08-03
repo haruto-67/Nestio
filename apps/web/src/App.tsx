@@ -5,9 +5,11 @@ import { Sidebar } from './features/tree/Sidebar.js';
 import { TaskListView } from './features/tasks/TaskListView.js';
 import { TaskDetailPanel } from './features/tasks/TaskDetailPanel.js';
 import { useTheme } from './state/useTheme.js';
+import { useKeymap } from './state/useKeymap.js';
 import type { ViewSelection } from './state/view.js';
 import { useKeyboardShortcuts } from './features/keyboard/useKeyboardShortcuts.js';
 import { ShortcutHelpModal } from './features/keyboard/ShortcutHelpModal.js';
+import { KeymapSettings } from './features/keyboard/KeymapSettings.js';
 import { upsertTaskOp, deleteTaskOp } from './state/actions.js';
 import { nextSortOrder } from './lib/sort-order.js';
 
@@ -39,7 +41,9 @@ function MainLayout() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showKeymapSettings, setShowKeymapSettings] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  const { keymap } = useKeymap();
   const visibleTaskIdsRef = useRef<string[]>([]);
   const quickAddInputElRef = useRef<HTMLInputElement | null>(null);
 
@@ -63,7 +67,7 @@ function MainLayout() {
     setSelectedTaskId(ids[nextIdx] ?? null);
   };
 
-  useKeyboardShortcuts({
+  useKeyboardShortcuts(keymap, {
     onQuickAdd: () => quickAddInputElRef.current?.focus(),
     onToggleComplete: () => {
       if (!selectedTaskId) return;
@@ -153,7 +157,16 @@ function MainLayout() {
         {selectedTaskId && <TaskDetailPanel taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />}
       </div>
 
-      {showHelp && <ShortcutHelpModal onClose={() => setShowHelp(false)} />}
+      {showHelp && (
+        <ShortcutHelpModal
+          onClose={() => setShowHelp(false)}
+          onOpenSettings={() => {
+            setShowHelp(false);
+            setShowKeymapSettings(true);
+          }}
+        />
+      )}
+      {showKeymapSettings && <KeymapSettings onClose={() => setShowKeymapSettings(false)} />}
     </div>
   );
 }

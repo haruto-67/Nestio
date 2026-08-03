@@ -273,4 +273,57 @@ describe('applySyncOps', () => {
     expect(res.applied).toEqual([op.op_id]);
     expect(res.rejected).toEqual([]);
   });
+
+  it('user_settings は user_id をidとして扱い、無ければ作成、あれば更新する', () => {
+    setup();
+    const op: SyncOp = {
+      op_id: uuidv7(),
+      table: 'user_settings',
+      id: userId,
+      op: 'upsert',
+      updated_at: Date.now(),
+      fields: { theme: 'dark', keymap_json: '{"quick_add":"n"}' },
+    };
+    const res = applySyncOps(db, userId, [op]);
+    expect(res.rejected).toEqual([]);
+
+    const row = db.prepare('SELECT * FROM user_settings WHERE user_id = ?').get(userId) as {
+      theme: string;
+      keymap_json: string;
+    };
+    expect(row.theme).toBe('dark');
+    expect(row.keymap_json).toBe('{"quick_add":"n"}');
+
+    const op2: SyncOp = {
+      op_id: uuidv7(),
+      table: 'user_settings',
+      id: userId,
+      op: 'upsert',
+      updated_at: Date.now() + 10,
+      fields: { theme: 'light' },
+    };
+    applySyncOps(db, userId, [op2]);
+    const row2 = db.prepare('SELECT * FROM user_settings WHERE user_id = ?').get(userId) as {
+      theme: string;
+      keymap_json: string;
+    };
+    expect(row2.theme).toBe('light');
+    expect(row2.keymap_json).toBe('{"quick_add":"n"}');
+  });
+
+  it('user_settings を他ユーザーのidで書き換えようとするとforbidden', () => {
+    setup();
+    const otherUser = uuidv7();
+    insertTestUser(db, otherUser);
+    const op: SyncOp = {
+      op_id: uuidv7(),
+      table: 'user_settings',
+      id: otherUser,
+      op: 'upsert',
+      updated_at: Date.now(),
+      fields: { theme: 'dark' },
+    };
+    const res = applySyncOps(db, userId, [op]);
+    expect(res.rejected).toEqual([{ op_id: op.op_id, reason: 'forbidden' }]);
+  });
 });

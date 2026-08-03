@@ -21,6 +21,16 @@ export function pullChanges(
   let hasMore = false;
 
   for (const table of ALL_TABLES) {
+    if (table === 'user_settings') {
+      // PKがuser_id自体で1ユーザー1行のため、他テーブルと違いLIMITは意味を持たない
+      const row = db.prepare('SELECT * FROM user_settings WHERE user_id = ? AND seq > ?').get(userId, since) as
+        | Row
+        | undefined;
+      changes[table] = row ? [row] : [];
+      if (row) maxSeq = Math.max(maxSeq, row.seq as number);
+      continue;
+    }
+
     if (!isImplementedSyncTable(table)) {
       // Phase 4/5 で SYNC_TABLES に追加するまでは常に空配列を返す
       changes[table] = [];

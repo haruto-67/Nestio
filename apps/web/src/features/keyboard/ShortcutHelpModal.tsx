@@ -1,16 +1,14 @@
-const SHORTCUTS: { keys: string; label: string }[] = [
-  { keys: 'N', label: 'クイック追加' },
-  { keys: 'Space / X', label: '選択中タスクを完了' },
-  { keys: 'J / K', label: '上下移動' },
-  { keys: 'Tab / Shift+Tab', label: 'サブタスクにする / 戻す' },
+import { KEYMAP_ACTIONS, KEYMAP_ACTION_LABELS, type KeymapAction } from '../../lib/keymap.js';
+import { useKeymap } from '../../state/useKeymap.js';
+
+const FIXED_SHORTCUTS: { keys: string; label: string }[] = [
   { keys: '1〜4', label: '優先度を変更（なし/低/中/高）' },
-  { keys: 'Delete', label: '削除' },
   { keys: 'G → T', label: '「今日」ビューへ' },
-  { keys: 'Cmd/Ctrl + Shift + L', label: 'ダーク / ライト切替' },
-  { keys: '?', label: 'このヘルプを表示' },
 ];
 
-export function ShortcutHelpModal({ onClose }: { onClose: () => void }) {
+export function ShortcutHelpModal({ onClose, onOpenSettings }: { onClose: () => void; onOpenSettings: () => void }) {
+  const { keymap } = useKeymap();
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
@@ -24,7 +22,15 @@ export function ShortcutHelpModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <ul className="flex flex-col gap-1.5 text-sm">
-          {SHORTCUTS.map((s) => (
+          {(KEYMAP_ACTIONS as readonly KeymapAction[]).map((action) => (
+            <li key={action} className="flex items-center justify-between gap-3">
+              <span className="text-neutral-500 dark:text-neutral-400">{KEYMAP_ACTION_LABELS[action]}</span>
+              <kbd className="rounded border border-neutral-300 bg-neutral-50 px-1.5 py-0.5 text-xs dark:border-neutral-700 dark:bg-neutral-800">
+                {keymap[action]}
+              </kbd>
+            </li>
+          ))}
+          {FIXED_SHORTCUTS.map((s) => (
             <li key={s.keys} className="flex items-center justify-between gap-3">
               <span className="text-neutral-500 dark:text-neutral-400">{s.label}</span>
               <kbd className="rounded border border-neutral-300 bg-neutral-50 px-1.5 py-0.5 text-xs dark:border-neutral-700 dark:bg-neutral-800">
@@ -33,7 +39,10 @@ export function ShortcutHelpModal({ onClose }: { onClose: () => void }) {
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-xs text-neutral-400">入力欄にフォーカス中は無効になります</p>
+        <button onClick={onOpenSettings} className="mt-3 text-xs text-blue-500 hover:underline">
+          キー割り当てを変更する
+        </button>
+        <p className="mt-2 text-xs text-neutral-400">入力欄にフォーカス中は無効になります</p>
       </div>
     </div>
   );

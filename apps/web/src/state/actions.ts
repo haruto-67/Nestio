@@ -7,6 +7,7 @@ import {
   type TaskWritableFields,
   type TagWritableFields,
   type TaskTagWritableFields,
+  type UserSettingsWritableFields,
 } from '@nestio/shared';
 
 function makeOp(
@@ -51,6 +52,11 @@ export function upsertTaskTagOp(id: string, fields: TaskTagWritableFields): Sync
 }
 export function deleteTaskTagOp(id: string): SyncOp {
   return makeOp('task_tags', id, 'delete', {});
+}
+
+/** user_settings は id を持たず PK が user_id 自体のため、op.id には自分の user_id を渡す */
+export function upsertUserSettingsOp(userId: string, fields: UserSettingsWritableFields): SyncOp {
+  return makeOp('user_settings', userId, 'upsert', fields);
 }
 
 export { uuidv7 };

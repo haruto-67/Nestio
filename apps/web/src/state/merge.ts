@@ -4,6 +4,7 @@ import {
   taskRowSchema,
   tagRowSchema,
   taskTagRowSchema,
+  userSettingsRowSchema,
   type SyncPullResponse,
 } from '@nestio/shared';
 import type { AppData } from './types.js';
@@ -32,5 +33,9 @@ export function mergeChanges(data: AppData, response: SyncPullResponse): void {
   }
   for (const raw of response.changes.task_tags ?? []) {
     applyRow(data.taskTags, taskTagRowSchema.parse(raw));
+  }
+  // user_settings は1ユーザー1行・deleted_atを持たないため、他テーブルと違い単純に上書きする
+  for (const raw of response.changes.user_settings ?? []) {
+    data.userSettings = userSettingsRowSchema.parse(raw);
   }
 }

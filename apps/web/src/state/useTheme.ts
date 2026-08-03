@@ -1,25 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { useApp } from './AppProvider.js';
+import { upsertUserSettingsOp } from './actions.js';
 
 type Theme = 'light' | 'dark';
 const STORAGE_KEY = 'nestio_theme';
 
-/**
- * Phase 1時点ではlocalStorageのみで管理する簡易実装。
- * user_settings.theme の /sync 対応（他デバイスとの同期）はPhase 4以降で行う。
- */
+/** user_settings.theme を正として使う。未ログイン/未同期時は localStorage → OS設定へフォールバック */
 export function useTheme(): { theme: Theme; toggleTheme: () => void } {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === 'light' || saved === 'dark') return saved;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  });
+  const { data, me, submitOps } = useApp();
+
+  const theme: Theme =
+    data.userSettings?.theme ??
+    (localStorage.getItem(STORAGE_KEY) as Theme | null) ??
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 
-  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+  const toggleTheme = () => {
+    const next: Theme = theme === 'dark' ? 'light' : 'dark';
+    if (me) {
+      submitOps([upsertUserSettingsOp(me.id, { theme: next })]).catch((err) => console.error(err));
+    } else {
+      localStorage.setItem(STORAGE_KEY, next);
+    }
+  };
 
   return { theme, toggleTheme };
 }

@@ -13,24 +13,9 @@
 - 一方 `CLAUDE.md` 及び要件定義 3.13 には「キーマップは `user_settings.keymap_json` として `/sync` で全デバイスに同期する」と明記されている
 
 **判断**：`user_settings` も pull/push の対象に含める（`packages/shared/src/schema/sync.ts` の `syncableTableSchema` に追加済み）。
-`user_settings` は `deleted_at` を持たない（1ユーザー1行、論理削除の概念がない）ため、削除opは発生しない前提で実装する。
-
-Phase 2（実際に pull/push を実装する段階）で矛盾が出たら本項目を更新する。
-
-### 3. Phase 1時点でのテーマ設定の保存先
-
-`user_settings` テーブル（`theme` / `keymap_json`）はまだ `SYNC_TABLES`（`apps/api/src/sync/tables.ts`）に追加していない。
-**判断**：Phase 1のダーク/ライト切替は `localStorage` にのみ保存する暫定実装とする（`apps/web/src/state/useTheme.ts`）。
-キーマップと合わせて `user_settings` を同期対象に組み込むタイミングで、ここも `/sync` 経由に置き換える。
-
-### 4. URLルーティングを実装していない
-
-`docs/phases.md` Phase 1に「React 側の骨組み：2 ペインレイアウト、ルーティング、ダーク / ライト切替」とあるが、
-要件定義・API仕様にURLroutingの詳細仕様（各ビューのURL形式など）が無い。
-**判断**：Phase 1では `apps/web/src/App.tsx` の `useState<ViewSelection>` でビュー切り替えのみ実装し、
-URL（`history`/`react-router` 等）とは連動させていない。そのため現状はブラウザの戻る/進む・リンク共有で
-特定のリスト/タスクへ直接遷移できない。将来必要になった時点で `react-router-dom` 等の追加を検討する
-（現時点で追加すると要件のないルーティング設計を先取りすることになるため見送った）。
+`user_settings` は `id` を持たず PK が `user_id` 自体、かつ `deleted_at` を持たない（1ユーザー1行、論理削除の概念がない）ため、
+他テーブルと同じ汎用ロジックには乗らず、`apps/api/src/sync/apply.ts` の `applyUserSettingsOp` で専用に扱う。
+`op.id` にはクライアントが自分の `user_id` を指定する規約とした。Phase 1でキーマップ同期の実装と合わせて対応済み。
 
 ### 2. 同時刻更新のタイブレークを device_id 辞書順で実装できない
 
@@ -40,3 +25,26 @@ URL（`history`/`react-router` 等）とは連動させていない。そのた�
 **判断**：`apps/api/src/sync/apply.ts` では `op.updated_at >= 既存行.updated_at` なら常にopのfieldsを適用する、という簡略ルールにした（同時刻なら「後から処理された方が勝つ」）。
 1リクエスト内は配列順、複数リクエストなら到着順で処理されるため、同じ入力列なら常に同じ結果になり「決定的に収束する」というテスト要件は満たす。ただし device_id 辞書順という仕様の字面とは異なる。
 将来 device_id 基準が必須と判断したら、行に `last_write_device_id` 相当のカラムを追加するスキーマ変更が必要になる。
+
+### 3. テーマ設定（`theme`）の同期 — 解決済み
+
+`apps/web/src/state/useTheme.ts` を `user_settings.theme` 経由に統一した。未ログイン時や初回pull完了前は
+`localStorage` → OS設定（`prefers-color-scheme`）の順にフォールバックする。
+
+### 5. キーマップのカスタマイズ対象から「G→T」と優先度の1〜4キーを除外
+
+要件定義 3.13 は「割り当ては設定画面で変更でき」「競合する割り当ては設定画面で警告する」とだけ規定しており、
+全キーが1action-1keyの単純な対応になる前提までは明記していない。
+**判断**：`apps/web/src/lib/keymap.ts` の `KEYMAP_ACTIONS` は1操作=1キー文字列のシンプルなマップとして実装した。
+「今日」へ（`G`→`T`の2ストローク）と優先度変更（`1`〜`4`の4キー1操作）はこの形に素直に乗らないため、
+カスタマイズ対象外・固定ショートカットのままとした（`apps/web/src/features/keyboard/useKeyboardShortcuts.ts`）。
+将来ここもカスタマイズ可能にするなら、キーマップの値を配列や複合ステップに対応する形へスキーマ変更が必要になる。
+
+### 4. URLルーティングを実装していない
+
+`docs/phases.md` Phase 1に「React 側の骨組み：2 ペインレイアウト、ルーティング、ダーク / ライト切替」とあるが、
+要件定義・API仕様にURLroutingの詳細仕様（各ビューのURL形式など）が無い。
+**判断**：Phase 1では `apps/web/src/App.tsx` の `useState<ViewSelection>` でビュー切り替えのみ実装し、
+URL（`history`/`react-router` 等）とは連動させていない。そのため現状はブラウザの戻る/進む・リンク共有で
+特定のリスト/タスクへ直接遷移できない。将来必要になった時点で `react-router-dom` 等の追加を検討する
+（現時点で追加すると要件のないルーティング設計を先取りすることになるため見送った）。

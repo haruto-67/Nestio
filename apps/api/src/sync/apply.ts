@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { SyncOp, SyncPushResponse, SyncRejectReason } from '@nestio/shared';
+import { userSettingsWritableFields, type SyncOp, type SyncPushResponse, type SyncRejectReason } from '@nestio/shared';
 import { SYNC_TABLES, isImplementedSyncTable, type ImplementedSyncTable } from './tables.js';
 import { bumpSeq, getLastSeq } from './seq.js';
 import { wouldCreateCycle, hasIncompleteDescendant, repairAncestorsCompletion } from './task-rules.js';
@@ -53,6 +53,10 @@ export function applySyncOps(
 }
 
 function applyOneOp(db: Database.Database, userId: string, op: SyncOp): ApplyResult {
+  if (op.table === 'user_settings') {
+    return applyUserSettingsOp(db, userId, op);
+  }
+
   if (!isImplementedSyncTable(op.table)) {
     return { ok: false, reason: 'validation_failed' };
   }
@@ -192,6 +196,53 @@ function applyTaskUpsert(db: Database.Database, userId: string, op: SyncOp, fiel
   const finalCompletedAt = 'completed_at' in fields ? fields.completed_at : (existing?.completed_at ?? null);
   if (finalCompletedAt === null) {
     repairAncestorsCompletion(db, userId, op.id);
+  }
+
+  return { ok: true };
+}
+
+/**
+ * user_settings は id を持たず PK が user_id 自体で、deleted_at も無い（1ユーザー1行、論理削除の概念がない）
+ * ため、他テーブルと違う専用ロジックで扱う。op.id にはクライアントが自分の user_id を指定する。
+ */
+function applyUserSettingsOp(db: Database.Database, userId: string, op: SyncOp): ApplyResult {
+  if (op.id !== userId) {
+    return { ok: false, reason: 'forbidden' };
+  }
+  if (op.op === 'delete') {
+    return { ok: false, reason: 'validation_failed' };
+  }
+
+  const parsed = userSettingsWritableFields.safeParse(op.fields);
+  if (!parsed.success) {
+    return { ok: false, reason: 'validation_failed' };
+  }
+  const fields = parsed.data as Row;
+
+  const existing = db.prepare('SELECT * FROM user_settings WHERE user_id = ?').get(userId) as Row | undefined;
+
+  if (!existing) {
+    const seq = bumpSeq(db, userId);
+    db.prepare(
+      'INSERT INTO user_settings (user_id, theme, keymap_json, updated_at, seq) VALUES (?, ?, ?, ?, ?)',
+    ).run(userId, (fields.theme as string | undefined) ?? 'light', (fields.keymap_json as string | undefined) ?? '{}', op.updated_at, seq);
+    return { ok: true };
+  }
+
+  const shouldApplyFields = op.updated_at >= (existing.updated_at as number);
+  const seq = bumpSeq(db, userId);
+
+  if (shouldApplyFields) {
+    const presentCols = ['theme', 'keymap_json'].filter((c) => fields[c] !== undefined);
+    if (presentCols.length > 0) {
+      const setClauses = [...presentCols.map((c) => `${c} = ?`), 'updated_at = ?', 'seq = ?'];
+      const values: unknown[] = [...presentCols.map((c) => fields[c]), op.updated_at, seq];
+      db.prepare(`UPDATE user_settings SET ${setClauses.join(', ')} WHERE user_id = ?`).run(...values, userId);
+    } else {
+      db.prepare('UPDATE user_settings SET updated_at = ?, seq = ? WHERE user_id = ?').run(op.updated_at, seq, userId);
+    }
+  } else {
+    db.prepare('UPDATE user_settings SET seq = ? WHERE user_id = ?').run(seq, userId);
   }
 
   return { ok: true };

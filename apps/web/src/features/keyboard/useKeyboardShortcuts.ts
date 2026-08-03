@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { normalizeKeyCombo, type KeymapAction } from '../../lib/keymap.js';
 
 export interface ShortcutHandlers {
   onQuickAdd: () => void;
@@ -22,13 +23,32 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 const PRIORITY_KEYS: Record<string, 0 | 1 | 2 | 3> = { '1': 0, '2': 1, '3': 2, '4': 3 };
 
+type NoArgHandlerKey = {
+  [K in keyof ShortcutHandlers]: ShortcutHandlers[K] extends () => void ? K : never;
+}[keyof ShortcutHandlers];
+
+const ACTION_HANDLER_KEYS: Record<KeymapAction, NoArgHandlerKey> = {
+  quick_add: 'onQuickAdd',
+  toggle_complete: 'onToggleComplete',
+  move_up: 'onMoveUp',
+  move_down: 'onMoveDown',
+  indent: 'onIndent',
+  outdent: 'onOutdent',
+  delete: 'onDelete',
+  toggle_theme: 'onToggleTheme',
+  show_help: 'onShowHelp',
+};
+
 /**
- * デフォルトキーマップ（docs/task-app-requirements.md 3.13）。
- * 入力欄フォーカス中は無効化する。キーマップのユーザーカスタマイズUIはPhase 1の後続作業。
+ * キーマップに従ってショートカットを発火する。入力欄フォーカス中は無効化。
+ * 「G→T」（今日へ）と優先度の1〜4キーはカスタマイズ対象外の固定ショートカット
+ * （docs/open-questions.md 5章）。
  */
-export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
+export function useKeyboardShortcuts(keymap: Record<KeymapAction, string>, handlers: ShortcutHandlers): void {
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
+  const keymapRef = useRef(keymap);
+  keymapRef.current = keymap;
 
   useEffect(() => {
     let pendingG = false;
@@ -37,6 +57,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
     function onKeyDown(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return;
       const h = handlersRef.current;
+      const km = keymapRef.current;
 
       if (pendingG) {
         pendingG = false;
@@ -47,56 +68,27 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): void {
         return;
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
-        e.preventDefault();
-        h.onToggleTheme();
-        return;
-      }
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-      switch (e.key) {
-        case 'n':
-        case 'N':
-          e.preventDefault();
-          h.onQuickAdd();
-          break;
-        case ' ':
-        case 'x':
-        case 'X':
-          e.preventDefault();
-          h.onToggleComplete();
-          break;
-        case 'Delete':
-          e.preventDefault();
-          h.onDelete();
-          break;
-        case 'j':
-        case 'J':
-          h.onMoveDown();
-          break;
-        case 'k':
-        case 'K':
-          h.onMoveUp();
-          break;
-        case 'Tab':
-          e.preventDefault();
-          if (e.shiftKey) h.onOutdent();
-          else h.onIndent();
-          break;
-        case 'g':
-        case 'G':
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        if (e.key === 'g' || e.key === 'G') {
           pendingG = true;
           gTimer = setTimeout(() => {
             pendingG = false;
           }, 1000);
-          break;
-        case '?':
-          h.onShowHelp();
-          break;
-        default:
-          if (e.key in PRIORITY_KEYS) {
-            h.onSetPriority(PRIORITY_KEYS[e.key] as 0 | 1 | 2 | 3);
-          }
+          return;
+        }
+        if (e.key in PRIORITY_KEYS) {
+          h.onSetPriority(PRIORITY_KEYS[e.key] as 0 | 1 | 2 | 3);
+          return;
+        }
+      }
+
+      const combo = normalizeKeyCombo(e);
+      for (const [action, key] of Object.entries(km) as [KeymapAction, string][]) {
+        if (key === combo) {
+          e.preventDefault();
+          h[ACTION_HANDLER_KEYS[action]]();
+          return;
+        }
       }
     }
 
