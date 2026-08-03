@@ -90,6 +90,37 @@ ICS出力時はDTSTART行とRRULE行を分離するか、そのまま両方出�
 Blobが残っている間は `URL.createObjectURL` でローカルプレビューを表示、アップロード完了後（Blobが
 削除された後）にサーバーURLへ自動的に切り替わるようにした（`AttachmentThumbnail` コンポーネント）。
 
+### 11. MCPのOAuthクライアント動的登録時、`oauth_clients.user_id` をどう埋めるか
+
+`docs/schema.sql` の `oauth_clients` は `user_id NOT NULL REFERENCES users(id)` だが、OAuth 2.1の
+Dynamic Client Registration（RFC 7591、`POST /mcp/oauth/register`）は仕様上クライアントソフトウェア自身が
+エンドユーザーの操作と非同期に呼ぶもので、登録時点ではまだ「どのユーザーか」が分からない
+（ユーザーが認可するのはその後の `GET /mcp/oauth/authorize` の段階）。
+**判断**：Nestioは要件定義2章の通り「1ユーザー・複数デバイス」専用アプリなので、
+`POST /mcp/oauth/register` 時点ではDB内の（唯一のはずの）ユーザーへ自動的に紐付ける
+（`apps/api/src/mcp/clients.ts`）。複数ユーザー運用は想定しないためこれで問題ないが、
+将来複数ユーザー対応する場合はスキーマ変更（`user_id` を nullable にするか、登録と認可を分離する）が必要になる。
+
+### 12. 認可コードは `schema.sql` にテーブルが無いためメモリ内で管理する
+
+`oauth_tokens` は発行済み「アクセストークン」のみを保持し、認可コード（数分で失効する一時的な値）を
+保存するテーブルは `schema.sql` に存在しない。ここに新規テーブルを追加するのは
+CLAUDE.md 絶対原則「`docs/schema.sql` は勝手に変更しない」に抵触するため避けた。
+**判断**：認可コードは `apps/api/src/mcp/authorization-codes.ts` のメモリ内Mapで管理し、
+TTL（10分）を超えたものは自動的に無効とする。サーバー再起動で認可コードは失われるが、
+数分で失効する性質上、実用上の問題にはならない（再度 `/authorize` からやり直せばよい）。
+
+### 13. MCP認可画面は未ログイン時にログインへ自動誘導しない
+
+一般的なOAuth認可サーバーは、未ログインユーザーが `/authorize` に来た場合ログイン画面を挟んで
+元のリクエストに戻す（return_to）フローを持つが、これを実装するには既存のGoogle OAuthフロー
+（`apps/api/src/routes/auth.ts`、`oauth-flow-cookies.ts`）に return_to の受け渡しを追加する必要があり、
+実装コストの割に得られる価値が小さいと判断した。
+**判断**：`GET/POST /mcp/oauth/authorize` は `requireAuth` 必須とし、未ログインなら401を返すだけに留めた
+（`apps/api/src/routes/mcp.ts`）。ユーザーは通常ブラウザで先にNestioにログイン済みの状態でMCP接続を
+試みる想定のため、実用上の支障は小さいと判断。将来「未ログインのままMCP接続を開始する」体験が
+必要になったらreturn_toを実装する。
+
 ### 4. URLルーティングを実装していない
 
 `docs/phases.md` Phase 1に「React 側の骨組み：2 ペインレイアウト、ルーティング、ダーク / ライト切替」とあるが、
