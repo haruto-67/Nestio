@@ -327,3 +327,130 @@ describe('applySyncOps', () => {
     expect(res.rejected).toEqual([{ op_id: op.op_id, reason: 'forbidden' }]);
   });
 });
+
+function insertTrigger(
+  db: Database.Database,
+  userId: string,
+  event: string,
+  conditionJson = '{}',
+  actionKey = 'push_notify',
+): string {
+  const id = uuidv7();
+  db.prepare(
+    `INSERT INTO triggers (id, user_id, name, event, condition_json, action_key, params_json, enabled, created_at, updated_at, deleted_at, seq)
+     VALUES (?, ?, 'test trigger', ?, ?, ?, '{}', 1, ?, ?, NULL, 1)`,
+  ).run(id, userId, event, conditionJson, actionKey, Date.now(), Date.now());
+  return id;
+}
+
+function queuedRunsFor(db: Database.Database, triggerId: string): { subject_id: string | null }[] {
+  return db
+    .prepare("SELECT subject_id FROM trigger_runs WHERE trigger_id = ? AND status = 'queued'")
+    .all(triggerId) as { subject_id: string | null }[];
+}
+
+describe('Hatch event detection (apply.ts統合)', () => {
+  let db: Database.Database;
+  let userId: string;
+  let listId: string;
+
+  function setup() {
+    db = createTestDb();
+    userId = uuidv7();
+    insertTestUser(db, userId);
+    listId = uuidv7();
+    applySyncOps(db, userId, [makeListOp(userId, listId, Date.now())]);
+  }
+
+  afterEach(() => db?.close());
+
+  it('タスク作成でtask_createdトリガーが積まれる', () => {
+    setup();
+    const triggerId = insertTrigger(db, userId, 'task_created');
+
+    const taskId = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { title: '新規タスク' })]);
+
+    const runs = queuedRunsFor(db, triggerId);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.subject_id).toBe(taskId);
+  });
+
+  it('タスク完了でtask_completedトリガーが積まれる（作成時には積まれない）', () => {
+    setup();
+    const triggerId = insertTrigger(db, userId, 'task_completed');
+
+    const taskId = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { title: 'タスク' })]);
+    expect(queuedRunsFor(db, triggerId)).toHaveLength(0);
+
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: taskId, op: 'upsert', updated_at: Date.now(), fields: { completed_at: Date.now() } },
+    ]);
+    expect(queuedRunsFor(db, triggerId)).toHaveLength(1);
+  });
+
+  it('condition_jsonのlist_idが一致しないと発火しない', () => {
+    setup();
+    const otherListId = uuidv7();
+    const triggerId = insertTrigger(db, userId, 'task_created', JSON.stringify({ list_id: otherListId }));
+
+    const taskId = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { title: 'タスク' })]);
+
+    expect(queuedRunsFor(db, triggerId)).toHaveLength(0);
+  });
+
+  it('condition_jsonのlist_idが一致すれば発火する', () => {
+    setup();
+    const triggerId = insertTrigger(db, userId, 'task_created', JSON.stringify({ list_id: listId }));
+
+    const taskId = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { title: 'タスク' })]);
+
+    expect(queuedRunsFor(db, triggerId)).toHaveLength(1);
+  });
+
+  it('リスト内の全タスクが完了するとlist_all_completedトリガーが積まれる', () => {
+    setup();
+    const triggerId = insertTrigger(db, userId, 'list_all_completed');
+
+    const task1 = uuidv7();
+    const task2 = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, task1, Date.now(), { title: 'タスク1' })]);
+    applySyncOps(db, userId, [makeTaskOp(listId, task2, Date.now(), { title: 'タスク2' })]);
+
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: task1, op: 'upsert', updated_at: Date.now(), fields: { completed_at: Date.now() } },
+    ]);
+    expect(queuedRunsFor(db, triggerId)).toHaveLength(0); // まだtask2が残っている
+
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: task2, op: 'upsert', updated_at: Date.now(), fields: { completed_at: Date.now() } },
+    ]);
+    expect(queuedRunsFor(db, triggerId)).toHaveLength(1);
+  });
+
+  it('ループ防止：triggeredByHatchな書き込みからは再発火しない', () => {
+    setup();
+    const triggerId = insertTrigger(db, userId, 'task_created');
+
+    const taskId = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { title: 'Hatch起因のタスク' })], {
+      triggeredByHatch: true,
+    });
+
+    expect(queuedRunsFor(db, triggerId)).toHaveLength(0);
+  });
+
+  it('無効化(enabled=0)されたトリガーは発火しない', () => {
+    setup();
+    const triggerId = insertTrigger(db, userId, 'task_created');
+    db.prepare('UPDATE triggers SET enabled = 0 WHERE id = ?').run(triggerId);
+
+    const taskId = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { title: 'タスク' })]);
+
+    expect(queuedRunsFor(db, triggerId)).toHaveLength(0);
+  });
+});

@@ -121,6 +121,19 @@ TTL（10分）を超えたものは自動的に無効とする。サーバー再
 試みる想定のため、実用上の支障は小さいと判断。将来「未ログインのままMCP接続を開始する」体験が
 必要になったらreturn_toを実装する。
 
+### 14. Hatchの `recurrence_spawned` イベントは未実装
+
+「繰り返しタスクの新規発生」を検知するには、rrule付きタスクの `due_at`/`due_date` 更新が
+「次のoccurrenceへ進んだことによるもの」か「ユーザーの手動編集」かを区別する必要があるが、
+Phase 3の実装（`apps/web/src/lib/recurrence.ts`）では繰り返し計算はクライアント側で行われ、
+サーバーには通常の `tasks` upsert opとして届くため、両者を確実に区別する情報が無い。
+**判断**：実装コストと確実性のバランスから `recurrence_spawned` イベントの検知は見送った。
+`task_completed`・`list_all_completed`・`due_soon`・`overdue`・`task_created`・`schedule` の
+6イベントを実装し、`docs/schema.sql` の `event` CHECK制約に `recurrence_spawned` 自体は残っている
+（トリガー定義としては保存できるが、発火する仕組みが無い）。将来必要になれば、
+サーバー側でrrule計算を肩代わりするか、クライアントが「これはrecurrence由来」と明示するフィールドを
+追加する形で対応する。
+
 ### 4. URLルーティングを実装していない
 
 `docs/phases.md` Phase 1に「React 側の骨組み：2 ペインレイアウト、ルーティング、ダーク / ライト切替」とあるが、

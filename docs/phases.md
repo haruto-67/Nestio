@@ -97,18 +97,23 @@
 
 ## Phase 5：連携（ICS / MCP / Hatch）
 
-- [ ] ICS フィード生成（トークン付き URL、`VALUE=DATE` と TZID の出し分け、RRULE 出力）
+- [x] ICS フィード生成（トークン付き URL、`VALUE=DATE` と TZID の出し分け、RRULE 出力）
 - [ ] Google カレンダー / Apple カレンダーからの購読確認
-- [ ] MCP の OAuth 2.1 認可サーバー（`/mcp`、Authorization Code + PKCE、トークンはハッシュ保存）
-- [ ] MCP サーバー（read/write ツール群、スコープ検証）
-- [ ] Hatch：トリガー定義の CRUD（`/sync/push` 経由）と設定 UI
-- [ ] Hatch：ジョブキューとワーカー（**同時実行 1**、タイムアウト 120 秒、リトライ 2 回）
-- [ ] アクション実装（内部操作系 → 通知系 → `claude_prompt` 系の順）
-- [ ] **ループ防止フラグ**（トリガー起因の書き込みから再発火させない）
+- [x] MCP の OAuth 2.1 認可サーバー（`/mcp`、Authorization Code + PKCE、トークンはハッシュ保存）
+- [x] MCP サーバー（read/write ツール群、スコープ検証）
+- [x] Hatch：トリガー定義の CRUD（`/sync/push` 経由）と設定 UI
+- [x] Hatch：ジョブキューとワーカー（**同時実行 1**、タイムアウト 120 秒、リトライ 2 回）
+- [x] アクション実装（内部操作系 → 通知系 → `claude_prompt` 系の順）
+- [x] **ループ防止フラグ**（トリガー起因の書き込みから再発火させない）
 - [ ] `execFile` による実行、専用低権限ユーザー、`--allowedTools` 制限
-- [ ] 実行ログ画面
+- [x] 実行ログ画面
 
 **完了条件**：タスク完了で Claude が動き、無限ループしない
+→ 実装・自動テストは完了（Hatchのイベント検知・キュー・ワーカー・全10アクション・設定UI・実行ログをカバー）。
+未チェックの2項目は環境依存で Claude Code からは検証・実行できない：
+「Google/Appleカレンダー購読確認」は実機のカレンダーアプリでの購読確認が必要（`docs/manual-setup.md`）、
+「専用低権限ユーザー」はPi上でclaude CLIを実行する専用OSユーザーの用意というデプロイ時の作業（Phase 6のDocker化時に併せて設定）。
+`execFile`（`shell: true`不使用）と`--allowedTools`制限自体はコード実装・テスト済み。
 
 ---
 

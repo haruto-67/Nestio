@@ -16,7 +16,6 @@ export type TriggerEvent = z.infer<typeof triggerEventSchema>;
 export const hatchActionKeySchema = z.enum([
   'claude_prompt',
   'claude_subtasks',
-  'claude_summarize',
   'create_task',
   'create_note',
   'add_tag',
@@ -76,7 +75,6 @@ export type TriggerRunRow = z.infer<typeof triggerRunRowSchema>;
 export const hatchActionParamsSchemas = {
   claude_prompt: z.object({ template: z.string().min(1), output: z.enum(['note', 'push']) }),
   claude_subtasks: z.object({ max_count: z.number().int().positive().max(20) }),
-  claude_summarize: z.object({}),
   create_task: z.object({
     list_id: idSchema,
     title_template: z.string().min(1),

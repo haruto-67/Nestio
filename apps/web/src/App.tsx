@@ -14,6 +14,7 @@ import { KeymapSettings } from './features/keyboard/KeymapSettings.js';
 import { SearchModal } from './features/search/SearchModal.js';
 import { NotesScreen } from './features/notes/NotesScreen.js';
 import { PomodoroTimer } from './features/pomodoro/PomodoroTimer.js';
+import { HatchSettings } from './features/hatch/HatchSettings.js';
 import { upsertTask, deleteTask, completeTask } from './state/actions.js';
 import { nextSortOrder } from './lib/sort-order.js';
 
@@ -52,6 +53,7 @@ function MainLayout() {
   const [showKeymapSettings, setShowKeymapSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showPomodoro, setShowPomodoro] = useState(false);
+  const [showHatchSettings, setShowHatchSettings] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const { keymap } = useKeymap();
   const visibleTaskIdsRef = useRef<string[]>([]);
@@ -133,6 +135,9 @@ function MainLayout() {
           <button onClick={() => setShowSearch(true)} title="検索" className="text-sm">
             🔍
           </button>
+          <button onClick={() => setShowHatchSettings(true)} title="Hatch設定" className="text-sm">
+            🐣
+          </button>
           <button onClick={toggleTheme} className="text-sm">
             {theme === 'dark' ? '🌙' : '☀️'}
           </button>
@@ -149,6 +154,9 @@ function MainLayout() {
               </button>
               <button onClick={() => setShowSearch(true)} title="検索" className="text-sm">
                 🔍
+              </button>
+              <button onClick={() => setShowHatchSettings(true)} title="Hatch設定" className="text-sm">
+                🐣
               </button>
               <button onClick={toggleTheme} title="テーマ切替" className="text-sm">
                 {theme === 'dark' ? '🌙' : '☀️'}
@@ -223,6 +231,7 @@ function MainLayout() {
         />
       )}
       {showKeymapSettings && <KeymapSettings onClose={() => setShowKeymapSettings(false)} />}
+      {showHatchSettings && <HatchSettings onClose={() => setShowHatchSettings(false)} />}
       {showPomodoro && <PomodoroTimer onClose={() => setShowPomodoro(false)} />}
       {showSearch && (
         <SearchModal

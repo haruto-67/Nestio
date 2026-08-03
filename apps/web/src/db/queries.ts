@@ -8,6 +8,7 @@ import type {
   UserSettingsRow,
   NoteRow,
   AttachmentRow,
+  TriggerRow,
 } from '@nestio/shared';
 import { db } from './schema.js';
 
@@ -37,6 +38,10 @@ export function useTaskTags(): TaskTagRow[] {
 
 export function useUserSettings(): UserSettingsRow | undefined {
   return useLiveQuery(() => db.user_settings.toCollection().first(), [], undefined);
+}
+
+export function useTriggers(): TriggerRow[] {
+  return useLiveQuery(() => db.triggers.filter((t) => t.deleted_at === null).toArray(), [], []) ?? [];
 }
 
 export function useNotes(): NoteRow[] {

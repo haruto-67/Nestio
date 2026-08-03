@@ -4,6 +4,7 @@ import { SYNC_TABLES, isImplementedSyncTable, type ImplementedSyncTable } from '
 import { bumpSeq, getLastSeq } from './seq.js';
 import { wouldCreateCycle, hasIncompleteDescendant, repairAncestorsCompletion } from './task-rules.js';
 import { rescheduleDueReminder } from '../push/scheduler.js';
+import { detectTaskEvent, detectListAllCompleted } from '../hatch/event-detector.js';
 
 type ApplyResult = { ok: true } | { ok: false; reason: SyncRejectReason };
 type Row = Record<string, unknown>;
@@ -21,7 +22,10 @@ export function applySyncOps(
   db: Database.Database,
   userId: string,
   ops: SyncOp[],
+  options: { triggeredByHatch?: boolean } = {},
 ): SyncPushResponse {
+  const triggeredByHatch = options.triggeredByHatch ?? false;
+
   const run = db.transaction(() => {
     const applied: string[] = [];
     const rejected: { op_id: string; reason: SyncRejectReason }[] = [];
@@ -37,7 +41,7 @@ export function applySyncOps(
         continue;
       }
 
-      const result = applyOneOp(db, userId, op);
+      const result = applyOneOp(db, userId, op, triggeredByHatch);
       if (result.ok) {
         applied.push(op.op_id);
         const resultSeq = getLastSeq(db, userId);
@@ -53,7 +57,7 @@ export function applySyncOps(
   return run();
 }
 
-function applyOneOp(db: Database.Database, userId: string, op: SyncOp): ApplyResult {
+function applyOneOp(db: Database.Database, userId: string, op: SyncOp, triggeredByHatch: boolean): ApplyResult {
   if (op.table === 'user_settings') {
     return applyUserSettingsOp(db, userId, op);
   }
@@ -79,7 +83,7 @@ function applyOneOp(db: Database.Database, userId: string, op: SyncOp): ApplyRes
   const fields = parsed.data as Row;
 
   if (op.table === 'tasks') {
-    return applyTaskUpsert(db, userId, op, fields);
+    return applyTaskUpsert(db, userId, op, fields, triggeredByHatch);
   }
 
   return applyUpsert(db, op.table, userId, op, fields);
@@ -172,11 +176,18 @@ function applyDelete(
   return { ok: true };
 }
 
-function applyTaskUpsert(db: Database.Database, userId: string, op: SyncOp, fields: Row): ApplyResult {
+function applyTaskUpsert(
+  db: Database.Database,
+  userId: string,
+  op: SyncOp,
+  fields: Row,
+  triggeredByHatch: boolean,
+): ApplyResult {
   const existing = fetchExisting(db, 'tasks', op.id);
   if (existing && existing.user_id !== userId) {
     return { ok: false, reason: 'forbidden' };
   }
+  const isNewTask = !existing;
 
   const finalDueAt = 'due_at' in fields ? fields.due_at : (existing?.due_at ?? null);
   const finalDueDate = 'due_date' in fields ? fields.due_date : (existing?.due_date ?? null);
@@ -215,6 +226,19 @@ function applyTaskUpsert(db: Database.Database, userId: string, op: SyncOp, fiel
       finalDueDate as string | null,
       finalCompletedAt as number | null,
     );
+  }
+
+  const finalListId = ('list_id' in fields ? fields.list_id : existing?.list_id) as string;
+  const finalPriority = ('priority' in fields ? fields.priority : (existing?.priority ?? 0)) as number;
+  const taskContext = { id: op.id, list_id: finalListId, priority: finalPriority };
+
+  if (isNewTask) {
+    detectTaskEvent(db, userId, 'task_created', taskContext, triggeredByHatch);
+  }
+  const wasCompleting = (existing?.completed_at ?? null) === null && finalCompletedAt !== null;
+  if (wasCompleting) {
+    detectTaskEvent(db, userId, 'task_completed', taskContext, triggeredByHatch);
+    detectListAllCompleted(db, userId, finalListId, triggeredByHatch);
   }
 
   return { ok: true };
