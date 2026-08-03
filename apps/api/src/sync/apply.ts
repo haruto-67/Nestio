@@ -3,6 +3,7 @@ import { userSettingsWritableFields, type SyncOp, type SyncPushResponse, type Sy
 import { SYNC_TABLES, isImplementedSyncTable, type ImplementedSyncTable } from './tables.js';
 import { bumpSeq, getLastSeq } from './seq.js';
 import { wouldCreateCycle, hasIncompleteDescendant, repairAncestorsCompletion } from './task-rules.js';
+import { rescheduleDueReminder } from '../push/scheduler.js';
 
 type ApplyResult = { ok: true } | { ok: false; reason: SyncRejectReason };
 type Row = Record<string, unknown>;
@@ -62,7 +63,12 @@ function applyOneOp(db: Database.Database, userId: string, op: SyncOp): ApplyRes
   }
 
   if (op.op === 'delete') {
-    return applyDelete(db, op.table, userId, op);
+    const result = applyDelete(db, op.table, userId, op);
+    if (result.ok && op.table === 'tasks') {
+      // 完了扱いのキャンセル呼び出し：新規予約はせず既存の未送信リマインダーだけ取り消す
+      rescheduleDueReminder(db, userId, op.id, '', null, null, Date.now());
+    }
+    return result;
   }
 
   const def = SYNC_TABLES[op.table];
@@ -196,6 +202,19 @@ function applyTaskUpsert(db: Database.Database, userId: string, op: SyncOp, fiel
   const finalCompletedAt = 'completed_at' in fields ? fields.completed_at : (existing?.completed_at ?? null);
   if (finalCompletedAt === null) {
     repairAncestorsCompletion(db, userId, op.id);
+  }
+
+  if ('due_at' in fields || 'due_date' in fields || 'completed_at' in fields) {
+    const finalTitle = ('title' in fields ? fields.title : existing?.title) as string;
+    rescheduleDueReminder(
+      db,
+      userId,
+      op.id,
+      finalTitle,
+      finalDueAt as number | null,
+      finalDueDate as string | null,
+      finalCompletedAt as number | null,
+    );
   }
 
   return { ok: true };

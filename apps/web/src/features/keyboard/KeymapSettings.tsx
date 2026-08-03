@@ -1,14 +1,21 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useState, useEffect, type KeyboardEvent } from 'react';
 import { KEYMAP_ACTIONS, KEYMAP_ACTION_LABELS, findKeymapConflicts, normalizeKeyCombo, type KeymapAction } from '../../lib/keymap.js';
 import { useKeymap } from '../../state/useKeymap.js';
 import { useApp } from '../../state/AppProvider.js';
 import { sendClientLogs } from '../../api/client-logs.js';
+import { enablePushNotifications, getPushPermissionState } from '../../lib/push-subscription.js';
 
 export function KeymapSettings({ onClose }: { onClose: () => void }) {
   const { keymap, setKey } = useKeymap();
   const { deviceId } = useApp();
   const [capturing, setCapturing] = useState<KeymapAction | null>(null);
   const [logStatus, setLogStatus] = useState<string | null>(null);
+  const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
+  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
+
+  useEffect(() => {
+    getPushPermissionState().then(setPermission).catch(() => setPermission('unsupported'));
+  }, []);
 
   const conflicts = findKeymapConflicts(keymap);
   const conflictActions = new Set(conflicts.flat());
@@ -30,6 +37,17 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
     } catch (err) {
       setLogStatus('送信に失敗しました');
       console.error(err);
+    }
+  };
+
+  const handleEnableNotifications = async () => {
+    setNotificationStatus('有効化中…');
+    try {
+      await enablePushNotifications();
+      setNotificationStatus('通知を有効にしました');
+      setPermission(await getPushPermissionState());
+    } catch (err) {
+      setNotificationStatus(err instanceof Error ? err.message : '有効化に失敗しました');
     }
   };
 
@@ -78,6 +96,26 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
           ))}
         </ul>
         <p className="mt-3 text-xs text-neutral-400">「今日」へ（G→T）・優先度変更（1〜4）は固定です</p>
+
+        <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">
+              通知（期限リマインダー・ポモドーロ終了）
+            </span>
+            {permission === 'granted' ? (
+              <span className="text-xs text-emerald-500">有効</span>
+            ) : (
+              <button
+                onClick={handleEnableNotifications}
+                disabled={permission === 'unsupported'}
+                className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                {permission === 'unsupported' ? '非対応' : '有効にする'}
+              </button>
+            )}
+          </div>
+          {notificationStatus && <p className="mt-1 text-xs text-neutral-400">{notificationStatus}</p>}
+        </div>
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <div className="flex items-center justify-between">

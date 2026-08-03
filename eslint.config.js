@@ -25,5 +25,15 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'warn',
     },
   },
+  {
+    // vite-plugin-pwa の importScripts で読み込まれるカスタムService Worker
+    files: ['apps/web/public/**/*.js'],
+    languageOptions: {
+      globals: {
+        self: 'readonly',
+        clients: 'readonly',
+      },
+    },
+  },
   eslintConfigPrettier,
 );

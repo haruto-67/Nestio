@@ -24,6 +24,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,ico}'],
         navigateFallbackDenylist: [/^\/api\//],
+        // 期限リマインダー・ポモドーロ終了のpush/notificationclickハンドラを追加する
+        importScripts: ['push-sw.js'],
         runtimeCaching: [
           {
             // SSEストリームはキャッシュ対象から除外する

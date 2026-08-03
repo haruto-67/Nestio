@@ -1,0 +1,125 @@
+import { useState, useEffect, useRef } from 'react';
+import { useTasks } from '../../db/queries.js';
+import { schedulePomodoroPush, cancelPomodoroPush } from '../../api/push.js';
+
+const PRESETS = [
+  { label: '25分', sec: 25 * 60 },
+  { label: '5分', sec: 5 * 60 },
+];
+
+export function PomodoroTimer({ onClose }: { onClose: () => void }) {
+  const tasks = useTasks();
+  const [durationSec, setDurationSec] = useState(PRESETS[0]?.sec ?? 1500);
+  const [remainingSec, setRemainingSec] = useState(PRESETS[0]?.sec ?? 1500);
+  const [running, setRunning] = useState(false);
+  const [taskId, setTaskId] = useState('');
+  const scheduleIdRef = useRef<string | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
+
+  const start = async () => {
+    setRunning(true);
+    setRemainingSec(durationSec);
+    try {
+      const { id } = await schedulePomodoroPush(durationSec, taskId || undefined);
+      scheduleIdRef.current = id;
+    } catch (err) {
+      console.error(err);
+    }
+
+    intervalRef.current = setInterval(() => {
+      setRemainingSec((s) => {
+        if (s <= 1) {
+          if (intervalRef.current) clearInterval(intervalRef.current);
+          setRunning(false);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  const stop = () => {
+    setRunning(false);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (scheduleIdRef.current) {
+      cancelPomodoroPush(scheduleIdRef.current).catch((err) => console.error(err));
+      scheduleIdRef.current = null;
+    }
+    setRemainingSec(durationSec);
+  };
+
+  const minutes = Math.floor(remainingSec / 60);
+  const seconds = remainingSec % 60;
+  const incompleteTasks = tasks.filter((t) => t.completed_at === null);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-72 rounded-lg bg-white p-5 text-center shadow-lg dark:bg-neutral-900"
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold">ポモドーロ</h2>
+          <button onClick={onClose} className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
+            閉じる
+          </button>
+        </div>
+
+        <div className="mb-4 font-mono text-5xl tabular-nums">
+          {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+        </div>
+
+        {!running && (
+          <>
+            <div className="mb-3 flex justify-center gap-2">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.sec}
+                  onClick={() => {
+                    setDurationSec(p.sec);
+                    setRemainingSec(p.sec);
+                  }}
+                  className={`rounded border px-3 py-1 text-xs ${
+                    durationSec === p.sec
+                      ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40'
+                      : 'border-neutral-200 dark:border-neutral-700'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <select
+              value={taskId}
+              onChange={(e) => setTaskId(e.target.value)}
+              className="mb-3 w-full rounded border border-neutral-200 bg-transparent p-1.5 text-xs dark:border-neutral-700"
+            >
+              <option value="">タスクに紐付けない</option>
+              {incompleteTasks.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+
+        <button
+          onClick={() => {
+            if (running) stop();
+            else start().catch((err) => console.error(err));
+          }}
+          className="w-full rounded bg-neutral-900 py-2 text-sm text-white dark:bg-white dark:text-neutral-900"
+        >
+          {running ? '中断' : '開始'}
+        </button>
+      </div>
+    </div>
+  );
+}

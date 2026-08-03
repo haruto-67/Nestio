@@ -13,6 +13,7 @@ import { ShortcutHelpModal } from './features/keyboard/ShortcutHelpModal.js';
 import { KeymapSettings } from './features/keyboard/KeymapSettings.js';
 import { SearchModal } from './features/search/SearchModal.js';
 import { NotesScreen } from './features/notes/NotesScreen.js';
+import { PomodoroTimer } from './features/pomodoro/PomodoroTimer.js';
 import { upsertTask, deleteTask, completeTask } from './state/actions.js';
 import { nextSortOrder } from './lib/sort-order.js';
 
@@ -50,6 +51,7 @@ function MainLayout() {
   const [showHelp, setShowHelp] = useState(false);
   const [showKeymapSettings, setShowKeymapSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showPomodoro, setShowPomodoro] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const { keymap } = useKeymap();
   const visibleTaskIdsRef = useRef<string[]>([]);
@@ -125,6 +127,9 @@ function MainLayout() {
         </button>
         <span className="text-sm font-semibold">Nestio</span>
         <div className="flex gap-3">
+          <button onClick={() => setShowPomodoro(true)} title="ポモドーロ" className="text-sm">
+            🍅
+          </button>
           <button onClick={() => setShowSearch(true)} title="検索" className="text-sm">
             🔍
           </button>
@@ -139,6 +144,9 @@ function MainLayout() {
           <div className="flex items-center justify-between border-b border-neutral-200 p-3 dark:border-neutral-800">
             <span className="text-sm font-semibold">Nestio</span>
             <div className="flex gap-2">
+              <button onClick={() => setShowPomodoro(true)} title="ポモドーロ" className="text-sm">
+                🍅
+              </button>
               <button onClick={() => setShowSearch(true)} title="検索" className="text-sm">
                 🔍
               </button>
@@ -215,6 +223,7 @@ function MainLayout() {
         />
       )}
       {showKeymapSettings && <KeymapSettings onClose={() => setShowKeymapSettings(false)} />}
+      {showPomodoro && <PomodoroTimer onClose={() => setShowPomodoro(false)} />}
       {showSearch && (
         <SearchModal
           onClose={() => setShowSearch(false)}
