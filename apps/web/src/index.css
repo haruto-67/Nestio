@@ -1,1 +1,4 @@
 @import 'tailwindcss';
+
+/* prefers-color-scheme ではなく .dark クラスでダーク/ライトを切り替える */
+@custom-variant dark (&:where(.dark, .dark *));

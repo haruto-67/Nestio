@@ -17,6 +17,21 @@
 
 Phase 2（実際に pull/push を実装する段階）で矛盾が出たら本項目を更新する。
 
+### 3. Phase 1時点でのテーマ設定の保存先
+
+`user_settings` テーブル（`theme` / `keymap_json`）はまだ `SYNC_TABLES`（`apps/api/src/sync/tables.ts`）に追加していない。
+**判断**：Phase 1のダーク/ライト切替は `localStorage` にのみ保存する暫定実装とする（`apps/web/src/state/useTheme.ts`）。
+キーマップと合わせて `user_settings` を同期対象に組み込むタイミングで、ここも `/sync` 経由に置き換える。
+
+### 4. URLルーティングを実装していない
+
+`docs/phases.md` Phase 1に「React 側の骨組み：2 ペインレイアウト、ルーティング、ダーク / ライト切替」とあるが、
+要件定義・API仕様にURLroutingの詳細仕様（各ビューのURL形式など）が無い。
+**判断**：Phase 1では `apps/web/src/App.tsx` の `useState<ViewSelection>` でビュー切り替えのみ実装し、
+URL（`history`/`react-router` 等）とは連動させていない。そのため現状はブラウザの戻る/進む・リンク共有で
+特定のリスト/タスクへ直接遷移できない。将来必要になった時点で `react-router-dom` 等の追加を検討する
+（現時点で追加すると要件のないルーティング設計を先取りすることになるため見送った）。
+
 ### 2. 同時刻更新のタイブレークを device_id 辞書順で実装できない
 
 - `docs/sync-protocol.md` 4章：「`op.updated_at == 既存.updated_at` の場合、device_id の辞書順が大きい方を採用（決定的なタイブレーク）」
