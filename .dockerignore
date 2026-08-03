@@ -1,0 +1,21 @@
+# 開発機（macOS arm64）でビルドされたネイティブモジュールをイメージへ持ち込まない。
+# better-sqlite3は必ずDockerfile内、Linuxコンテナ上でビルドし直す（CLAUDE.md参照）。
+**/node_modules
+**/dist
+**/.turbo
+
+.git
+.gitignore
+
+apps/api/data
+apps/web/dist
+apps/web/e2e-*.mjs
+apps/web/test-results
+apps/web/playwright-report
+
+**/.env
+**/.env.*
+!**/.env.example
+
+**/*.log
+.DS_Store

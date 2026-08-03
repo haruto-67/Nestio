@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter ./apps/* run dev",
+    "dev": "pnpm --filter @nestio/shared run build && pnpm --parallel --filter ./apps/* --filter @nestio/shared run dev",
     "build": "pnpm --recursive --filter ./apps/* --filter ./packages/* run build",
     "test": "pnpm --recursive run test",
     "test:e2e": "pnpm --filter @nestio/web run test:e2e",

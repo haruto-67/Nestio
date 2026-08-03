@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { serveStatic } from '@hono/node-server/serve-static';
 import type Database from 'better-sqlite3';
 import type { Env } from './env.js';
 import type { Logger } from './logger.js';
@@ -41,6 +42,22 @@ export function createApp(env: Env, db: Database.Database, logger: Logger) {
   app.route('/api/v1', mcpRoute);
   app.route('/api/v1', hatchRoute);
   app.route('/api/v1', logsRoute);
+
+  // 本番のみ：ビルド済みPWAをこのプロセスから直接配信する（nginxはlocation /をここへ丸ごとproxy_passする構成、
+  // docs/manual-setup.md C-3）。/api/v1/* に一致しないパスだけを対象にする。
+  // 「'*'にマッチ かつ /api/ 配下ではない」場合のみindex.htmlへフォールバックしないと、
+  // 未定義のAPIパス（例: 存在しないエンドポイントへのtypo）が404ではなくSPAのHTMLを200で返してしまう。
+  if (env.WEB_DIST_DIR) {
+    const webDistDir = env.WEB_DIST_DIR;
+    app.use('/*', async (c, next) => {
+      if (c.req.path.startsWith('/api/')) return next();
+      return serveStatic({ root: webDistDir })(c, next);
+    });
+    app.get('*', async (c, next) => {
+      if (c.req.path.startsWith('/api/')) return next();
+      return serveStatic({ root: webDistDir, path: 'index.html' })(c, next);
+    });
+  }
 
   return app;
 }

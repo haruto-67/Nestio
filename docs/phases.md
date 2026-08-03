@@ -119,15 +119,24 @@
 
 ## Phase 6：運用
 
-- [ ] Dockerfile（マルチステージ、**better-sqlite3 は Docker 内でビルド**）
-- [ ] docker-compose.yml（`127.0.0.1:3000:3000` バインド、named volume）
-- [ ] nginx 設定（リバースプロキシ、SSE 用の `proxy_buffering off`、`X-Accel-Redirect`、**TLS 1.2+ / HSTS / OCSP Stapling**）
+- [x] Dockerfile（マルチステージ、**better-sqlite3 は Docker 内でビルド**）
+- [x] docker-compose.yml（`127.0.0.1:3000:3000` バインド、named volume）
+- [x] nginx 設定（リバースプロキシ、SSE 用の `proxy_buffering off`、`X-Accel-Redirect`、**TLS 1.2+ / HSTS / OCSP Stapling**）
 - [x] GC ワーカー（tombstone 30 日、`applied_ops` 30 日、孤児添付の削除）
 - [x] 簡易ログビューア（自分専用・直近エラーの時系列表示・`request_id` 絞り込み）
-- [ ] バックアップ cron（`.backup` → rclone で外部へ）
-- [ ] `docs/使い方.md` の作成（`manual-setup.md` を元に、実際の値を埋めた完成版）
+- [x] バックアップ cron（`.backup` → rclone で外部へ）
+- [x] `docs/使い方.md` の作成（`manual-setup.md` を元に、実際の値を埋めた完成版）
 
 **完了条件**：Pi 上で常時稼働し、バックアップが自動で回る
+→ `docker/`（Dockerfile・docker-compose.yml・nginx.conf・backup.sh・.env.example）を作成し、
+ローカルにColima（Docker Engine on Linux/arm64 VM）を導入して実際に `docker compose build && up` まで
+実機で検証済み。この過程で本番ビルド特有の3つの不具合を発見・修正した：
+`@nestio/shared` がビルド出力を持たずソースの `.ts` を直接指していたため `node dist/index.js` が
+起動できない問題（`packages/shared` にビルドを追加）、`tsc` が `db/migrations/*.sql` をコピーしない
+問題（`apps/api` のbuildスクリプトでコピーを追加）、未定義の `/api/v1/*` パスがSPAの `index.html` に
+フォールバックして200を返してしまう問題（`app.ts` で `/api/` prefixを除外）。
+Pi実機（arm64本体）での常時稼働・実際のバックアップcron稼働・DNS/証明書はユーザー側の
+作業（`docs/manual-setup.md`）が前提のためClaude Codeからは検証できていない。
 
 ---
 

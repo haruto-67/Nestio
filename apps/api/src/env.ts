@@ -15,6 +15,10 @@ const envSchema = z.object({
   VAPID_PRIVATE_KEY: z.string().default(''),
   VAPID_SUBJECT: z.string().default('mailto:dev@example.com'),
 
+  /** 本番のDockerイメージでのみ設定する。ビルド済みPWA（apps/web/dist）を配信するディレクトリ。
+   *  未設定（開発時）は静的配信を行わない（開発はVite dev serverが別ポートで担当するため）。 */
+  WEB_DIST_DIR: z.string().default(''),
+
   DB_PATH: z.string().default('./data/nestio.db'),
   ATTACHMENT_DIR: z.string().default('./data/attachments'),
   ATTACHMENT_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
