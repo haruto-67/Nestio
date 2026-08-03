@@ -36,6 +36,7 @@ const envSchema = z.object({
   RATE_LIMIT_AUTH: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_MCP: z.coerce.number().int().positive().default(60),
   RATE_LIMIT_ATTACHMENT: z.coerce.number().int().positive().default(60),
+  RATE_LIMIT_CLIENT_LOGS: z.coerce.number().int().positive().default(30),
 });
 
 export type Env = z.infer<typeof envSchema>;
