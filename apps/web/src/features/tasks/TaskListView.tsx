@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { uuidv7, type ListSortMode, type TaskRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
 import { useLists, useTasks } from '../../db/queries.js';
@@ -69,6 +69,19 @@ export function TaskListView({
     completeTask(userId, task, completing);
   };
 
+  const addSubtask = (parentTaskId: string) => {
+    const parent = tasks.find((t) => t.id === parentTaskId);
+    if (!parent) return;
+    const id = uuidv7();
+    const siblings = tasks.filter((t) => t.parent_id === parentTaskId);
+    upsertTask(userId, id, {
+      list_id: parent.list_id,
+      parent_id: parentTaskId,
+      title: '新しいサブタスク',
+      sort_order: nextSortOrder(siblings),
+    });
+  };
+
   const targetListId = view.type === 'list' ? view.listId : firstListId(lists);
 
   const createTask = () => {
@@ -88,8 +101,16 @@ export function TaskListView({
     return <div className="flex-1 p-6 text-sm text-neutral-400">リストが見つかりません</div>;
   }
 
+  // タスク詳細パネルが開いている時、タスク行以外のどこをクリックしても閉じる。
+  // 行クリック（[data-task-row]）はそれ自体が選択操作なので除外する
+  // （TaskItem内のチェックボックス等は個別にstopPropagationしているのでここには来ない）
+  const closeDetailUnlessRowClick = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest('[data-task-row]')) return;
+    onSelectTask(null);
+  };
+
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden">
+    <div className="flex h-full flex-1 flex-col overflow-hidden" onClick={closeDetailUnlessRowClick}>
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800 md:px-6 md:py-4">
         <h1 className="min-w-0 flex-1 truncate text-lg font-semibold md:text-xl">{title}</h1>
         {view.type === 'list' && (
@@ -129,6 +150,7 @@ export function TaskListView({
             onToggleComplete={toggleComplete}
             onSelect={onSelectTask}
             selectedTaskId={selectedTaskId}
+            onAddSubtask={addSubtask}
           />
         ) : (
           <TaskTreeOrFlat
@@ -139,6 +161,7 @@ export function TaskListView({
             onToggleComplete={toggleComplete}
             onSelect={onSelectTask}
             selectedTaskId={selectedTaskId}
+            onAddSubtask={addSubtask}
           />
         )}
         {tasksInView.length === 0 && <p className="p-6 text-center text-sm text-neutral-400">タスクはありません</p>}
@@ -153,6 +176,7 @@ interface SharedListProps {
   onToggleComplete: (taskId: string, completing: boolean) => void;
   onSelect: (taskId: string) => void;
   selectedTaskId: string | null;
+  onAddSubtask: (taskId: string) => void;
 }
 
 function TaskTreeOrFlat({
@@ -163,6 +187,7 @@ function TaskTreeOrFlat({
   onToggleComplete,
   onSelect,
   selectedTaskId,
+  onAddSubtask,
 }: SharedListProps & { view: ViewSelection; tasks: TaskRow[] }) {
   if (view.type === 'list') {
     const tree = buildTaskTree(tasks, sortMode);
@@ -176,6 +201,7 @@ function TaskTreeOrFlat({
             canComplete={canComplete}
             onToggleComplete={onToggleComplete}
             onSelect={onSelect}
+            onAddSubtask={onAddSubtask}
             selectedTaskId={selectedTaskId}
           />
         ))}
@@ -194,6 +220,7 @@ function TaskTreeOrFlat({
           canComplete={canComplete}
           onToggleComplete={onToggleComplete}
           onSelect={onSelect}
+          onAddSubtask={onAddSubtask}
           selectedTaskId={selectedTaskId}
         />
       ))}
@@ -201,7 +228,7 @@ function TaskTreeOrFlat({
   );
 }
 
-function TodayViewSections({ tasks, sortMode, canComplete, onToggleComplete, onSelect, selectedTaskId }: SharedListProps & { tasks: TaskRow[] }) {
+function TodayViewSections({ tasks, sortMode, canComplete, onToggleComplete, onSelect, selectedTaskId, onAddSubtask }: SharedListProps & { tasks: TaskRow[] }) {
   const today = todayJstDateString();
   const overdue = sortTasks(
     tasks.filter((t) => {
@@ -228,6 +255,7 @@ function TodayViewSections({ tasks, sortMode, canComplete, onToggleComplete, onS
               canComplete={canComplete}
               onToggleComplete={onToggleComplete}
               onSelect={onSelect}
+              onAddSubtask={onAddSubtask}
               selectedTaskId={selectedTaskId}
             />
           ))}
@@ -244,6 +272,7 @@ function TodayViewSections({ tasks, sortMode, canComplete, onToggleComplete, onS
               canComplete={canComplete}
               onToggleComplete={onToggleComplete}
               onSelect={onSelect}
+              onAddSubtask={onAddSubtask}
               selectedTaskId={selectedTaskId}
             />
           ))}

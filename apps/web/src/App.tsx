@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Menu, Timer, Search, Egg, HelpCircle, Trash2 } from 'lucide-react';
+import { Menu, Timer, Search, Egg, HelpCircle, Trash2, Settings } from 'lucide-react';
 import { AppProvider, useApp } from './state/AppProvider.js';
 import { useTasks } from './db/queries.js';
 import { LoginScreen } from './features/auth/LoginScreen.js';
@@ -133,10 +133,10 @@ function MainLayout() {
       <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800 md:hidden">
         <button
           onClick={() => setDrawerOpen(true)}
-          className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 text-sm"
+          title="メニュー"
+          className="flex min-h-11 min-w-11 items-center justify-center"
         >
-          <Menu size={18} />
-          メニュー
+          <Menu size={26} />
         </button>
         <span className="text-sm font-semibold">Nestio</span>
         <div className="flex gap-1">
@@ -167,6 +167,13 @@ function MainLayout() {
             className="flex min-h-11 min-w-11 items-center justify-center text-neutral-400"
           >
             <HelpCircle size={18} />
+          </button>
+          <button
+            onClick={() => setShowKeymapSettings(true)}
+            title="設定"
+            className="flex min-h-11 min-w-11 items-center justify-center text-neutral-400"
+          >
+            <Settings size={18} />
           </button>
         </div>
       </header>
@@ -211,6 +218,13 @@ function MainLayout() {
               >
                 <Trash2 size={16} />
               </button>
+              <button
+                onClick={() => setShowKeymapSettings(true)}
+                title="設定"
+                className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+              >
+                <Settings size={16} />
+              </button>
             </div>
           </div>
           <div className="flex border-b border-neutral-200 text-sm dark:border-neutral-800">
@@ -252,6 +266,13 @@ function MainLayout() {
                   className="flex min-h-11 min-w-11 items-center justify-center text-neutral-400"
                 >
                   <Trash2 size={16} />
+                </button>
+                <button
+                  onClick={() => setShowKeymapSettings(true)}
+                  title="設定"
+                  className="flex min-h-11 min-w-11 items-center justify-center text-neutral-400"
+                >
+                  <Settings size={16} />
                 </button>
               </div>
               {screen === 'tasks' && <Sidebar view={view} onSelectView={selectView} />}

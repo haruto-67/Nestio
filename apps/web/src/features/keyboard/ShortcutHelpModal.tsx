@@ -41,7 +41,7 @@ export function ShortcutHelpModal({ onClose, onOpenSettings }: { onClose: () => 
           ))}
         </ul>
         <button onClick={onOpenSettings} className="mt-3 text-xs text-blue-500 hover:underline">
-          キー割り当てを変更する
+          設定を開く（キー割り当ての変更など）
         </button>
         <p className="mt-2 text-xs text-neutral-400">入力欄にフォーカス中は無効になります</p>
       </div>

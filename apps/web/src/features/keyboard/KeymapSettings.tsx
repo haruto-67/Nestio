@@ -93,14 +93,14 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} className="w-96 rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">キーボードショートカット設定</h2>
+          <h2 className="text-sm font-semibold">設定</h2>
           <button onClick={onClose} className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
             閉じる
           </button>
         </div>
 
         <div className="mb-3 flex items-center justify-between border-b border-neutral-200 pb-3 dark:border-neutral-800">
-          <span className="text-xs text-neutral-500 dark:text-neutral-400">テーマ</span>
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">外観（テーマ）</span>
           <button
             onClick={onToggleTheme}
             className="flex items-center gap-1.5 rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
@@ -110,6 +110,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
           </button>
         </div>
 
+        <h3 className="mb-1.5 text-xs font-semibold text-neutral-500 dark:text-neutral-400">キーボードショートカット</h3>
         {conflicts.length > 0 && (
           <p className="mb-2 rounded bg-red-50 px-2 py-1 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
             同じキーが複数の操作に割り当てられています。先に定義された操作が優先されます。

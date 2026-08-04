@@ -99,14 +99,23 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
                     <span className="font-medium">{t.name}</span>
                     {t.enabled === 0 && <span className="ml-2 text-neutral-400">（無効）</span>}
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => handleTest(t)} className="text-blue-500 hover:underline">
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => handleTest(t)}
+                      className="min-h-8 rounded px-2 text-blue-500 hover:bg-blue-50 hover:underline dark:hover:bg-blue-950/40"
+                    >
                       テスト実行
                     </button>
-                    <button onClick={() => setEditingId(t.id)} className="text-neutral-500 hover:underline">
+                    <button
+                      onClick={() => setEditingId(t.id)}
+                      className="min-h-8 rounded px-2 text-neutral-500 hover:bg-neutral-100 hover:underline dark:hover:bg-neutral-800"
+                    >
                       編集
                     </button>
-                    <button onClick={() => deleteTrigger(t.id)} className="text-red-500 hover:underline">
+                    <button
+                      onClick={() => deleteTrigger(t.id)}
+                      className="min-h-8 rounded px-2 text-red-500 hover:bg-red-50 hover:underline dark:hover:bg-red-950/40"
+                    >
                       削除
                     </button>
                   </div>

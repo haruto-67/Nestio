@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Plus } from 'lucide-react';
 import type { TaskNode } from '../../lib/task-tree.js';
 import { formatDateTimeJst, todayJstDateString } from '../../lib/datetime.js';
 import { taskDueDateStringJst } from '../../lib/task-views.js';
@@ -17,9 +18,18 @@ interface TaskItemProps {
   onToggleComplete: (taskId: string, completing: boolean) => void;
   onSelect: (taskId: string) => void;
   selectedTaskId: string | null;
+  onAddSubtask: (taskId: string) => void;
 }
 
-export function TaskItem({ node, depth, canComplete, onToggleComplete, onSelect, selectedTaskId }: TaskItemProps) {
+export function TaskItem({
+  node,
+  depth,
+  canComplete,
+  onToggleComplete,
+  onSelect,
+  selectedTaskId,
+  onAddSubtask,
+}: TaskItemProps) {
   const [expanded, setExpanded] = useState(true);
   const { task } = node;
   const dueStr = taskDueDateStringJst(task);
@@ -31,6 +41,7 @@ export function TaskItem({ node, depth, canComplete, onToggleComplete, onSelect,
     <div>
       <div
         onClick={() => onSelect(task.id)}
+        data-task-row="true"
         style={{ paddingLeft: `${depth * 20 + 8}px` }}
         className={`group flex cursor-pointer items-center gap-2 rounded py-1.5 pr-2 ${
           selectedTaskId === task.id
@@ -74,6 +85,16 @@ export function TaskItem({ node, depth, canComplete, onToggleComplete, onSelect,
             {task.due_at !== null ? formatDateTimeJst(task.due_at) : dueStr}
           </span>
         )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddSubtask(task.id);
+          }}
+          title="サブタスクを追加"
+          className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+        >
+          <Plus size={14} />
+        </button>
       </div>
       {expanded &&
         node.children.map((child) => (
@@ -85,6 +106,7 @@ export function TaskItem({ node, depth, canComplete, onToggleComplete, onSelect,
             onToggleComplete={onToggleComplete}
             onSelect={onSelect}
             selectedTaskId={selectedTaskId}
+            onAddSubtask={onAddSubtask}
           />
         ))}
     </div>

@@ -58,6 +58,7 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
   const renameFolder = (id: string, name: string) => upsertFolder(userId, id, { name });
   const removeFolder = (id: string) => deleteFolder(id);
   const renameList = (id: string, name: string) => upsertList(userId, id, { name });
+  const changeListColor = (id: string, color: string) => upsertList(userId, id, { color });
   const removeList = (id: string) => {
     if (view.type === 'list' && view.listId === id) onSelectView({ type: 'smart', key: 'today' });
     deleteList(id);
@@ -111,6 +112,7 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
             onSelect={() => onSelectView({ type: 'list', listId: l.id })}
             onRename={(name) => renameList(l.id, name)}
             onDelete={() => removeList(l.id)}
+            onChangeColor={(color) => changeListColor(l.id, color)}
           />
         ))}
 
@@ -166,6 +168,7 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
                     onSelect={() => onSelectView({ type: 'list', listId: l.id })}
                     onRename={(name) => renameList(l.id, name)}
                     onDelete={() => removeList(l.id)}
+                    onChangeColor={(color) => changeListColor(l.id, color)}
                   />
                 ))}
               </div>
@@ -178,6 +181,17 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
   );
 }
 
+const LIST_COLORS = [
+  '#888888',
+  '#EF4444',
+  '#F97316',
+  '#EAB308',
+  '#22C55E',
+  '#0EA5E9',
+  '#6366F1',
+  '#EC4899',
+];
+
 function ListRow({
   name,
   color,
@@ -185,6 +199,7 @@ function ListRow({
   onSelect,
   onRename,
   onDelete,
+  onChangeColor,
 }: {
   name: string;
   color: string;
@@ -192,16 +207,47 @@ function ListRow({
   onSelect: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
+  onChangeColor: (color: string) => void;
 }) {
   const labelRef = useRef<EditableLabelHandle | null>(null);
+  const [showColorPicker, setShowColorPicker] = useState(false);
   return (
     <div
       onClick={onSelect}
-      className={`flex cursor-pointer items-center gap-1 rounded px-1 py-1 ${
+      className={`relative flex cursor-pointer items-center gap-1 rounded px-1 py-1 ${
         active ? 'bg-blue-100 font-medium dark:bg-blue-900/40' : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
       }`}
     >
-      <span className="ml-1 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowColorPicker((v) => !v);
+        }}
+        title="色を変更"
+        className="ml-0.5 flex min-h-8 min-w-8 shrink-0 items-center justify-center"
+      >
+        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+      </button>
+      {showColorPicker && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute top-full left-0 z-10 mt-1 flex flex-wrap gap-1 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+        >
+          {LIST_COLORS.map((c) => (
+            <button
+              key={c}
+              onClick={() => {
+                onChangeColor(c);
+                setShowColorPicker(false);
+              }}
+              className={`h-6 w-6 rounded-full border-2 ${
+                color === c ? 'border-blue-400' : 'border-transparent'
+              }`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+        </div>
+      )}
       <EditableLabel ref={labelRef} value={name} className="flex-1 truncate px-1" onCommit={onRename} />
       <button
         onClick={(e) => {
