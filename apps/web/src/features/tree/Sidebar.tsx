@@ -7,7 +7,7 @@ import { upsertFolder, deleteFolder, upsertList, deleteList, upsertTask } from '
 import { useTasks } from '../../db/queries.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { showToast } from '../../ui/toast.js';
-import { SMART_LISTS } from '../../lib/task-views.js';
+import { SMART_LISTS, SMART_LIST_DOT_CLASS } from '../../lib/task-views.js';
 import { EditableLabel, type EditableLabelHandle } from './EditableLabel.js';
 import type { ViewSelection } from '../../state/view.js';
 
@@ -81,12 +81,13 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
           <button
             key={sl.key}
             onClick={() => onSelectView({ type: 'smart', key: sl.key })}
-            className={`rounded px-2 py-1.5 text-left ${
+            className={`flex items-center gap-2 rounded px-2 py-1.5 text-left ${
               view.type === 'smart' && view.key === sl.key
                 ? 'bg-blue-100 font-medium dark:bg-blue-900/40'
                 : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
             }`}
           >
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${SMART_LIST_DOT_CLASS[sl.key]}`} />
             {sl.label}
           </button>
         ))}
@@ -202,6 +203,11 @@ const LIST_COLORS = [
   '#0EA5E9',
   '#6366F1',
   '#EC4899',
+  // アーストーン系（改修4回目 UI改善案7。パレットが崩れない範囲で控えめに追加）
+  '#B5651D', // テラコッタ
+  '#6B8E23', // モスグリーン
+  '#C2A878', // サンド
+  '#7C6A46', // オリーブブラウン
 ];
 
 function ListRow({
@@ -263,7 +269,7 @@ function ListRow({
       {showColorPicker && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute top-full left-0 z-10 mt-1 flex flex-wrap gap-1 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+          className="absolute top-full left-0 z-10 mt-1 flex w-44 flex-wrap gap-1 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
         >
           {LIST_COLORS.map((c) => (
             <button

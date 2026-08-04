@@ -8,6 +8,11 @@ export function sortTasks(tasks: TaskRow[], mode: ListSortMode): TaskRow[] {
   switch (mode) {
     case 'due':
       arr.sort((a, b) => {
+        // 完了済みは常に末尾（期限の近さより「もう終わっている」ことを優先して見せる）
+        const ca = a.completed_at !== null;
+        const cb = b.completed_at !== null;
+        if (ca !== cb) return ca ? 1 : -1;
+
         const da = taskDueDateStringJst(a);
         const db = taskDueDateStringJst(b);
         if (da === null && db === null) return a.sort_order - b.sort_order;

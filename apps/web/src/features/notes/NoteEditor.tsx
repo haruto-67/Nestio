@@ -70,8 +70,8 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         ownerType="note"
         ownerId={noteId}
         userId={userId}
-        rows={14}
-        placeholder="本文（**太字**、_斜体_、画像の貼り付け/ドロップに対応）"
+        minHeight={220}
+        placeholder="本文（Ctrl/Cmd+Bで太字、画像の貼り付け/ドロップに対応）"
       />
 
       <div className="flex gap-1.5">

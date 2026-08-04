@@ -34,3 +34,26 @@ export const SMART_LISTS: { key: SmartListKey; label: string }[] = [
   { key: 'all', label: 'すべて' },
   { key: 'completed', label: '完了済み' },
 ];
+
+/**
+ * スマートリストごとのさりげないアクセント。「今日」（Roost）だけでなく他のビューにも
+ * 控えめな個性を持たせる（改修4回目 UI改善案5）。TailwindはクラスをJITでスキャンするため
+ * テンプレートリテラルで色名を組み立てず、完全なクラス名の対応表として持つ
+ */
+export const SMART_LIST_DOT_CLASS: Record<SmartListKey, string> = {
+  today: 'bg-amber-400',
+  tomorrow: 'bg-sky-400',
+  week: 'bg-violet-400',
+  no_due: 'bg-neutral-300 dark:bg-neutral-600',
+  all: 'bg-neutral-300 dark:bg-neutral-600',
+  completed: 'bg-emerald-400',
+};
+
+export const SMART_LIST_HEADER_ACCENT_CLASS: Record<SmartListKey, string> = {
+  today: 'border-t-amber-400',
+  tomorrow: 'border-t-sky-400',
+  week: 'border-t-violet-400',
+  no_due: 'border-t-transparent',
+  all: 'border-t-transparent',
+  completed: 'border-t-emerald-400',
+};

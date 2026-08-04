@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { uuidv7 } from '@nestio/shared';
-import { Menu, Timer, Search, Egg, HelpCircle, Trash2, Settings } from 'lucide-react';
+import { Menu, Timer, Search, Egg, Keyboard, Trash2, Settings } from 'lucide-react';
 import { AppProvider, useApp } from './state/AppProvider.js';
 import { useTasks } from './db/queries.js';
 import { ToastContainer } from './ui/ToastContainer.js';
@@ -23,8 +23,38 @@ import { HatchSettings } from './features/hatch/HatchSettings.js';
 import { TrashView } from './features/trash/TrashView.js';
 import { upsertTask, deleteTask, completeTask } from './state/actions.js';
 import { nextSortOrder } from './lib/sort-order.js';
+import { undo, redo } from './state/undoManager.js';
+import type { FlattenedTaskEntry } from './lib/task-tree.js';
+import { setTaskCollapsed } from './lib/collapsed-tasks.js';
+import { listHatchRuns } from './api/hatch.js';
 
 type Screen = 'tasks' | 'notes';
+
+const LAST_SCREEN_KEY = 'nestio_last_screen';
+const LAST_VIEW_KEY = 'nestio_last_view';
+
+function loadInitialScreen(): Screen {
+  const stored = localStorage.getItem(LAST_SCREEN_KEY);
+  return stored === 'notes' ? 'notes' : 'tasks';
+}
+
+function loadInitialView(): ViewSelection {
+  try {
+    const raw = localStorage.getItem(LAST_VIEW_KEY);
+    if (!raw) return { type: 'smart', key: 'today' };
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      ('type' in parsed ? (parsed as { type: unknown }).type === 'smart' || (parsed as { type: unknown }).type === 'list' : false)
+    ) {
+      return parsed as ViewSelection;
+    }
+  } catch {
+    // 壊れた保存値は無視してデフォルトへ
+  }
+  return { type: 'smart', key: 'today' };
+}
 
 export function App() {
   return (
@@ -51,9 +81,19 @@ function Root() {
 function MainLayout() {
   const { me } = useApp();
   const tasks = useTasks();
-  const [screen, setScreen] = useState<Screen>('tasks');
-  const [view, setView] = useState<ViewSelection>({ type: 'smart', key: 'today' });
+  const [screen, setScreenState] = useState<Screen>(loadInitialScreen);
+  const [view, setViewState] = useState<ViewSelection>(loadInitialView);
+
+  const setScreen = (s: Screen) => {
+    setScreenState(s);
+    localStorage.setItem(LAST_SCREEN_KEY, s);
+  };
+  const setView = (v: ViewSelection) => {
+    setViewState(v);
+    localStorage.setItem(LAST_VIEW_KEY, JSON.stringify(v));
+  };
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [focusTitleTaskId, setFocusTitleTaskId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showKeymapSettings, setShowKeymapSettings] = useState(false);
@@ -63,8 +103,8 @@ function MainLayout() {
   const [showTrash, setShowTrash] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const { keymap } = useKeymap();
-  const sidebarResize = useResizableWidth('nestio_sidebar_width', 256, 200, 480);
-  const visibleTaskIdsRef = useRef<string[]>([]);
+  const sidebarResize = useResizableWidth('nestio_sidebar_width', 256, 160, 900);
+  const visibleTaskEntriesRef = useRef<FlattenedTaskEntry[]>([]);
   const quickAddInputElRef = useRef<HTMLInputElement | null>(null);
 
   const selectView = (v: ViewSelection) => {
@@ -73,29 +113,42 @@ function MainLayout() {
     setDrawerOpen(false);
   };
 
-  const handleVisibleTasksChange = useCallback((ids: string[]) => {
-    visibleTaskIdsRef.current = ids;
+  const handleVisibleTasksChange = useCallback((entries: FlattenedTaskEntry[]) => {
+    visibleTaskEntriesRef.current = entries;
   }, []);
 
   const moveSelection = (delta: number) => {
-    const ids = visibleTaskIdsRef.current;
-    if (ids.length === 0) return;
-    const idx = selectedTaskId ? ids.indexOf(selectedTaskId) : -1;
-    const nextIdx = Math.min(Math.max(idx + delta, 0), ids.length - 1);
-    setSelectedTaskId(ids[nextIdx] ?? null);
+    const entries = visibleTaskEntriesRef.current;
+    if (entries.length === 0) return;
+    const idx = selectedTaskId ? entries.findIndex((e) => e.id === selectedTaskId) : -1;
+    const nextIdx = Math.min(Math.max(idx + delta, 0), entries.length - 1);
+    setSelectedTaskId(entries[nextIdx]?.id ?? null);
   };
 
   const findTask = (id: string) => tasks.find((t) => t.id === id);
 
+  // Tabでのインデントは「直前に表示されている行」ではなく「同じ深さの直前の兄弟」の子にする。
+  // 直前の行を子孫ごと飛ばして同じ深さまで遡ることで、意図せず2階層以上深いサブタスクに
+  // なってしまう不具合を防ぐ（改修4回目で報告された「急に2個下の階層になる」問題の修正）
   const indentSelected = () => {
     if (!selectedTaskId || !me || view.type !== 'list') return;
-    const ids = visibleTaskIdsRef.current;
-    const idx = ids.indexOf(selectedTaskId);
+    const entries = visibleTaskEntriesRef.current;
+    const idx = entries.findIndex((e) => e.id === selectedTaskId);
     if (idx <= 0) return;
-    const newParentId = ids[idx - 1];
-    if (!newParentId) return;
+    const currentEntry = entries[idx];
+    if (!currentEntry) return;
+    const currentDepth = currentEntry.depth;
+    let i = idx - 1;
+    let prev = entries[i];
+    while (prev && prev.depth > currentDepth) {
+      i--;
+      prev = entries[i];
+    }
+    if (!prev || prev.depth !== currentDepth) return;
+    const newParentId = prev.id;
     const siblings = tasks.filter((t) => t.parent_id === newParentId);
     upsertTask(me.id, selectedTaskId, { parent_id: newParentId, sort_order: nextSortOrder(siblings) });
+    setTaskCollapsed(newParentId, false);
   };
 
   const outdentSelected = () => {
@@ -103,7 +156,14 @@ function MainLayout() {
     const task = findTask(selectedTaskId);
     if (!task || !task.parent_id) return;
     const grandParentId = findTask(task.parent_id)?.parent_id ?? null;
-    upsertTask(me.id, selectedTaskId, { parent_id: grandParentId });
+    const siblings = tasks.filter((t) => t.parent_id === grandParentId);
+    upsertTask(me.id, selectedTaskId, { parent_id: grandParentId, sort_order: nextSortOrder(siblings) });
+  };
+
+  // 新規作成したタスクは一覧上で選択するだけでなく、詳細パネルのタイトル欄にも自動フォーカスする
+  const selectAndFocusTitle = (id: string) => {
+    setSelectedTaskId(id);
+    setFocusTitleTaskId(id);
   };
 
   const addSubtaskToSelected = () => {
@@ -118,7 +178,7 @@ function MainLayout() {
       title: '新しいサブタスク',
       sort_order: nextSortOrder(siblings),
     });
-    setSelectedTaskId(id);
+    selectAndFocusTitle(id);
     showToast('サブタスクを追加しました');
   };
 
@@ -134,7 +194,7 @@ function MainLayout() {
       title: '新しいタスク',
       sort_order: nextSortOrder(siblings),
     });
-    setSelectedTaskId(id);
+    selectAndFocusTitle(id);
     showToast('タスクを追加しました');
   };
 
@@ -154,6 +214,65 @@ function MainLayout() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showSearch, showPomodoro, showTrash, showHatchSettings, showKeymapSettings, showHelp, drawerOpen, selectedTaskId]);
+
+  // Ctrl/Cmd+Z(元に戻す)・Ctrl/Cmd+Shift+Z(やり直す)はTab/Escapeと同様固定のショートカット。
+  // 入力欄・contentEditable内ではブラウザ標準のテキスト編集undoを優先させ、アプリ側では奪わない
+  useEffect(() => {
+    function isEditableTarget(target: EventTarget | null): boolean {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
+      if (isEditableTarget(e.target)) return;
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Hatchが発火して実行が完了したらトーストで知らせる（改修4回目 UI改善案6）。
+  // 起動時点で既に終わっている実行は無音で既読扱いにし、以降に新しく完了した実行だけ通知する
+  const notifiedHatchRunIdsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!me) return;
+    let cancelled = false;
+    const HATCH_RUN_STATUS_LABEL: Record<string, string> = {
+      succeeded: '成功',
+      failed: '失敗',
+      timeout: 'タイムアウト',
+    };
+    async function poll() {
+      try {
+        const runs = await listHatchRuns();
+        if (cancelled || runs.length === 0) return;
+        if (notifiedHatchRunIdsRef.current === null) {
+          notifiedHatchRunIdsRef.current = new Set(
+            runs.filter((r) => r.status in HATCH_RUN_STATUS_LABEL).map((r) => r.id),
+          );
+          return;
+        }
+        const latest = runs[0];
+        if (!latest) return;
+        const label = HATCH_RUN_STATUS_LABEL[latest.status];
+        if (label && !notifiedHatchRunIdsRef.current.has(latest.id)) {
+          notifiedHatchRunIdsRef.current.add(latest.id);
+          showToast(`Hatchが発火しました: ${label}`);
+        }
+      } catch {
+        // ポーリング失敗時は次回に任せる
+      }
+    }
+    poll();
+    const timer = setInterval(poll, 20000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [me]);
 
   useKeyboardShortcuts(keymap, {
     onQuickAdd: () => quickAddInputElRef.current?.focus(),
@@ -206,7 +325,7 @@ function MainLayout() {
           </button>
           <button
             onClick={() => setShowSearch(true)}
-            title="検索"
+            title={`検索 (${keymap.search})`}
             className="flex min-h-11 min-w-11 items-center justify-center text-blue-500"
           >
             <Search size={18} />
@@ -220,10 +339,10 @@ function MainLayout() {
           </button>
           <button
             onClick={() => setShowHelp(true)}
-            title="ショートカット一覧"
+            title="キーボードショートカット"
             className="flex min-h-11 min-w-11 items-center justify-center text-neutral-400"
           >
-            <HelpCircle size={18} />
+            <Keyboard size={18} />
           </button>
           <button
             onClick={() => setShowKeymapSettings(true)}
@@ -252,7 +371,7 @@ function MainLayout() {
               </button>
               <button
                 onClick={() => setShowSearch(true)}
-                title="検索"
+                title={`検索 (${keymap.search})`}
                 className="text-blue-500 hover:text-blue-600"
               >
                 <Search size={16} />
@@ -266,10 +385,10 @@ function MainLayout() {
               </button>
               <button
                 onClick={() => setShowHelp(true)}
-                title="ショートカット一覧（?）"
+                title="キーボードショートカット"
                 className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
               >
-                <HelpCircle size={16} />
+                <Keyboard size={16} />
               </button>
               <button
                 onClick={() => setShowTrash(true)}
@@ -351,6 +470,7 @@ function MainLayout() {
               view={view}
               selectedTaskId={selectedTaskId}
               onSelectTask={setSelectedTaskId}
+              onCreateAndSelectTask={selectAndFocusTitle}
               onVisibleTasksChange={handleVisibleTasksChange}
               quickAddInputRef={(el) => {
                 quickAddInputElRef.current = el;
@@ -364,7 +484,9 @@ function MainLayout() {
                 onMoveDown={() => moveSelection(1)}
                 onIndent={indentSelected}
                 onOutdent={outdentSelected}
-                onSelectTask={setSelectedTaskId}
+                onCreateAndSelectTask={selectAndFocusTitle}
+                autoFocusTitle={focusTitleTaskId === selectedTaskId}
+                onTitleFocused={() => setFocusTitleTaskId(null)}
               />
             )}
           </>
@@ -373,15 +495,7 @@ function MainLayout() {
         )}
       </div>
 
-      {showHelp && (
-        <ShortcutHelpModal
-          onClose={() => setShowHelp(false)}
-          onOpenSettings={() => {
-            setShowHelp(false);
-            setShowKeymapSettings(true);
-          }}
-        />
-      )}
+      {showHelp && <ShortcutHelpModal onClose={() => setShowHelp(false)} />}
       {showKeymapSettings && (
         <KeymapSettings theme={theme} onToggleTheme={toggleTheme} onClose={() => setShowKeymapSettings(false)} />
       )}

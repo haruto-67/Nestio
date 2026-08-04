@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ArrowUp, ArrowDown, IndentIncrease, IndentDecrease, Plus } from 'lucide-react';
 import { uuidv7, type TaskWritableFields, type TaskRow } from '@nestio/shared';
 import { MarkdownField } from '../notes/MarkdownField.js';
@@ -21,7 +21,11 @@ interface TaskDetailPanelProps {
   onMoveDown: () => void;
   onIndent: () => void;
   onOutdent: () => void;
-  onSelectTask: (taskId: string) => void;
+  /** サブタスク作成後にそのタスクを選択し、タイトル入力欄へ自動フォーカスするためのコールバック */
+  onCreateAndSelectTask: (taskId: string) => void;
+  /** trueの場合、マウント時にタイトル入力欄へ自動フォーカスする（新規作成直後のタスクを開いた時） */
+  autoFocusTitle?: boolean;
+  onTitleFocused?: () => void;
 }
 
 export function TaskDetailPanel({
@@ -31,20 +35,30 @@ export function TaskDetailPanel({
   onMoveDown,
   onIndent,
   onOutdent,
-  onSelectTask,
+  onCreateAndSelectTask,
+  autoFocusTitle,
+  onTitleFocused,
 }: TaskDetailPanelProps) {
   const { me } = useApp();
-  const panelResize = useResizableWidth('nestio_detail_panel_width', 320, 260, 640);
+  const panelResize = useResizableWidth('nestio_detail_panel_width', 320, 220, 1400);
   const task = useTask(taskId);
   const lists = useLists();
   const allTags = useTags();
   const taskTags = useTaskTags();
   const tasks = useTasks();
   const [titleDraft, setTitleDraft] = useState(task?.title ?? '');
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setTitleDraft(task?.title ?? '');
   }, [task?.title, taskId]);
+
+  useEffect(() => {
+    if (!autoFocusTitle) return;
+    titleInputRef.current?.focus();
+    titleInputRef.current?.select();
+    onTitleFocused?.();
+  }, []);
 
   if (!task || !me) return null;
   const userId = me.id;
@@ -69,7 +83,7 @@ export function TaskDetailPanel({
       title: '新しいサブタスク',
       sort_order: nextSortOrder(siblings),
     });
-    onSelectTask(id);
+    onCreateAndSelectTask(id);
     showToast('サブタスクを追加しました');
   };
 
@@ -108,6 +122,7 @@ export function TaskDetailPanel({
       </div>
 
       <input
+        ref={titleInputRef}
         value={titleDraft}
         onChange={(e) => setTitleDraft(e.target.value)}
         onBlur={() => {
@@ -160,8 +175,8 @@ export function TaskDetailPanel({
           ownerType="task"
           ownerId={taskId}
           userId={userId}
-          rows={10}
-          placeholder="メモを入力（**太字**、_斜体_、画像の貼り付け/ドロップに対応）"
+          minHeight={160}
+          placeholder="メモを入力（Ctrl/Cmd+Bで太字、画像の貼り付け/ドロップに対応）"
         />
       </div>
 

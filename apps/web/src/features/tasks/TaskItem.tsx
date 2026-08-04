@@ -1,14 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import type { TaskNode } from '../../lib/task-tree.js';
 import { formatDateTimeJst, todayJstDateString } from '../../lib/datetime.js';
 import { taskDueDateStringJst } from '../../lib/task-views.js';
-import { isTaskCollapsed, setTaskCollapsed } from '../../lib/collapsed-tasks.js';
+import { isTaskCollapsed, setTaskCollapsed, subscribeTaskCollapsed } from '../../lib/collapsed-tasks.js';
 
 const PRIORITY_COLOR: Record<number, string> = {
   1: 'text-blue-500',
   2: 'text-amber-500',
   3: 'text-red-500',
+};
+const PRIORITY_BORDER_COLOR: Record<number, string> = {
+  1: 'border-l-blue-400',
+  2: 'border-l-amber-400',
+  3: 'border-l-red-400',
 };
 const PRIORITY_LABEL: Record<number, string> = { 1: '低', 2: '中', 3: '高' };
 
@@ -36,6 +41,24 @@ export function TaskItem({
   const [expanded, setExpanded] = useState(() => !isTaskCollapsed(node.task.id));
   const [dragOver, setDragOver] = useState(false);
   const { task } = node;
+
+  // インデント操作やドラッグ&ドロップで新しい親になった時、外部から強制展開されることがある
+  useEffect(() => subscribeTaskCollapsed(task.id, (collapsed) => setExpanded(!collapsed)), [task.id]);
+
+  // 未完了→完了に変わった瞬間だけチェックボックスをポップさせる（改修4回目 UI改善案2）
+  const wasCompletedRef = useRef(task.completed_at !== null);
+  const [justCompleted, setJustCompleted] = useState(false);
+  useEffect(() => {
+    const isCompleted = task.completed_at !== null;
+    if (!wasCompletedRef.current && isCompleted) {
+      setJustCompleted(true);
+      const timer = setTimeout(() => setJustCompleted(false), 320);
+      wasCompletedRef.current = isCompleted;
+      return () => clearTimeout(timer);
+    }
+    wasCompletedRef.current = isCompleted;
+  }, [task.completed_at]);
+
   const dueStr = taskDueDateStringJst(task);
   const today = todayJstDateString();
   const overdue = task.completed_at === null && dueStr !== null && dueStr < today;
@@ -73,7 +96,9 @@ export function TaskItem({
           if (draggedId && draggedId !== task.id) onDropOntoTask(draggedId, task.id);
         }}
         style={{ paddingLeft: `${depth * 20 + 8}px` }}
-        className={`group flex cursor-pointer items-center gap-2 rounded py-1.5 pr-2 ${
+        className={`nestio-row-fade-in group flex cursor-pointer items-center gap-2 rounded border-l-4 py-1.5 pr-2 ${
+          task.priority > 0 ? PRIORITY_BORDER_COLOR[task.priority] : 'border-l-transparent'
+        } ${
           dragOver
             ? 'bg-blue-100 dark:bg-blue-900/40'
             : selectedTaskId === task.id
@@ -101,6 +126,7 @@ export function TaskItem({
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => onToggleComplete(task.id, e.target.checked)}
           title={disabled ? '未完了のサブタスクがあります' : undefined}
+          className={justCompleted ? 'nestio-complete-pop' : undefined}
         />
         <span
           className={`truncate text-sm ${task.completed_at !== null ? 'text-neutral-400 line-through' : ''}`}

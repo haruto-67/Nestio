@@ -61,3 +61,34 @@ select option {
 .nestio-overlay {
   animation: nestio-fade-in 150ms ease-out;
 }
+
+/* タスク行が新しく表示された時のふわっとした登場（改修4回目 UI改善案3） */
+@keyframes nestio-row-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.nestio-row-fade-in {
+  animation: nestio-row-fade-in 200ms ease-out;
+}
+
+/* チェックボックスを完了にした瞬間の軽いポップ演出（改修4回目 UI改善案2） */
+@keyframes nestio-complete-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.5);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.nestio-complete-pop {
+  animation: nestio-complete-pop 320ms ease-out;
+}

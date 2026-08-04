@@ -4,9 +4,14 @@ import { db } from './schema.js';
 import { appendToOutbox } from './outbox.js';
 import { nowWithSkew, pushLoop } from '../sync/engine.js';
 import { logClientEvent } from '../sync/log-buffer.js';
+import { pushUndo } from '../state/undoManager.js';
 
 type Row = Record<string, unknown>;
 type NonUserSettingsTable = Exclude<SyncableTable, 'user_settings'>;
+interface MutationOptions {
+  /** undo/redoの巻き戻し処理自身から呼ぶ時はtrue（自分自身をundoスタックに積まないようにする） */
+  skipUndo?: boolean;
+}
 
 const TABLE_MAP: Record<NonUserSettingsTable, Table<Row, string>> = {
   folders: db.folders as unknown as Table<Row, string>,
@@ -45,10 +50,12 @@ export async function upsertLocal(
   table: NonUserSettingsTable,
   id: string,
   fields: Row,
+  options: MutationOptions = {},
 ): Promise<SyncOp> {
   const updatedAt = nowWithSkew();
   const dexieTable = TABLE_MAP[table];
   const existing = await dexieTable.get(id);
+  const isNew = !existing;
 
   const row: Row = existing
     ? { ...existing, ...fields, updated_at: updatedAt }
@@ -68,10 +75,35 @@ export async function upsertLocal(
 
   const op: SyncOp = { op_id: uuidv7(), table, id, op: 'upsert', updated_at: updatedAt, fields };
   await appendToOutbox(op);
+
+  if (!options.skipUndo) {
+    if (isNew) {
+      // undoは論理削除、redoはその復元（deleted_atをnullに戻す）で対称にする。
+      // upsertLocalで再作成しようとするとdeleted_atが残ったままになってしまうため
+      pushUndo({
+        undo: () => commitAndSync(deleteLocal(table, id, { skipUndo: true })),
+        redo: () => commitAndSync(restoreLocal(table, id, { skipUndo: true })),
+      });
+    } else {
+      const previousFields: Row = {};
+      for (const key of Object.keys(fields)) {
+        previousFields[key] = (existing as Row)[key];
+      }
+      pushUndo({
+        undo: () => commitAndSync(upsertLocal(userId, table, id, previousFields, { skipUndo: true })),
+        redo: () => commitAndSync(upsertLocal(userId, table, id, fields, { skipUndo: true })),
+      });
+    }
+  }
+
   return op;
 }
 
-export async function deleteLocal(table: NonUserSettingsTable, id: string): Promise<SyncOp | null> {
+export async function deleteLocal(
+  table: NonUserSettingsTable,
+  id: string,
+  options: MutationOptions = {},
+): Promise<SyncOp | null> {
   const dexieTable = TABLE_MAP[table];
   const existing = await dexieTable.get(id);
   if (!existing) return null;
@@ -81,11 +113,23 @@ export async function deleteLocal(table: NonUserSettingsTable, id: string): Prom
 
   const op: SyncOp = { op_id: uuidv7(), table, id, op: 'delete', updated_at: updatedAt, fields: {} };
   await appendToOutbox(op);
+
+  if (!options.skipUndo) {
+    pushUndo({
+      undo: () => commitAndSync(restoreLocal(table, id, { skipUndo: true })),
+      redo: () => commitAndSync(deleteLocal(table, id, { skipUndo: true })),
+    });
+  }
+
   return op;
 }
 
 /** ゴミ箱からの復元（deleted_atをnullへ戻す）。deleteLocalと対称の操作 */
-export async function restoreLocal(table: NonUserSettingsTable, id: string): Promise<SyncOp | null> {
+export async function restoreLocal(
+  table: NonUserSettingsTable,
+  id: string,
+  options: MutationOptions = {},
+): Promise<SyncOp | null> {
   const dexieTable = TABLE_MAP[table];
   const existing = await dexieTable.get(id);
   if (!existing) return null;
@@ -95,6 +139,14 @@ export async function restoreLocal(table: NonUserSettingsTable, id: string): Pro
 
   const op: SyncOp = { op_id: uuidv7(), table, id, op: 'restore', updated_at: updatedAt, fields: {} };
   await appendToOutbox(op);
+
+  if (!options.skipUndo) {
+    pushUndo({
+      undo: () => commitAndSync(deleteLocal(table, id, { skipUndo: true })),
+      redo: () => commitAndSync(restoreLocal(table, id, { skipUndo: true })),
+    });
+  }
+
   return op;
 }
 

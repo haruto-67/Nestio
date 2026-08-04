@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { SearchResponse } from '@nestio/shared';
 import { search } from '../../api/search.js';
+import { useLists } from '../../db/queries.js';
 
 const EMPTY_RESULTS: SearchResponse = { tasks: [], notes: [] };
 const DEBOUNCE_MS = 200;
@@ -15,6 +16,8 @@ export function SearchModal({ onClose, onSelectTask }: SearchModalProps) {
   const [results, setResults] = useState<SearchResponse>(EMPTY_RESULTS);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const lists = useLists();
+  const listNameById = new Map(lists.map((l) => [l.id, l.name]));
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -83,9 +86,14 @@ export function SearchModal({ onClose, onSelectTask }: SearchModalProps) {
                     onSelectTask(t.id, t.list_id);
                     onClose();
                   }}
-                  className="block w-full truncate rounded px-2 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
                 >
-                  {t.title}
+                  <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                  {listNameById.get(t.list_id) && (
+                    <span className="shrink-0 truncate text-xs text-neutral-400">
+                      {listNameById.get(t.list_id)}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

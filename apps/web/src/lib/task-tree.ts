@@ -24,17 +24,31 @@ export function buildTaskTree(tasks: TaskRow[], sortMode: ListSortMode): TaskNod
   return build(null);
 }
 
-/** ツリーを深さ優先で1列に展開する（J/K移動・Tabでのインデント対象探索に使う） */
+/** ツリーを深さ優先で1列に展開する（J/K移動用） */
 export function flattenTaskTree(nodes: TaskNode[]): string[] {
-  const ids: string[] = [];
-  function walk(list: TaskNode[]) {
+  return flattenTaskTreeWithDepth(nodes).map((e) => e.id);
+}
+
+export interface FlattenedTaskEntry {
+  id: string;
+  depth: number;
+}
+
+/**
+ * ツリーを深さ情報付きで深さ優先展開する。Tabでのインデント対象探索に使う：
+ * 「直前に表示されている行」ではなく「同じ深さの直前の兄弟」を正しく見つけるために必要
+ * （子孫を挟むと直前の行はより深い階層のことがあるため）
+ */
+export function flattenTaskTreeWithDepth(nodes: TaskNode[]): FlattenedTaskEntry[] {
+  const entries: FlattenedTaskEntry[] = [];
+  function walk(list: TaskNode[], depth: number) {
     for (const node of list) {
-      ids.push(node.task.id);
-      walk(node.children);
+      entries.push({ id: node.task.id, depth });
+      walk(node.children, depth + 1);
     }
   }
-  walk(nodes);
-  return ids;
+  walk(nodes, 0);
+  return entries;
 }
 
 /** taskId の祖先を辿って循環しない範囲でidを集める（フロント側の事前チェック用） */

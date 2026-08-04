@@ -1,7 +1,5 @@
-import { useState, useEffect, type KeyboardEvent } from 'react';
-import { Moon, Sun, AlertTriangle } from 'lucide-react';
-import { KEYMAP_ACTIONS, KEYMAP_ACTION_LABELS, findKeymapConflicts, normalizeKeyCombo, type KeymapAction } from '../../lib/keymap.js';
-import { useKeymap } from '../../state/useKeymap.js';
+import { useState, useEffect } from 'react';
+import { Moon, Sun } from 'lucide-react';
 import { useApp } from '../../state/AppProvider.js';
 import { sendClientLogs } from '../../api/client-logs.js';
 import { enablePushNotifications, getPushPermissionState } from '../../lib/push-subscription.js';
@@ -15,9 +13,7 @@ interface KeymapSettingsProps {
 }
 
 export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettingsProps) {
-  const { keymap, setKey } = useKeymap();
   const { deviceId } = useApp();
-  const [capturing, setCapturing] = useState<KeymapAction | null>(null);
   const [logStatus, setLogStatus] = useState<string | null>(null);
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
@@ -29,17 +25,6 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
     getPushPermissionState().then(setPermission).catch(() => setPermission('unsupported'));
     listCalendarFeeds().then(setFeeds).catch(() => {});
   }, []);
-
-  const conflicts = findKeymapConflicts(keymap);
-  const conflictActions = new Set(conflicts.flat());
-
-  const handleCapture = (action: KeymapAction) => (e: KeyboardEvent<HTMLButtonElement>) => {
-    if (capturing !== action) return;
-    if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
-    e.preventDefault();
-    setKey(action, normalizeKeyCombo(e.nativeEvent));
-    setCapturing(null);
-  };
 
   const handleSendLogs = async () => {
     if (!deviceId) return;
@@ -110,44 +95,11 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
           </button>
         </div>
 
-        <h3 className="mb-1.5 text-xs font-semibold text-neutral-500 dark:text-neutral-400">キーボードショートカット</h3>
-        {conflicts.length > 0 && (
-          <p className="mb-2 rounded bg-red-50 px-2 py-1 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-400">
-            同じキーが複数の操作に割り当てられています。先に定義された操作が優先されます。
-          </p>
-        )}
+        <p className="mb-3 text-xs text-neutral-400">
+          キーボードショートカットの割り当ては、ヘッダーのキーボードアイコンから変更できます
+        </p>
 
-        <ul className="flex flex-col gap-1.5 text-sm">
-          {KEYMAP_ACTIONS.map((action) => (
-            <li key={action} className="flex items-center justify-between gap-3">
-              <span
-                className={
-                  conflictActions.has(action)
-                    ? 'text-red-500'
-                    : 'text-neutral-500 dark:text-neutral-400'
-                }
-              >
-                {KEYMAP_ACTION_LABELS[action]}
-                {conflictActions.has(action) && <AlertTriangle size={12} className="ml-1 inline text-red-500" />}
-              </span>
-              <button
-                onClick={() => setCapturing(action)}
-                onKeyDown={handleCapture(action)}
-                onBlur={() => setCapturing((c) => (c === action ? null : c))}
-                className={`rounded border px-2 py-1 text-xs ${
-                  capturing === action
-                    ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40'
-                    : 'border-neutral-300 dark:border-neutral-700'
-                }`}
-              >
-                {capturing === action ? 'キーを押してください…' : keymap[action]}
-              </button>
-            </li>
-          ))}
-        </ul>
-        <p className="mt-3 text-xs text-neutral-400">「今日」へ（G→T）・優先度変更（1〜4）は固定です</p>
-
-        <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+        <div className="border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <div className="flex items-center justify-between">
             <span className="text-xs text-neutral-500 dark:text-neutral-400">
               通知（期限リマインダー・ポモドーロ終了）

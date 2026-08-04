@@ -227,6 +227,36 @@ describe('applySyncOps', () => {
     expect(row.completed_at).toBeNull();
   });
 
+  // 改修4回目「完了チェックボックスをつけたら別のタスクの完了が外れることがある」の調査用回帰テスト。
+  // 親子関係にない無関係なタスクの完了状態が、他タスクの完了/未完了操作で書き換わらないことを保証する
+  it('無関係な兄弟タスクの完了状態は他タスクの完了操作の影響を受けない', () => {
+    setup();
+    const unrelatedA = uuidv7();
+    const unrelatedB = uuidv7();
+    applySyncOps(db, userId, [
+      makeTaskOp(listId, unrelatedA, Date.now(), { title: '無関係A', completed_at: Date.now() }),
+    ]);
+    applySyncOps(db, userId, [makeTaskOp(listId, unrelatedB, Date.now(), { title: '無関係B' })]);
+
+    // 全く別系統の親子タスクを操作する
+    const parent = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, parent, Date.now(), { title: '親' })]);
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: parent, op: 'upsert', updated_at: Date.now(), fields: { completed_at: Date.now() } },
+    ]);
+    const child = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, child, Date.now(), { title: '子', parent_id: parent })]);
+
+    const rowA = db.prepare('SELECT completed_at FROM tasks WHERE id = ?').get(unrelatedA) as {
+      completed_at: number | null;
+    };
+    const rowB = db.prepare('SELECT completed_at FROM tasks WHERE id = ?').get(unrelatedB) as {
+      completed_at: number | null;
+    };
+    expect(rowA.completed_at).not.toBeNull();
+    expect(rowB.completed_at).toBeNull();
+  });
+
   it('他ユーザーの行を書き換えようとするとforbidden', () => {
     setup();
     const taskId = uuidv7();
