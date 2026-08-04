@@ -47,8 +47,10 @@ COPY --from=build --chown=nestio:nestio /app/deploy/api ./
 COPY --from=build --chown=nestio:nestio /app/apps/web/dist ./web-dist
 
 # DB・添付・ログはdocker-compose側でnamed volumeをマウントする想定のディレクトリ。
-# hatchはClaude Codeの作業ディレクトリ（--allowedToolsで許可した範囲以外へ書き込ませないための固定cwd）
-RUN mkdir -p /var/lib/nestio/attachments /var/lib/nestio/logs /var/lib/nestio/hatch \
+# hatchはClaude Codeの作業ディレクトリ（--allowedToolsで許可した範囲以外へ書き込ませないための固定cwd）。
+# claude-homeはclaude CLIのログイン認証情報の保存先（$HOMEをここへ向ける。下記参照）。
+# 同じnamed volume配下に置くことで、コンテナを再ビルドしてもログイン状態が失われないようにする
+RUN mkdir -p /var/lib/nestio/attachments /var/lib/nestio/logs /var/lib/nestio/hatch /var/lib/nestio/claude-home \
     && chown -R nestio:nestio /var/lib/nestio
 
 USER nestio
@@ -61,6 +63,11 @@ ENV LOG_DIR=/var/lib/nestio/logs
 ENV CLAUDE_BIN=/usr/local/bin/claude
 ENV CLAUDE_WORKDIR=/var/lib/nestio/hatch
 ENV CLAUDE_TIMEOUT_SEC=120
+# 要件定義（budget: Claude API課金なし）の通り、ANTHROPIC_API_KEYは使わずsubscription経由のCLIを
+# 叩く。claude CLIはログイン情報を$HOME配下に保存するため、$HOMEをnamed volume内へ向けて
+# コンテナ再ビルド後もログイン状態を保持できるようにする。ログイン自体は`docker compose exec -it`
+# での対話操作が必要なためユーザー側の一度きりの作業（docs/manual-setup.md D-1）
+ENV HOME=/var/lib/nestio/claude-home
 
 EXPOSE 3000
 

@@ -230,6 +230,52 @@ describe('MCP OAuth + tools', () => {
     expect(row.name).toBe('manual');
   });
 
+  it('update_noteでメモの内容とpinnedを更新できる', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const createRes = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'create_note', arguments: { title: '元タイトル', body: '元本文' } },
+      }),
+    });
+    const createBody = (await createRes.json()) as { result: { content: { text: string }[] } };
+    const created = JSON.parse(createBody.result.content[0]?.text ?? '{}') as { id: string };
+
+    const updateRes = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'update_note',
+          arguments: { id: created.id, title: '新タイトル', body: '新本文', pinned: true },
+        },
+      }),
+    });
+    expect(updateRes.status).toBe(200);
+
+    const row = db.prepare('SELECT title, body, pinned FROM notes WHERE id = ?').get(created.id) as {
+      title: string;
+      body: string;
+      pinned: number;
+    };
+    expect(row.title).toBe('新タイトル');
+    expect(row.body).toBe('新本文');
+    expect(row.pinned).toBe(1);
+  });
+
   it('不正なcode_verifierではトークンを発行しない', async () => {
     db = createTestDb();
     const userId = uuidv7();

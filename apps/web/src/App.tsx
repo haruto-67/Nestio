@@ -1,7 +1,11 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { uuidv7 } from '@nestio/shared';
 import { Menu, Timer, Search, Egg, HelpCircle, Trash2, Settings } from 'lucide-react';
 import { AppProvider, useApp } from './state/AppProvider.js';
 import { useTasks } from './db/queries.js';
+import { ToastContainer } from './ui/ToastContainer.js';
+import { showToast } from './ui/toast.js';
+import { useResizableWidth } from './lib/useResizableWidth.js';
 import { LoginScreen } from './features/auth/LoginScreen.js';
 import { Sidebar } from './features/tree/Sidebar.js';
 import { TaskListView } from './features/tasks/TaskListView.js';
@@ -59,6 +63,7 @@ function MainLayout() {
   const [showTrash, setShowTrash] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const { keymap } = useKeymap();
+  const sidebarResize = useResizableWidth('nestio_sidebar_width', 256, 200, 480);
   const visibleTaskIdsRef = useRef<string[]>([]);
   const quickAddInputElRef = useRef<HTMLInputElement | null>(null);
 
@@ -101,6 +106,55 @@ function MainLayout() {
     upsertTask(me.id, selectedTaskId, { parent_id: grandParentId });
   };
 
+  const addSubtaskToSelected = () => {
+    if (!selectedTaskId || !me) return;
+    const parent = findTask(selectedTaskId);
+    if (!parent) return;
+    const id = uuidv7();
+    const siblings = tasks.filter((t) => t.parent_id === selectedTaskId);
+    upsertTask(me.id, id, {
+      list_id: parent.list_id,
+      parent_id: selectedTaskId,
+      title: '新しいサブタスク',
+      sort_order: nextSortOrder(siblings),
+    });
+    setSelectedTaskId(id);
+    showToast('サブタスクを追加しました');
+  };
+
+  const addSiblingSubtaskToSelected = () => {
+    if (!selectedTaskId || !me) return;
+    const current = findTask(selectedTaskId);
+    if (!current) return;
+    const id = uuidv7();
+    const siblings = tasks.filter((t) => t.parent_id === current.parent_id);
+    upsertTask(me.id, id, {
+      list_id: current.list_id,
+      parent_id: current.parent_id,
+      title: '新しいタスク',
+      sort_order: nextSortOrder(siblings),
+    });
+    setSelectedTaskId(id);
+    showToast('タスクを追加しました');
+  };
+
+  // Escapeは現在開いている一番手前のパネル/モーダルを1つだけ閉じる
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      if (showSearch) return setShowSearch(false);
+      if (showPomodoro) return setShowPomodoro(false);
+      if (showTrash) return setShowTrash(false);
+      if (showHatchSettings) return setShowHatchSettings(false);
+      if (showKeymapSettings) return setShowKeymapSettings(false);
+      if (showHelp) return setShowHelp(false);
+      if (drawerOpen) return setDrawerOpen(false);
+      if (selectedTaskId) return setSelectedTaskId(null);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showSearch, showPomodoro, showTrash, showHatchSettings, showKeymapSettings, showHelp, drawerOpen, selectedTaskId]);
+
   useKeyboardShortcuts(keymap, {
     onQuickAdd: () => quickAddInputElRef.current?.focus(),
     onSearch: () => setShowSearch(true),
@@ -114,6 +168,7 @@ function MainLayout() {
       if (!selectedTaskId) return;
       deleteTask(selectedTaskId);
       setSelectedTaskId(null);
+      showToast('削除しました');
     },
     onSetPriority: (p) => {
       if (!selectedTaskId || !me) return;
@@ -126,6 +181,8 @@ function MainLayout() {
     onMoveDown: () => moveSelection(1),
     onIndent: indentSelected,
     onOutdent: outdentSelected,
+    onAddSubtask: addSubtaskToSelected,
+    onAddSiblingSubtask: addSiblingSubtaskToSelected,
   });
 
   return (
@@ -179,7 +236,10 @@ function MainLayout() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <div className="hidden w-64 shrink-0 flex-col border-r border-neutral-200 dark:border-neutral-800 md:flex">
+        <div
+          className="relative hidden shrink-0 flex-col border-r border-neutral-200 dark:border-neutral-800 md:flex"
+          style={{ width: sidebarResize.width }}
+        >
           <div className="flex items-center justify-between border-b border-neutral-200 p-3 dark:border-neutral-800">
             <span className="text-sm font-semibold">Nestio</span>
             <div className="flex gap-2">
@@ -242,6 +302,10 @@ function MainLayout() {
             </button>
           </div>
           {screen === 'tasks' && <Sidebar view={view} onSelectView={selectView} />}
+          <div
+            onMouseDown={(e) => sidebarResize.startResize(1)(e)}
+            className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-blue-400/40"
+          />
         </div>
 
         {drawerOpen && (
@@ -300,6 +364,7 @@ function MainLayout() {
                 onMoveDown={() => moveSelection(1)}
                 onIndent={indentSelected}
                 onOutdent={outdentSelected}
+                onSelectTask={setSelectedTaskId}
               />
             )}
           </>
@@ -332,6 +397,7 @@ function MainLayout() {
           }}
         />
       )}
+      <ToastContainer />
     </div>
   );
 }

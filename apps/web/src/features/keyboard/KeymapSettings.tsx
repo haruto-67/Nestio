@@ -182,8 +182,8 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
               {feeds.map((f) => (
                 <li key={f.id} className="flex items-center justify-between text-xs text-neutral-400">
                   <span className="truncate">{f.token.slice(0, 16)}…</span>
-                  <button onClick={() => handleRevokeFeed(f.id)} className="text-red-500">
-                    失効
+                  <button onClick={() => handleRevokeFeed(f.id)} title="このURLを無効化する" className="text-red-500">
+                    失効させる
                   </button>
                 </li>
               ))}

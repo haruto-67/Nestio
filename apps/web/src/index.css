@@ -3,6 +3,27 @@
 /* prefers-color-scheme ではなく .dark クラスでダーク/ライトを切り替える */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Windows版Chrome/Edgeはselectのbackground-colorがtransparentだと、ネイティブの
+   ドロップダウンポップアップがOS既定色（白）で描画され、ダークモードの文字色と衝突して
+   読めなくなる（オプション一覧の下に不自然な白い余白も出る）。selectとoptionには
+   明示的な背景色を強制する（bg-transparentユーティリティより優先させるため!important） */
+select {
+  background-color: white !important;
+  color: #171717 !important;
+}
+.dark select {
+  background-color: #171717 !important;
+  color: white !important;
+}
+select option {
+  background-color: white;
+  color: #171717;
+}
+.dark select option {
+  background-color: #171717;
+  color: white;
+}
+
 /* iOS SafariはフォーカスしたinputのfontーSizeが16px未満だと自動でズームする。
    デスクトップの見た目(text-sm=14px)は変えず、モバイル幅だけ16pxへ引き上げる */
 @media (max-width: 767px) {

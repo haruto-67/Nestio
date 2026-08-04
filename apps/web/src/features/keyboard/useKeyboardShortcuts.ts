@@ -14,12 +14,20 @@ export interface ShortcutHandlers {
   onMoveDown: () => void;
   onIndent: () => void;
   onOutdent: () => void;
+  onAddSubtask: () => void;
+  onAddSiblingSubtask: () => void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
+
+/** タスク詳細パネル内ではTab/Shift+Tabをフォーム移動に譲り、インデント操作としては扱わない */
+function isWithinTaskDetailPanel(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.closest('[data-task-detail-panel]') !== null;
 }
 
 const PRIORITY_KEYS: Record<string, 0 | 1 | 2 | 3> = { '1': 0, '2': 1, '3': 2, '4': 3 };
@@ -39,6 +47,8 @@ const ACTION_HANDLER_KEYS: Record<KeymapAction, NoArgHandlerKey> = {
   delete: 'onDelete',
   toggle_theme: 'onToggleTheme',
   show_help: 'onShowHelp',
+  add_subtask: 'onAddSubtask',
+  add_sibling_subtask: 'onAddSiblingSubtask',
 };
 
 /**
@@ -89,6 +99,8 @@ export function useKeyboardShortcuts(keymap: Record<KeymapAction, string>, handl
           return;
         }
       }
+
+      if (e.key === 'Tab' && isWithinTaskDetailPanel(e.target)) return;
 
       const combo = normalizeKeyCombo(e);
       for (const [action, key] of Object.entries(km) as [KeymapAction, string][]) {

@@ -3,8 +3,10 @@ import { uuidv7 } from '@nestio/shared';
 import { FolderPlus, Plus, X, ChevronDown, ChevronRight, Pencil } from 'lucide-react';
 import { useApp } from '../../state/AppProvider.js';
 import { useFolders, useLists } from '../../db/queries.js';
-import { upsertFolder, deleteFolder, upsertList, deleteList } from '../../state/actions.js';
+import { upsertFolder, deleteFolder, upsertList, deleteList, upsertTask } from '../../state/actions.js';
+import { useTasks } from '../../db/queries.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
+import { showToast } from '../../ui/toast.js';
 import { SMART_LISTS } from '../../lib/task-views.js';
 import { EditableLabel, type EditableLabelHandle } from './EditableLabel.js';
 import type { ViewSelection } from '../../state/view.js';
@@ -20,6 +22,7 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
 
   const folders = [...useFolders()].sort((a, b) => a.sort_order - b.sort_order);
   const lists = useLists();
+  const tasks = useTasks();
 
   const listsByFolder = new Map<string | null, typeof lists>();
   for (const l of lists) {
@@ -62,6 +65,13 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
   const removeList = (id: string) => {
     if (view.type === 'list' && view.listId === id) onSelectView({ type: 'smart', key: 'today' });
     deleteList(id);
+  };
+
+  // タスクをドラッグしてサイドバーのリストにドロップ→そのリストへ移動（最上位階層として）
+  const dropTaskToList = (taskId: string, listId: string) => {
+    const siblings = tasks.filter((t) => t.list_id === listId && t.parent_id === null);
+    upsertTask(userId, taskId, { list_id: listId, parent_id: null, sort_order: nextSortOrder(siblings) });
+    showToast('リストを移動しました');
   };
 
   return (
@@ -113,6 +123,7 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
             onRename={(name) => renameList(l.id, name)}
             onDelete={() => removeList(l.id)}
             onChangeColor={(color) => changeListColor(l.id, color)}
+            onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
           />
         ))}
 
@@ -169,6 +180,7 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
                     onRename={(name) => renameList(l.id, name)}
                     onDelete={() => removeList(l.id)}
                     onChangeColor={(color) => changeListColor(l.id, color)}
+                    onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
                   />
                 ))}
               </div>
@@ -200,6 +212,7 @@ function ListRow({
   onRename,
   onDelete,
   onChangeColor,
+  onDropTask,
 }: {
   name: string;
   color: string;
@@ -208,14 +221,33 @@ function ListRow({
   onRename: (name: string) => void;
   onDelete: () => void;
   onChangeColor: (color: string) => void;
+  onDropTask: (taskId: string) => void;
 }) {
   const labelRef = useRef<EditableLabelHandle | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   return (
     <div
       onClick={onSelect}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('text/nestio-task-id')) return;
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        if (!e.dataTransfer.types.includes('text/nestio-task-id')) return;
+        e.preventDefault();
+        setDragOver(false);
+        const taskId = e.dataTransfer.getData('text/nestio-task-id');
+        if (taskId) onDropTask(taskId);
+      }}
       className={`relative flex cursor-pointer items-center gap-1 rounded px-1 py-1 ${
-        active ? 'bg-blue-100 font-medium dark:bg-blue-900/40' : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
+        dragOver
+          ? 'bg-blue-100 dark:bg-blue-900/40'
+          : active
+            ? 'bg-blue-100 font-medium dark:bg-blue-900/40'
+            : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
       }`}
     >
       <button

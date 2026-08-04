@@ -92,6 +92,21 @@ export const TOOL_DEFS: ToolDef[] = [
       required: ['title'],
     },
   },
+  {
+    name: 'update_note',
+    scope: 'write',
+    description: 'メモを更新する（タイトル・本文・ピン留め）',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        title: { type: 'string' },
+        body: { type: 'string' },
+        pinned: { type: 'boolean' },
+      },
+      required: ['id'],
+    },
+  },
 ];
 
 class ToolError extends Error {}
@@ -299,6 +314,24 @@ export async function callTool(
         fields,
       });
       return { id, title };
+    }
+
+    case 'update_note': {
+      const id = requireString(args, 'id');
+      const fields: Record<string, unknown> = {};
+      if (typeof args.title === 'string') fields.title = args.title;
+      if (typeof args.body === 'string') fields.body = args.body;
+      if (typeof args.pinned === 'boolean') fields.pinned = args.pinned ? 1 : 0;
+
+      applyOneOpOrThrow(db, userId, {
+        op_id: uuidv7(),
+        table: 'notes',
+        id,
+        op: 'upsert',
+        updated_at: Date.now(),
+        fields,
+      });
+      return { id };
     }
 
     default:

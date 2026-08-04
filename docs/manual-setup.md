@@ -148,9 +148,11 @@ curl http://<PiのグローバルIP>:3000   # 外部から到達できないこ�
 
 ## D. Phase 5（連携）でやること
 
-### D-1. Claude Code の実行環境 — 完了（改修2回目）
+### D-1. Claude Code の実行環境 — Docker側は完了（改修3回目）、ログインのみ要対応
 
-`claude -p` はAPIサーバー（Dockerコンテナ）内からexecFileで直接呼び出す構成のため、
+要件定義（予算：Claude API課金なし）の通り、Claude APIではなく**サブスクリプション経由のCLI**を
+叩く方針のため、`ANTHROPIC_API_KEY`は使わない（改修2回目で一度その方針にしてしまったが誤りだった。
+訂正済み）。`claude -p` はAPIサーバー（Dockerコンテナ）内からexecFileで直接呼び出す構成のため、
 「専用の低権限ユーザー」はホストに別途作らず、コンテナ自体が非rootユーザー
 （`nestio`, uid 10001）としてのみ動く既存の隔離をそのまま利用している
 （`docker/Dockerfile`で`npm install -g @anthropic-ai/claude-code`をイメージに焼き込み済み）。
@@ -158,11 +160,16 @@ curl http://<PiのグローバルIP>:3000   # 外部から到達できないこ�
 - [x] `docker/Dockerfile`にClaude Code CLIをインストール
 - [x] 作業ディレクトリを`/var/lib/nestio/hatch`に固定（named volume内、nestioユーザー所有）
 - [x] `CLAUDE_BIN`/`CLAUDE_WORKDIR`/`CLAUDE_TIMEOUT_SEC`はDockerfileの既定値のため`.env`での設定不要
+- [x] `$HOME`を`/var/lib/nestio/claude-home`（named volume内）に固定。ログイン情報はここに
+      保存されるため、コンテナを再ビルドしても消えない
 - [x] `--allowedTools`は既存の`hatch/actions/claude.ts`の仕組みで各トリガーごとに絞れる
-- [ ] **`ANTHROPIC_API_KEY`だけはユーザー側で発行・設定が必要**（Anthropicアカウント/請求に紐づく秘密情報のため）：
-      1. https://console.anthropic.com でAPIキーを発行
-      2. Pi上の`~/nestio/docker/.env`に`ANTHROPIC_API_KEY=sk-ant-...`を追記
-      3. `docker compose up -d`で再起動すれば反映される（`claude`プロセスは環境変数を継承する）
+- [ ] **claude CLIへのログインだけはユーザー側の対話操作が必要**：
+      1. Piにログインし `cd ~/nestio/docker`
+      2. `docker compose exec -it nestio claude` を実行（対話モードで起動）
+      3. 初回はログインを促されるので、表示されるURLをブラウザで開いてClaudeのサブスクリプション
+         アカウントでログイン・許可する
+      4. ログインできたら `/exit` や Ctrl+D でREPLを抜けてよい（ログイン情報は保存済み）
+      5. 動作確認：`docker compose exec nestio claude -p "こんにちは"` がエラーなく応答を返せばOK
 - `HATCH_SCRIPTS`に実行を許可するスクリプトのキーとパスを登録（未設定のままで問題ない。使う時だけ追加する）
 
 ```

@@ -5,6 +5,7 @@ import { useApp } from '../../state/AppProvider.js';
 import { useNote } from '../../db/queries.js';
 import { upsertNote, deleteNote } from '../../state/actions.js';
 import { AttachmentList } from '../attachments/AttachmentList.js';
+import { MarkdownField } from './MarkdownField.js';
 
 const NOTE_COLORS = ['#FFF7C0', '#FFD6D6', '#D6FFE0', '#D6E8FF', '#E8D6FF', '#FFFFFF'];
 
@@ -62,12 +63,15 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         className="w-full border-b border-transparent bg-transparent text-lg font-medium outline-none focus:border-blue-400"
       />
 
-      <textarea
-        defaultValue={note.body}
-        onBlur={(e) => update({ body: e.target.value })}
-        rows={12}
-        placeholder="本文"
-        className="w-full flex-1 resize-none rounded border border-neutral-200 bg-transparent p-2 text-sm outline-none focus:border-blue-400 dark:border-neutral-700"
+      <MarkdownField
+        key={noteId}
+        value={note.body}
+        onSave={(body) => update({ body })}
+        ownerType="note"
+        ownerId={noteId}
+        userId={userId}
+        rows={14}
+        placeholder="本文（**太字**、_斜体_、画像の貼り付け/ドロップに対応）"
       />
 
       <div className="flex gap-1.5">

@@ -14,6 +14,8 @@ export const KEYMAP_ACTIONS = [
   'delete',
   'toggle_theme',
   'show_help',
+  'add_subtask',
+  'add_sibling_subtask',
 ] as const;
 
 export type KeymapAction = (typeof KEYMAP_ACTIONS)[number];
@@ -29,6 +31,8 @@ export const DEFAULT_KEYMAP: Record<KeymapAction, string> = {
   delete: 'Delete',
   toggle_theme: 'Ctrl+Shift+l',
   show_help: '?',
+  add_subtask: 'a',
+  add_sibling_subtask: 'Shift+A',
 };
 
 export const KEYMAP_ACTION_LABELS: Record<KeymapAction, string> = {
@@ -42,6 +46,8 @@ export const KEYMAP_ACTION_LABELS: Record<KeymapAction, string> = {
   delete: '削除',
   toggle_theme: 'ダーク / ライト切替',
   show_help: 'ショートカット一覧を表示',
+  add_subtask: '選択中タスクにサブタスクを追加',
+  add_sibling_subtask: '選択中タスクと同じ階層にタスクを追加',
 };
 
 export function parseKeymapOverrides(json: string): Partial<Record<KeymapAction, string>> {

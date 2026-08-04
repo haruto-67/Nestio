@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent, type DragEvent } from 'react';
 import { uuidv7, type ListSortMode, type TaskRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
 import { useLists, useTasks } from '../../db/queries.js';
@@ -10,6 +10,7 @@ import { taskDueDateStringJst, SMART_LISTS } from '../../lib/task-views.js';
 import { todayJstDateString } from '../../lib/datetime.js';
 import { upsertTask, upsertList, completeTask } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
+import { showToast } from '../../ui/toast.js';
 import { TaskItem } from './TaskItem.js';
 
 interface TaskListViewProps {
@@ -80,9 +81,37 @@ export function TaskListView({
       title: '新しいサブタスク',
       sort_order: nextSortOrder(siblings),
     });
+    onSelectTask(id);
+    showToast('サブタスクを追加しました');
   };
 
   const targetListId = view.type === 'list' ? view.listId : firstListId(lists);
+
+  // タスクをドラッグして別のタスクの上にドロップ→そのタスクの子にする（indent操作と同じ意味）
+  const dropOntoTask = (draggedTaskId: string, targetTaskId: string) => {
+    const target = tasks.find((t) => t.id === targetTaskId);
+    if (!target) return;
+    const siblings = tasks.filter((t) => t.parent_id === targetTaskId);
+    upsertTask(userId, draggedTaskId, {
+      list_id: target.list_id,
+      parent_id: targetTaskId,
+      sort_order: nextSortOrder(siblings),
+    });
+  };
+
+  // タスクをドラッグしてタスク一覧の背景（行以外）にドロップ→現在のリストの最上位階層に戻す
+  const dropToTopLevel = (e: DragEvent) => {
+    if (!e.dataTransfer.types.includes('text/nestio-task-id')) return;
+    e.preventDefault();
+    const draggedTaskId = e.dataTransfer.getData('text/nestio-task-id');
+    if (!draggedTaskId || !targetListId) return;
+    const siblings = tasks.filter((t) => t.list_id === targetListId && t.parent_id === null);
+    upsertTask(userId, draggedTaskId, {
+      list_id: targetListId,
+      parent_id: null,
+      sort_order: nextSortOrder(siblings),
+    });
+  };
 
   const createTask = () => {
     const trimmed = newTaskTitle.trim();
@@ -91,6 +120,7 @@ export function TaskListView({
     const id = uuidv7();
     upsertTask(userId, id, { list_id: targetListId, title: trimmed, sort_order: nextSortOrder(siblings) });
     setNewTaskTitle('');
+    showToast('タスクを追加しました');
   };
 
   const changeSortMode = (mode: ListSortMode) => {
@@ -141,7 +171,13 @@ export function TaskListView({
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 py-2">
+      <div
+        className="flex-1 overflow-y-auto px-2 py-2"
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('text/nestio-task-id')) e.preventDefault();
+        }}
+        onDrop={dropToTopLevel}
+      >
         {view.type === 'smart' && view.key === 'today' ? (
           <TodayViewSections
             tasks={tasksInView}
@@ -151,6 +187,7 @@ export function TaskListView({
             onSelect={onSelectTask}
             selectedTaskId={selectedTaskId}
             onAddSubtask={addSubtask}
+            onDropOntoTask={dropOntoTask}
           />
         ) : (
           <TaskTreeOrFlat
@@ -162,6 +199,7 @@ export function TaskListView({
             onSelect={onSelectTask}
             selectedTaskId={selectedTaskId}
             onAddSubtask={addSubtask}
+            onDropOntoTask={dropOntoTask}
           />
         )}
         {tasksInView.length === 0 && <p className="p-6 text-center text-sm text-neutral-400">タスクはありません</p>}
@@ -177,6 +215,7 @@ interface SharedListProps {
   onSelect: (taskId: string) => void;
   selectedTaskId: string | null;
   onAddSubtask: (taskId: string) => void;
+  onDropOntoTask: (draggedTaskId: string, targetTaskId: string) => void;
 }
 
 function TaskTreeOrFlat({
@@ -188,6 +227,7 @@ function TaskTreeOrFlat({
   onSelect,
   selectedTaskId,
   onAddSubtask,
+  onDropOntoTask,
 }: SharedListProps & { view: ViewSelection; tasks: TaskRow[] }) {
   if (view.type === 'list') {
     const tree = buildTaskTree(tasks, sortMode);
@@ -202,6 +242,7 @@ function TaskTreeOrFlat({
             onToggleComplete={onToggleComplete}
             onSelect={onSelect}
             onAddSubtask={onAddSubtask}
+            onDropOntoTask={onDropOntoTask}
             selectedTaskId={selectedTaskId}
           />
         ))}
@@ -221,6 +262,7 @@ function TaskTreeOrFlat({
           onToggleComplete={onToggleComplete}
           onSelect={onSelect}
           onAddSubtask={onAddSubtask}
+          onDropOntoTask={onDropOntoTask}
           selectedTaskId={selectedTaskId}
         />
       ))}
@@ -228,7 +270,7 @@ function TaskTreeOrFlat({
   );
 }
 
-function TodayViewSections({ tasks, sortMode, canComplete, onToggleComplete, onSelect, selectedTaskId, onAddSubtask }: SharedListProps & { tasks: TaskRow[] }) {
+function TodayViewSections({ tasks, sortMode, canComplete, onToggleComplete, onSelect, selectedTaskId, onAddSubtask, onDropOntoTask }: SharedListProps & { tasks: TaskRow[] }) {
   const today = todayJstDateString();
   const overdue = sortTasks(
     tasks.filter((t) => {
@@ -256,6 +298,7 @@ function TodayViewSections({ tasks, sortMode, canComplete, onToggleComplete, onS
               onToggleComplete={onToggleComplete}
               onSelect={onSelect}
               onAddSubtask={onAddSubtask}
+              onDropOntoTask={onDropOntoTask}
               selectedTaskId={selectedTaskId}
             />
           ))}
@@ -273,6 +316,7 @@ function TodayViewSections({ tasks, sortMode, canComplete, onToggleComplete, onS
               onToggleComplete={onToggleComplete}
               onSelect={onSelect}
               onAddSubtask={onAddSubtask}
+              onDropOntoTask={onDropOntoTask}
               selectedTaskId={selectedTaskId}
             />
           ))}

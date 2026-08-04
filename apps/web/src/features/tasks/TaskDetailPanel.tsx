@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowUp, ArrowDown, IndentIncrease, IndentDecrease, Plus } from 'lucide-react';
 import { uuidv7, type TaskWritableFields, type TaskRow } from '@nestio/shared';
+import { MarkdownField } from '../notes/MarkdownField.js';
 import { useApp } from '../../state/AppProvider.js';
 import { useLists, useTags, useTaskTags, useTasks, useTask } from '../../db/queries.js';
 import { upsertTask, deleteTask, upsertTag, upsertTaskTag, deleteTaskTag, completeTask } from '../../state/actions.js';
@@ -8,6 +9,8 @@ import { nextSortOrder } from '../../lib/sort-order.js';
 import { naturalCollator, todayJstDateString } from '../../lib/datetime.js';
 import { RecurrenceEditor } from './RecurrenceEditor.js';
 import { AttachmentList } from '../attachments/AttachmentList.js';
+import { showToast } from '../../ui/toast.js';
+import { useResizableWidth } from '../../lib/useResizableWidth.js';
 
 const PRIORITY_LABELS = ['なし', '低', '中', '高'] as const;
 
@@ -18,10 +21,20 @@ interface TaskDetailPanelProps {
   onMoveDown: () => void;
   onIndent: () => void;
   onOutdent: () => void;
+  onSelectTask: (taskId: string) => void;
 }
 
-export function TaskDetailPanel({ taskId, onClose, onMoveUp, onMoveDown, onIndent, onOutdent }: TaskDetailPanelProps) {
+export function TaskDetailPanel({
+  taskId,
+  onClose,
+  onMoveUp,
+  onMoveDown,
+  onIndent,
+  onOutdent,
+  onSelectTask,
+}: TaskDetailPanelProps) {
   const { me } = useApp();
+  const panelResize = useResizableWidth('nestio_detail_panel_width', 320, 260, 640);
   const task = useTask(taskId);
   const lists = useLists();
   const allTags = useTags();
@@ -44,6 +57,7 @@ export function TaskDetailPanel({ taskId, onClose, onMoveUp, onMoveDown, onInden
   const removeTask = () => {
     deleteTask(taskId);
     onClose();
+    showToast('削除しました');
   };
 
   const addSubtask = () => {
@@ -55,6 +69,8 @@ export function TaskDetailPanel({ taskId, onClose, onMoveUp, onMoveDown, onInden
       title: '新しいサブタスク',
       sort_order: nextSortOrder(siblings),
     });
+    onSelectTask(id);
+    showToast('サブタスクを追加しました');
   };
 
   const toggleTag = (tagId: string) => {
@@ -73,7 +89,15 @@ export function TaskDetailPanel({ taskId, onClose, onMoveUp, onMoveDown, onInden
   };
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+    <aside
+      data-task-detail-panel="true"
+      style={{ width: panelResize.width }}
+      className="relative flex h-full shrink-0 flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"
+    >
+      <div
+        onMouseDown={(e) => panelResize.startResize(-1)(e)}
+        className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-blue-400/40"
+      />
       <div className="flex items-center justify-between">
         <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
           閉じる
@@ -127,15 +151,19 @@ export function TaskDetailPanel({ taskId, onClose, onMoveUp, onMoveDown, onInden
         </div>
       </div>
 
-      <label className="flex flex-col gap-1 text-xs text-neutral-500">
+      <div className="flex flex-col gap-1 text-xs text-neutral-500">
         メモ
-        <textarea
-          defaultValue={task.note}
-          onBlur={(e) => update({ note: e.target.value })}
-          rows={4}
-          className="w-full resize-none rounded border border-neutral-200 bg-transparent p-2 text-sm outline-none focus:border-blue-400 dark:border-neutral-700"
+        <MarkdownField
+          key={taskId}
+          value={task.note}
+          onSave={(note) => update({ note })}
+          ownerType="task"
+          ownerId={taskId}
+          userId={userId}
+          rows={10}
+          placeholder="メモを入力（**太字**、_斜体_、画像の貼り付け/ドロップに対応）"
         />
-      </label>
+      </div>
 
       <label className="flex flex-col gap-1 text-xs text-neutral-500">
         リスト
