@@ -55,6 +55,7 @@ export const TOOL_DEFS: ToolDef[] = [
         note: { type: 'string' },
         priority: { type: 'number' },
         due_date: { type: 'string', description: 'YYYY-MM-DD' },
+        parent_id: { type: 'string', description: '指定するとこのタスクIDのサブタスクとして作成する' },
       },
       required: ['list_id', 'title'],
     },
@@ -100,12 +101,18 @@ function requireString(args: Record<string, unknown>, key: string): string {
   return v;
 }
 
-function nextSortOrderForTasks(db: Database.Database, listId: string): number {
-  const row = db
-    .prepare(
-      'SELECT MAX(sort_order) as m FROM tasks WHERE list_id = ? AND parent_id IS NULL AND deleted_at IS NULL',
-    )
-    .get(listId) as { m: number | null };
+function nextSortOrderForTasks(db: Database.Database, listId: string, parentId: string | null): number {
+  const row = parentId
+    ? (db
+        .prepare(
+          'SELECT MAX(sort_order) as m FROM tasks WHERE list_id = ? AND parent_id = ? AND deleted_at IS NULL',
+        )
+        .get(listId, parentId) as { m: number | null })
+    : (db
+        .prepare(
+          'SELECT MAX(sort_order) as m FROM tasks WHERE list_id = ? AND parent_id IS NULL AND deleted_at IS NULL',
+        )
+        .get(listId) as { m: number | null });
   return (row.m ?? 0) + 1;
 }
 
@@ -180,9 +187,15 @@ export async function callTool(
     case 'create_task': {
       const listId = requireString(args, 'list_id');
       const title = requireString(args, 'title');
+      const parentId = typeof args.parent_id === 'string' ? args.parent_id : null;
       const id = uuidv7();
 
-      const fields: Record<string, unknown> = { list_id: listId, title, sort_order: nextSortOrderForTasks(db, listId) };
+      const fields: Record<string, unknown> = {
+        list_id: listId,
+        title,
+        sort_order: nextSortOrderForTasks(db, listId, parentId),
+      };
+      if (parentId) fields.parent_id = parentId;
       if (typeof args.note === 'string') fields.note = args.note;
       if (typeof args.priority === 'number') fields.priority = args.priority;
       if (typeof args.due_date === 'string') fields.due_date = args.due_date;

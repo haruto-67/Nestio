@@ -146,6 +146,54 @@ describe('MCP OAuth + tools', () => {
     expect(row.title).toBe('MCP経由のタスク');
   });
 
+  it('parent_idを指定するとサブタスクとして作成できる', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+
+    const parentRes = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'create_task', arguments: { list_id: listId, title: '親タスク' } },
+      }),
+    });
+    const parentBody = (await parentRes.json()) as { result: { content: { text: string }[] } };
+    const parent = JSON.parse(parentBody.result.content[0]?.text ?? '{}') as { id: string };
+
+    const childRes = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'create_task',
+          arguments: { list_id: listId, title: 'サブタスク', parent_id: parent.id },
+        },
+      }),
+    });
+    expect(childRes.status).toBe(200);
+    const childBody = (await childRes.json()) as { result: { content: { text: string }[] } };
+    const child = JSON.parse(childBody.result.content[0]?.text ?? '{}') as { id: string };
+
+    const row = db.prepare('SELECT parent_id FROM tasks WHERE id = ?').get(child.id) as { parent_id: string };
+    expect(row.parent_id).toBe(parent.id);
+  });
+
   it('不正なcode_verifierではトークンを発行しない', async () => {
     db = createTestDb();
     const userId = uuidv7();
