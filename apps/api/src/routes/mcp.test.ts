@@ -194,6 +194,42 @@ describe('MCP OAuth + tools', () => {
     expect(row.parent_id).toBe(parent.id);
   });
 
+  it('tagsを指定するとタグを新規作成して紐付ける', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+
+    const callRes = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/call',
+        params: { name: 'create_task', arguments: { list_id: listId, title: 'タグ付きタスク', tags: ['manual'] } },
+      }),
+    });
+    expect(callRes.status).toBe(200);
+    const body = (await callRes.json()) as { result: { content: { text: string }[] } };
+    const created = JSON.parse(body.result.content[0]?.text ?? '{}') as { id: string };
+
+    const row = db
+      .prepare(
+        `SELECT tg.name FROM task_tags tt JOIN tags tg ON tg.id = tt.tag_id WHERE tt.task_id = ? AND tt.deleted_at IS NULL`,
+      )
+      .get(created.id) as { name: string };
+    expect(row.name).toBe('manual');
+  });
+
   it('不正なcode_verifierではトークンを発行しない', async () => {
     db = createTestDb();
     const userId = uuidv7();

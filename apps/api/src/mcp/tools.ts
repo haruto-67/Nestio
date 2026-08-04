@@ -56,6 +56,7 @@ export const TOOL_DEFS: ToolDef[] = [
         priority: { type: 'number' },
         due_date: { type: 'string', description: 'YYYY-MM-DD' },
         parent_id: { type: 'string', description: '指定するとこのタスクIDのサブタスクとして作成する' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'タグ名の配列。無ければ新規作成する' },
       },
       required: ['list_id', 'title'],
     },
@@ -121,6 +122,42 @@ function nextSortOrderForNotes(db: Database.Database, userId: string): number {
     userId,
   ) as { m: number | null };
   return (row.m ?? 0) + 1;
+}
+
+function findOrCreateTagId(db: Database.Database, userId: string, name: string): string {
+  const existing = db
+    .prepare('SELECT id FROM tags WHERE user_id = ? AND name = ? AND deleted_at IS NULL')
+    .get(userId, name) as { id: string } | undefined;
+  if (existing) return existing.id;
+
+  const id = uuidv7();
+  applyOneOpOrThrow(db, userId, {
+    op_id: uuidv7(),
+    table: 'tags',
+    id,
+    op: 'upsert',
+    updated_at: Date.now(),
+    fields: { name, color: '#888888' },
+  });
+  return id;
+}
+
+function attachTags(db: Database.Database, userId: string, taskId: string, tagNames: string[]): void {
+  for (const name of tagNames) {
+    const tagId = findOrCreateTagId(db, userId, name);
+    const already = db
+      .prepare('SELECT 1 FROM task_tags WHERE task_id = ? AND tag_id = ? AND deleted_at IS NULL')
+      .get(taskId, tagId);
+    if (already) continue;
+    applyOneOpOrThrow(db, userId, {
+      op_id: uuidv7(),
+      table: 'task_tags',
+      id: uuidv7(),
+      op: 'upsert',
+      updated_at: Date.now(),
+      fields: { task_id: taskId, tag_id: tagId },
+    });
+  }
 }
 
 function applyOneOpOrThrow(db: Database.Database, userId: string, op: SyncOp): void {
@@ -208,6 +245,11 @@ export async function callTool(
         updated_at: Date.now(),
         fields,
       });
+
+      if (Array.isArray(args.tags)) {
+        attachTags(db, userId, id, args.tags.filter((t): t is string => typeof t === 'string'));
+      }
+
       return { id, title };
     }
 
