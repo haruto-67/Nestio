@@ -11,7 +11,7 @@ import type {
   TriggerWritableFields,
   TaskRow,
 } from '@nestio/shared';
-import { upsertLocal, deleteLocal, upsertUserSettingsLocal, commitAndSync } from '../db/local-mutations.js';
+import { upsertLocal, deleteLocal, restoreLocal, upsertUserSettingsLocal, commitAndSync } from '../db/local-mutations.js';
 import { computeNextOccurrence } from '../lib/recurrence.js';
 import { savePendingAttachmentBlob } from '../db/attachment-blobs.js';
 import type { ProcessedImage } from '../lib/image-processing.js';
@@ -35,6 +35,9 @@ export function upsertTask(userId: string, id: string, fields: TaskWritableField
 }
 export function deleteTask(id: string): void {
   commitAndSync(deleteLocal('tasks', id));
+}
+export function restoreTask(id: string): void {
+  commitAndSync(restoreLocal('tasks', id));
 }
 
 /**
@@ -83,6 +86,9 @@ export function upsertNote(userId: string, id: string, fields: NoteWritableField
 }
 export function deleteNote(id: string): void {
   commitAndSync(deleteLocal('notes', id));
+}
+export function restoreNote(id: string): void {
+  commitAndSync(restoreLocal('notes', id));
 }
 
 export function upsertAttachment(userId: string, id: string, fields: AttachmentWritableFields): void {

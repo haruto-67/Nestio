@@ -27,7 +27,7 @@ export const syncOpSchema = z.object({
   op_id: idSchema,
   table: syncableTableSchema,
   id: idSchema,
-  op: z.enum(['upsert', 'delete']),
+  op: z.enum(['upsert', 'delete', 'restore']),
   updated_at: epochMsSchema,
   fields: z.record(z.string(), z.unknown()),
 });

@@ -9,20 +9,23 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons/icon.svg'],
+      includeAssets: ['icons/*.png'],
       manifest: {
         name: 'Nestio',
         short_name: 'Nestio',
         description: '巣に、今日やることを集めるタスク管理PWA',
         theme_color: '#2A9D8F',
-        background_color: '#F5E6C8',
+        background_color: '#FEF2DC',
         display: 'standalone',
         start_url: '/',
-        // 本番用PNGはPhase 6でCanvaから書き出して差し替える（docs/open-questions.md 6章）
-        icons: [{ src: '/icons/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
+        icons: [
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,ico}'],
+        globPatterns: ['**/*.{js,css,html,svg,ico,png}'],
         navigateFallbackDenylist: [/^\/api\//],
         // 期限リマインダー・ポモドーロ終了のpush/notificationclickハンドラを追加する
         importScripts: ['push-sw.js'],

@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { Menu, Timer, Search, Egg, HelpCircle, Trash2 } from 'lucide-react';
 import { AppProvider, useApp } from './state/AppProvider.js';
 import { useTasks } from './db/queries.js';
 import { LoginScreen } from './features/auth/LoginScreen.js';
@@ -15,6 +16,7 @@ import { SearchModal } from './features/search/SearchModal.js';
 import { NotesScreen } from './features/notes/NotesScreen.js';
 import { PomodoroTimer } from './features/pomodoro/PomodoroTimer.js';
 import { HatchSettings } from './features/hatch/HatchSettings.js';
+import { TrashView } from './features/trash/TrashView.js';
 import { upsertTask, deleteTask, completeTask } from './state/actions.js';
 import { nextSortOrder } from './lib/sort-order.js';
 
@@ -54,6 +56,7 @@ function MainLayout() {
   const [showSearch, setShowSearch] = useState(false);
   const [showPomodoro, setShowPomodoro] = useState(false);
   const [showHatchSettings, setShowHatchSettings] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const { keymap } = useKeymap();
   const visibleTaskIdsRef = useRef<string[]>([]);
@@ -79,6 +82,25 @@ function MainLayout() {
 
   const findTask = (id: string) => tasks.find((t) => t.id === id);
 
+  const indentSelected = () => {
+    if (!selectedTaskId || !me || view.type !== 'list') return;
+    const ids = visibleTaskIdsRef.current;
+    const idx = ids.indexOf(selectedTaskId);
+    if (idx <= 0) return;
+    const newParentId = ids[idx - 1];
+    if (!newParentId) return;
+    const siblings = tasks.filter((t) => t.parent_id === newParentId);
+    upsertTask(me.id, selectedTaskId, { parent_id: newParentId, sort_order: nextSortOrder(siblings) });
+  };
+
+  const outdentSelected = () => {
+    if (!selectedTaskId || !me) return;
+    const task = findTask(selectedTaskId);
+    if (!task || !task.parent_id) return;
+    const grandParentId = findTask(task.parent_id)?.parent_id ?? null;
+    upsertTask(me.id, selectedTaskId, { parent_id: grandParentId });
+  };
+
   useKeyboardShortcuts(keymap, {
     onQuickAdd: () => quickAddInputElRef.current?.focus(),
     onSearch: () => setShowSearch(true),
@@ -102,44 +124,49 @@ function MainLayout() {
     onGotoToday: () => selectView({ type: 'smart', key: 'today' }),
     onMoveUp: () => moveSelection(-1),
     onMoveDown: () => moveSelection(1),
-    onIndent: () => {
-      if (!selectedTaskId || !me || view.type !== 'list') return;
-      const ids = visibleTaskIdsRef.current;
-      const idx = ids.indexOf(selectedTaskId);
-      if (idx <= 0) return;
-      const newParentId = ids[idx - 1];
-      if (!newParentId) return;
-      const siblings = tasks.filter((t) => t.parent_id === newParentId);
-      upsertTask(me.id, selectedTaskId, { parent_id: newParentId, sort_order: nextSortOrder(siblings) });
-    },
-    onOutdent: () => {
-      if (!selectedTaskId || !me) return;
-      const task = findTask(selectedTaskId);
-      if (!task || !task.parent_id) return;
-      const grandParentId = findTask(task.parent_id)?.parent_id ?? null;
-      upsertTask(me.id, selectedTaskId, { parent_id: grandParentId });
-    },
+    onIndent: indentSelected,
+    onOutdent: outdentSelected,
   });
 
   return (
     <div className="flex h-screen flex-col bg-white text-neutral-900 dark:bg-neutral-900 dark:text-white">
       <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800 md:hidden">
-        <button onClick={() => setDrawerOpen(true)} className="text-sm">
-          ☰ メニュー
+        <button
+          onClick={() => setDrawerOpen(true)}
+          className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 text-sm"
+        >
+          <Menu size={18} />
+          メニュー
         </button>
         <span className="text-sm font-semibold">Nestio</span>
-        <div className="flex gap-3">
-          <button onClick={() => setShowPomodoro(true)} title="ポモドーロ" className="text-sm">
-            🍅
+        <div className="flex gap-1">
+          <button
+            onClick={() => setShowPomodoro(true)}
+            title="ポモドーロ"
+            className="flex min-h-11 min-w-11 items-center justify-center text-red-500"
+          >
+            <Timer size={18} />
           </button>
-          <button onClick={() => setShowSearch(true)} title="検索" className="text-sm">
-            🔍
+          <button
+            onClick={() => setShowSearch(true)}
+            title="検索"
+            className="flex min-h-11 min-w-11 items-center justify-center text-blue-500"
+          >
+            <Search size={18} />
           </button>
-          <button onClick={() => setShowHatchSettings(true)} title="Hatch設定" className="text-sm">
-            🐣
+          <button
+            onClick={() => setShowHatchSettings(true)}
+            title="Hatch設定"
+            className="flex min-h-11 min-w-11 items-center justify-center text-amber-500"
+          >
+            <Egg size={18} />
           </button>
-          <button onClick={toggleTheme} className="text-sm">
-            {theme === 'dark' ? '🌙' : '☀️'}
+          <button
+            onClick={() => setShowHelp(true)}
+            title="ショートカット一覧"
+            className="flex min-h-11 min-w-11 items-center justify-center text-neutral-400"
+          >
+            <HelpCircle size={18} />
           </button>
         </div>
       </header>
@@ -149,17 +176,40 @@ function MainLayout() {
           <div className="flex items-center justify-between border-b border-neutral-200 p-3 dark:border-neutral-800">
             <span className="text-sm font-semibold">Nestio</span>
             <div className="flex gap-2">
-              <button onClick={() => setShowPomodoro(true)} title="ポモドーロ" className="text-sm">
-                🍅
+              <button
+                onClick={() => setShowPomodoro(true)}
+                title="ポモドーロ"
+                className="text-red-500 hover:text-red-600"
+              >
+                <Timer size={16} />
               </button>
-              <button onClick={() => setShowSearch(true)} title="検索" className="text-sm">
-                🔍
+              <button
+                onClick={() => setShowSearch(true)}
+                title="検索"
+                className="text-blue-500 hover:text-blue-600"
+              >
+                <Search size={16} />
               </button>
-              <button onClick={() => setShowHatchSettings(true)} title="Hatch設定" className="text-sm">
-                🐣
+              <button
+                onClick={() => setShowHatchSettings(true)}
+                title="Hatch設定"
+                className="text-amber-500 hover:text-amber-600"
+              >
+                <Egg size={16} />
               </button>
-              <button onClick={toggleTheme} title="テーマ切替" className="text-sm">
-                {theme === 'dark' ? '🌙' : '☀️'}
+              <button
+                onClick={() => setShowHelp(true)}
+                title="ショートカット一覧（?）"
+                className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+              >
+                <HelpCircle size={16} />
+              </button>
+              <button
+                onClick={() => setShowTrash(true)}
+                title="ゴミ箱"
+                className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+              >
+                <Trash2 size={16} />
               </button>
             </div>
           </div>
@@ -182,7 +232,7 @@ function MainLayout() {
 
         {drawerOpen && (
           <div className="fixed inset-0 z-50 flex md:hidden">
-            <div className="flex w-72 flex-col bg-white dark:bg-neutral-900">
+            <div className="animate-[nestio-fade-scale-in_150ms_ease-out] flex w-72 flex-col bg-white dark:bg-neutral-900">
               <div className="flex border-b border-neutral-200 text-sm dark:border-neutral-800">
                 <button
                   onClick={() => setScreen('tasks')}
@@ -196,10 +246,17 @@ function MainLayout() {
                 >
                   メモ
                 </button>
+                <button
+                  onClick={() => setShowTrash(true)}
+                  title="ゴミ箱"
+                  className="flex min-h-11 min-w-11 items-center justify-center text-neutral-400"
+                >
+                  <Trash2 size={16} />
+                </button>
               </div>
               {screen === 'tasks' && <Sidebar view={view} onSelectView={selectView} />}
             </div>
-            <div className="flex-1 bg-black/40" onClick={() => setDrawerOpen(false)} />
+            <div className="nestio-overlay flex-1 bg-black/40" onClick={() => setDrawerOpen(false)} />
           </div>
         )}
 
@@ -214,7 +271,16 @@ function MainLayout() {
                 quickAddInputElRef.current = el;
               }}
             />
-            {selectedTaskId && <TaskDetailPanel taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />}
+            {selectedTaskId && (
+              <TaskDetailPanel
+                taskId={selectedTaskId}
+                onClose={() => setSelectedTaskId(null)}
+                onMoveUp={() => moveSelection(-1)}
+                onMoveDown={() => moveSelection(1)}
+                onIndent={indentSelected}
+                onOutdent={outdentSelected}
+              />
+            )}
           </>
         ) : (
           <NotesScreen />
@@ -230,9 +296,12 @@ function MainLayout() {
           }}
         />
       )}
-      {showKeymapSettings && <KeymapSettings onClose={() => setShowKeymapSettings(false)} />}
+      {showKeymapSettings && (
+        <KeymapSettings theme={theme} onToggleTheme={toggleTheme} onClose={() => setShowKeymapSettings(false)} />
+      )}
       {showHatchSettings && <HatchSettings onClose={() => setShowHatchSettings(false)} />}
       {showPomodoro && <PomodoroTimer onClose={() => setShowPomodoro(false)} />}
+      {showTrash && <TrashView onClose={() => setShowTrash(false)} />}
       {showSearch && (
         <SearchModal
           onClose={() => setShowSearch(false)}

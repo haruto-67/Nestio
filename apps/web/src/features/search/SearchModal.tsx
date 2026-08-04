@@ -53,10 +53,10 @@ export function SearchModal({ onClose, onSelectTask }: SearchModalProps) {
   const hasNoResults = !loading && trimmed !== '' && results.tasks.length === 0 && results.notes.length === 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900"
+        className="w-full max-w-lg rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
       >
         <input
           ref={inputRef}

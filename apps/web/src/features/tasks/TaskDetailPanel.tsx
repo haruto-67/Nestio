@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ArrowUp, ArrowDown, IndentIncrease, IndentDecrease, Plus } from 'lucide-react';
 import { uuidv7, type TaskWritableFields, type TaskRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
 import { useLists, useTags, useTaskTags, useTasks, useTask } from '../../db/queries.js';
@@ -13,9 +14,13 @@ const PRIORITY_LABELS = ['なし', '低', '中', '高'] as const;
 interface TaskDetailPanelProps {
   taskId: string;
   onClose: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onIndent: () => void;
+  onOutdent: () => void;
 }
 
-export function TaskDetailPanel({ taskId, onClose }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ taskId, onClose, onMoveUp, onMoveDown, onIndent, onOutdent }: TaskDetailPanelProps) {
   const { me } = useApp();
   const task = useTask(taskId);
   const lists = useLists();
@@ -87,6 +92,40 @@ export function TaskDetailPanel({ taskId, onClose }: TaskDetailPanelProps) {
         }}
         className="w-full border-b border-transparent bg-transparent text-lg font-medium outline-none focus:border-blue-400"
       />
+
+      <div className="flex flex-col gap-1 text-xs text-neutral-500">
+        並び替え・階層
+        <div className="flex gap-1">
+          <button
+            onClick={onMoveUp}
+            title="上へ移動"
+            className="flex flex-1 items-center justify-center rounded border border-neutral-200 py-1.5 dark:border-neutral-700"
+          >
+            <ArrowUp size={14} />
+          </button>
+          <button
+            onClick={onMoveDown}
+            title="下へ移動"
+            className="flex flex-1 items-center justify-center rounded border border-neutral-200 py-1.5 dark:border-neutral-700"
+          >
+            <ArrowDown size={14} />
+          </button>
+          <button
+            onClick={onOutdent}
+            title="アウトデント（親から出す）"
+            className="flex flex-1 items-center justify-center rounded border border-neutral-200 py-1.5 dark:border-neutral-700"
+          >
+            <IndentDecrease size={14} />
+          </button>
+          <button
+            onClick={onIndent}
+            title="インデント（直前のタスクの子にする）"
+            className="flex flex-1 items-center justify-center rounded border border-neutral-200 py-1.5 dark:border-neutral-700"
+          >
+            <IndentIncrease size={14} />
+          </button>
+        </div>
+      </div>
 
       <label className="flex flex-col gap-1 text-xs text-neutral-500">
         メモ
@@ -161,8 +200,9 @@ export function TaskDetailPanel({ taskId, onClose }: TaskDetailPanelProps) {
       <div className="flex flex-col gap-1 text-xs text-neutral-500">
         <div className="flex items-center justify-between">
           <span>サブタスク</span>
-          <button onClick={addSubtask} className="text-blue-500">
-            + 追加
+          <button onClick={addSubtask} className="flex items-center gap-0.5 text-blue-500">
+            <Plus size={12} />
+            追加
           </button>
         </div>
         <SubtaskList parentId={taskId} />

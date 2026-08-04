@@ -90,13 +90,13 @@ export function TaskListView({
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden">
-      <header className="flex items-center justify-between border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
-        <h1 className="text-xl font-semibold">{title}</h1>
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800 md:px-6 md:py-4">
+        <h1 className="min-w-0 flex-1 truncate text-lg font-semibold md:text-xl">{title}</h1>
         {view.type === 'list' && (
           <select
             value={sortMode}
             onChange={(e) => changeSortMode(e.target.value as ListSortMode)}
-            className="rounded border border-neutral-200 bg-transparent p-1 text-xs dark:border-neutral-700"
+            className="shrink-0 rounded border border-neutral-200 bg-transparent p-1 text-xs dark:border-neutral-700"
           >
             <option value="custom">カスタム</option>
             <option value="due">期限順</option>

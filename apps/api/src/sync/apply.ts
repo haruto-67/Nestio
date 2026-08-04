@@ -75,6 +75,25 @@ function applyOneOp(db: Database.Database, userId: string, op: SyncOp, triggered
     return result;
   }
 
+  if (op.op === 'restore') {
+    const result = applyRestore(db, op.table, userId, op);
+    if (result.ok && op.table === 'tasks') {
+      const restored = fetchExisting(db, 'tasks', op.id);
+      if (restored) {
+        rescheduleDueReminder(
+          db,
+          userId,
+          op.id,
+          restored.title as string,
+          restored.due_at as number | null,
+          restored.due_date as string | null,
+          restored.completed_at as number | null,
+        );
+      }
+    }
+    return result;
+  }
+
   const def = SYNC_TABLES[op.table];
   const parsed = def.writableSchema.safeParse(op.fields);
   if (!parsed.success) {
@@ -176,6 +195,42 @@ function applyDelete(
   return { ok: true };
 }
 
+/**
+ * 論理削除の取り消し（ゴミ箱からの復元）。deleted_at を null に戻す点以外は applyDelete と対称。
+ * sync-protocol.md には無い拡張のため docs/open-questions.md に記録している。
+ */
+function applyRestore(
+  db: Database.Database,
+  table: ImplementedSyncTable,
+  userId: string,
+  op: SyncOp,
+): ApplyResult {
+  const existing = fetchExisting(db, table, op.id);
+  if (!existing) {
+    // 存在しない行の復元は無意味な操作
+    return { ok: false, reason: 'validation_failed' };
+  }
+  if (existing.user_id !== userId) {
+    return { ok: false, reason: 'forbidden' };
+  }
+  if (existing.deleted_at === null) {
+    // 既に復元済み（再送）は冪等に許容する
+    return { ok: true };
+  }
+
+  const seq = bumpSeq(db, userId);
+  if (op.updated_at >= (existing.updated_at as number)) {
+    db.prepare(`UPDATE ${table} SET deleted_at = NULL, updated_at = ?, seq = ? WHERE id = ?`).run(
+      op.updated_at,
+      seq,
+      op.id,
+    );
+  } else {
+    db.prepare(`UPDATE ${table} SET seq = ? WHERE id = ?`).run(seq, op.id);
+  }
+  return { ok: true };
+}
+
 function applyTaskUpsert(
   db: Database.Database,
   userId: string,
@@ -252,7 +307,7 @@ function applyUserSettingsOp(db: Database.Database, userId: string, op: SyncOp):
   if (op.id !== userId) {
     return { ok: false, reason: 'forbidden' };
   }
-  if (op.op === 'delete') {
+  if (op.op === 'delete' || op.op === 'restore') {
     return { ok: false, reason: 'validation_failed' };
   }
 

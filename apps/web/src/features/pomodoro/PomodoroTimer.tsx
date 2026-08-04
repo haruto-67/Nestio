@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
 import { useTasks } from '../../db/queries.js';
 import { schedulePomodoroPush, cancelPomodoroPush } from '../../api/push.js';
+import { usePersistedPomodoroState } from './usePersistedPomodoroState.js';
 
 const PRESETS = [
   { label: '25分', sec: 25 * 60 },
@@ -9,49 +9,34 @@ const PRESETS = [
 
 export function PomodoroTimer({ onClose }: { onClose: () => void }) {
   const tasks = useTasks();
-  const [durationSec, setDurationSec] = useState(PRESETS[0]?.sec ?? 1500);
-  const [remainingSec, setRemainingSec] = useState(PRESETS[0]?.sec ?? 1500);
-  const [running, setRunning] = useState(false);
-  const [taskId, setTaskId] = useState('');
-  const scheduleIdRef = useRef<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
+  const {
+    durationSec,
+    remainingSec,
+    running,
+    taskId,
+    scheduleId,
+    setDurationSec,
+    setTaskId,
+    setScheduleId,
+    start: startPersisted,
+    stop: stopPersisted,
+  } = usePersistedPomodoroState();
 
   const start = async () => {
-    setRunning(true);
-    setRemainingSec(durationSec);
+    startPersisted();
     try {
       const { id } = await schedulePomodoroPush(durationSec, taskId || undefined);
-      scheduleIdRef.current = id;
+      setScheduleId(id);
     } catch (err) {
       console.error(err);
     }
-
-    intervalRef.current = setInterval(() => {
-      setRemainingSec((s) => {
-        if (s <= 1) {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          setRunning(false);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
   };
 
   const stop = () => {
-    setRunning(false);
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (scheduleIdRef.current) {
-      cancelPomodoroPush(scheduleIdRef.current).catch((err) => console.error(err));
-      scheduleIdRef.current = null;
+    if (scheduleId) {
+      cancelPomodoroPush(scheduleId).catch((err) => console.error(err));
     }
-    setRemainingSec(durationSec);
+    stopPersisted();
   };
 
   const minutes = Math.floor(remainingSec / 60);
@@ -59,10 +44,10 @@ export function PomodoroTimer({ onClose }: { onClose: () => void }) {
   const incompleteTasks = tasks.filter((t) => t.completed_at === null);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-72 rounded-lg bg-white p-5 text-center shadow-lg dark:bg-neutral-900"
+        className="w-72 rounded-lg bg-white p-5 text-center shadow-lg dark:bg-neutral-900 nestio-modal-panel"
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">ポモドーロ</h2>
@@ -81,10 +66,7 @@ export function PomodoroTimer({ onClose }: { onClose: () => void }) {
               {PRESETS.map((p) => (
                 <button
                   key={p.sec}
-                  onClick={() => {
-                    setDurationSec(p.sec);
-                    setRemainingSec(p.sec);
-                  }}
+                  onClick={() => setDurationSec(p.sec)}
                   className={`rounded border px-3 py-1 text-xs ${
                     durationSec === p.sec
                       ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40'

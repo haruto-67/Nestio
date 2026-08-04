@@ -248,20 +248,21 @@ tail -f /var/lib/nestio/logs/*.log | jq 'select(.scope=="hatch")'
 
 ---
 
-## G. アイコンの書き出し（Canva）
+## G. アイコンの書き出し（Canva）— 完了
 
-確定アイコンの編集用：`https://www.canva.com/d/3-dI-GIjYx1e-ML`
-
-PWA 用に以下を書き出して `apps/web/public/icons/` に配置する。
+確定アイコン：「Stylized Bird's Nest Icon with Checkmark」（Canvaデザイン `DAHROzFVtlI`）。
+Nestio改修1回目タスクの一環でMCP(Canva connector)経由でPNG書き出し・角丸フチの除去・
+各サイズ生成まで完了し、`apps/web/public/icons/` に配置済み。
 
 | ファイル | サイズ | 用途 |
 |---|---|---|
 | `icon-192.png` | 192×192 | manifest（通常） |
 | `icon-512.png` | 512×512 | manifest（通常・スプラッシュ） |
-| `icon-192-maskable.png` | 192×192 | manifest（マスカブル。周囲に余白を持たせる） |
-| `icon-512-maskable.png` | 512×512 | 同上 |
+| `icon-512-maskable.png` | 512×512 | manifest（マスカブル。中央に十分な余白があるため192版は省略） |
 | `apple-touch-icon.png` | 180×180 | iOS ホーム画面 |
-| `favicon.ico` | 32×32 | ブラウザタブ |
+| `favicon-32.png` | 32×32 | ブラウザタブ（`link rel="icon" type="image/png"`。主要ブラウザはPNG faviconに対応済みのため`.ico`は作らなかった） |
 
-- **マスカブル版は要素を中央 80% に収める**（OS が角丸や円形に切り抜くため、端が欠ける）
-- Canva からは PNG で書き出し、`manifest.webmanifest` の `icons` に `purpose: "any"` と `purpose: "maskable"` を分けて登録する
+- Canvaの元データは角丸＋白フチ込みでエクスポートされたため、Pillowで角丸部分をクリーム色（背景色）で
+  塗りつぶしてフルブリードの正方形に変換してから各サイズへリサイズしている
+  （OS側が独自にマスクをかけるため、素材側で角丸を持たせると二重に丸まってしまう）
+- マスカブル版もこの手順でクリーム色をフチまで敷いているため中央80%セーフゾーンに収まる

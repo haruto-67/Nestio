@@ -11,10 +11,10 @@ export function ShortcutHelpModal({ onClose, onOpenSettings }: { onClose: () => 
   const { keymap } = useKeymap();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-80 rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900"
+        className="w-80 rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">キーボードショートカット</h2>

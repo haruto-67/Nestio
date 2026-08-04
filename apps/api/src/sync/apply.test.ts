@@ -274,6 +274,53 @@ describe('applySyncOps', () => {
     expect(res.rejected).toEqual([]);
   });
 
+  it('deleteしたタスクをrestoreするとdeleted_atがnullに戻る', () => {
+    setup();
+    const taskId = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), {})]);
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: taskId, op: 'delete', updated_at: Date.now(), fields: {} },
+    ]);
+    let row = db.prepare('SELECT deleted_at FROM tasks WHERE id = ?').get(taskId) as { deleted_at: number | null };
+    expect(row.deleted_at).not.toBeNull();
+
+    const res = applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: taskId, op: 'restore', updated_at: Date.now(), fields: {} },
+    ]);
+    expect(res.rejected).toEqual([]);
+    row = db.prepare('SELECT deleted_at FROM tasks WHERE id = ?').get(taskId) as { deleted_at: number | null };
+    expect(row.deleted_at).toBeNull();
+  });
+
+  it('存在しない行のrestoreはvalidation_failedでrejectされる', () => {
+    setup();
+    const op: SyncOp = {
+      op_id: uuidv7(),
+      table: 'tasks',
+      id: uuidv7(),
+      op: 'restore',
+      updated_at: Date.now(),
+      fields: {},
+    };
+    const res = applySyncOps(db, userId, [op]);
+    expect(res.rejected).toEqual([{ op_id: op.op_id, reason: 'validation_failed' }]);
+  });
+
+  it('他ユーザーの行をrestoreしようとするとforbidden', () => {
+    setup();
+    const taskId = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), {})]);
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: taskId, op: 'delete', updated_at: Date.now(), fields: {} },
+    ]);
+    const otherUserId = uuidv7();
+    insertTestUser(db, otherUserId);
+    const res = applySyncOps(db, otherUserId, [
+      { op_id: uuidv7(), table: 'tasks', id: taskId, op: 'restore', updated_at: Date.now(), fields: {} },
+    ]);
+    expect(res.rejected).toEqual([{ op_id: expect.any(String), reason: 'forbidden' }]);
+  });
+
   it('user_settings は user_id をidとして扱い、無ければ作成、あれば更新する', () => {
     setup();
     const op: SyncOp = {

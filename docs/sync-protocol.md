@@ -86,7 +86,7 @@ POST /api/v1/sync/push
       "op_id": "01912f8c-...",       // UUIDv7。再送しても同じ値
       "table": "tasks",
       "id": "01912f8a-...",          // 対象行の ID
-      "op": "upsert",                // "upsert" | "delete"
+      "op": "upsert",                // "upsert" | "delete" | "restore"（restoreは改修1回目で追加）
       "updated_at": 1754200000000,   // クライアントの時刻（epoch ms）
       "fields": { "title": "買い物", "priority": 2 }
     }
@@ -136,6 +136,10 @@ for op in ops:
 - **LWW はフィールド単位**。`fields` に含まれるキーだけを比較・上書きする
   - デバイス A がタイトル、デバイス B が優先度を変えた場合、両方が残る
 - `delete` は `deleted_at` に時刻を入れるだけ（物理削除しない）
+- `restore`（改修1回目でゴミ箱機能のため追加）は `delete` と対称に `deleted_at` を `NULL` へ戻すだけ。
+  `delete` 同様 `op.updated_at >= 既存行.updated_at` の場合のみ適用し、`user_settings` には無い
+  （そもそも `deleted_at` を持たない）。存在しない行への `restore` は無意味な操作として reject する
+  （`delete` が冪等に無視するのとは異なる点に注意）
 
 ### 時計のずれ
 

@@ -40,14 +40,15 @@
 カスタマイズ対象外・固定ショートカットのままとした（`apps/web/src/features/keyboard/useKeyboardShortcuts.ts`）。
 将来ここもカスタマイズ可能にするなら、キーマップの値を配列や複合ステップに対応する形へスキーマ変更が必要になる。
 
-### 6. PWAアイコンは仮のSVGプレースホルダ
+### 6. PWAアイコン — Nestio改修1回目で解決済み
 
-`docs/manual-setup.md` G章の通り、確定アイコン（Canva `https://www.canva.com/d/3-dI-GIjYx1e-ML`）からのPNG書き出し（192/512の通常・マスカブル版、apple-touch-icon 180px、favicon.ico）は
-Claude Codeでは行えない作業として元々ユーザー側のタスクに分類されている。
-**判断**：Phase 2ではPWA化の技術基盤（manifest・Service Worker・オフラインシェル）を優先し、
-`apps/web/public/icons/icon.svg` に巣+卵モチーフの簡易SVGを1枚だけ置いて `manifest.webmanifest` から `purpose: "any"` で参照した。
-iOSの `apple-touch-icon` はSVGを認識しないため、実機のホーム画面追加では正式なPNG書き出しが必要
-（`docs/manual-setup.md` G章の作業は未完了のまま）。Phase 6でCanvaからの書き出し後にこのSVGを差し替える。
+Phase 2ではPWA化の技術基盤（manifest・Service Worker・オフラインシェル）を優先し、
+`apps/web/public/icons/icon.svg` に巣+卵モチーフの簡易SVGプレースホルダを置いていた。
+当初、確定アイコンのCanvaからのPNG書き出しはClaude Codeでは行えない作業としてユーザー側タスクに
+分類していたが、Canva MCPコネクタが利用可能になったため、Nestio改修1回目タスク対応時に
+Claude Code側で `export-design` ツールを使い書き出しまで完了させた（`docs/manual-setup.md` G章）。
+SVGプレースホルダは削除し、`icon-192.png`/`icon-512.png`/`icon-512-maskable.png`/
+`apple-touch-icon.png`/`favicon-32.png` に置き換えた。
 
 ### 7. `full_resync_required` — Phase 6で解決済み
 

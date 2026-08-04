@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useState, useImperativeHandle, forwardRef, type KeyboardEvent } from 'react';
 
 interface EditableLabelProps {
   value: string;
@@ -6,10 +6,31 @@ interface EditableLabelProps {
   onCommit: (next: string) => void;
 }
 
-/** ダブルクリックで編集モードに入り、Enter/blurで確定、Escapeで取り消す */
-export function EditableLabel({ value, className, onCommit }: EditableLabelProps) {
+export interface EditableLabelHandle {
+  startEditing: () => void;
+}
+
+/**
+ * ダブルクリックで編集モードに入り、Enter/blurで確定、Escapeで取り消す。
+ * タッチ操作ではダブルクリックに頼れないため、外部（例: リネームボタン）から
+ * startEditing() で編集モードへ入れるようrefのハンドルも公開する
+ */
+export const EditableLabel = forwardRef<EditableLabelHandle, EditableLabelProps>(function EditableLabel(
+  { value, className, onCommit },
+  ref,
+) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  useImperativeHandle(
+    ref,
+    () => ({
+      startEditing: () => {
+        setDraft(value);
+        setEditing(true);
+      },
+    }),
+    [value],
+  );
 
   if (!editing) {
     return (
@@ -51,4 +72,4 @@ export function EditableLabel({ value, className, onCommit }: EditableLabelProps
       onClick={(e) => e.stopPropagation()}
     />
   );
-}
+});

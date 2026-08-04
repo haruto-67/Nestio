@@ -84,6 +84,20 @@ export async function deleteLocal(table: NonUserSettingsTable, id: string): Prom
   return op;
 }
 
+/** ゴミ箱からの復元（deleted_atをnullへ戻す）。deleteLocalと対称の操作 */
+export async function restoreLocal(table: NonUserSettingsTable, id: string): Promise<SyncOp | null> {
+  const dexieTable = TABLE_MAP[table];
+  const existing = await dexieTable.get(id);
+  if (!existing) return null;
+
+  const updatedAt = nowWithSkew();
+  await dexieTable.put({ ...existing, deleted_at: null, updated_at: updatedAt });
+
+  const op: SyncOp = { op_id: uuidv7(), table, id, op: 'restore', updated_at: updatedAt, fields: {} };
+  await appendToOutbox(op);
+  return op;
+}
+
 /** user_settings は id を持たず PK が user_id 自体（apps/api/src/sync/apply.ts と対になる特殊ケース） */
 export async function upsertUserSettingsLocal(userId: string, fields: Row): Promise<SyncOp> {
   const updatedAt = nowWithSkew();

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Plus, X } from 'lucide-react';
 import type { AttachmentRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
 import { useAttachmentsFor, usePendingAttachmentBlob } from '../../db/queries.js';
@@ -38,8 +39,19 @@ export function AttachmentList({ ownerType, ownerId }: AttachmentListProps) {
     <div className="flex flex-col gap-1.5 text-xs text-neutral-500">
       <div className="flex items-center justify-between">
         <span>添付画像</span>
-        <button onClick={() => fileInputRef.current?.click()} className="text-blue-500" disabled={processing}>
-          {processing ? '処理中…' : '+ 追加'}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-0.5 text-blue-500"
+          disabled={processing}
+        >
+          {processing ? (
+            '処理中…'
+          ) : (
+            <>
+              <Plus size={12} />
+              追加
+            </>
+          )}
         </button>
         <input
           ref={fileInputRef}
@@ -94,9 +106,9 @@ function AttachmentThumbnail({ attachment, onDelete }: { attachment: AttachmentR
       />
       <button
         onClick={onDelete}
-        className="absolute right-0.5 top-0.5 hidden rounded-full bg-black/60 px-1 text-xs text-white group-hover:block"
+        className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white"
       >
-        ✕
+        <X size={11} />
       </button>
     </div>
   );

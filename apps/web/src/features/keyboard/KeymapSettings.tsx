@@ -1,4 +1,5 @@
 import { useState, useEffect, type KeyboardEvent } from 'react';
+import { Moon, Sun, AlertTriangle } from 'lucide-react';
 import { KEYMAP_ACTIONS, KEYMAP_ACTION_LABELS, findKeymapConflicts, normalizeKeyCombo, type KeymapAction } from '../../lib/keymap.js';
 import { useKeymap } from '../../state/useKeymap.js';
 import { useApp } from '../../state/AppProvider.js';
@@ -7,7 +8,13 @@ import { enablePushNotifications, getPushPermissionState } from '../../lib/push-
 import { createCalendarFeed, listCalendarFeeds, revokeCalendarFeed, type CalendarFeed } from '../../api/calendar.js';
 import { LogViewer } from '../logs/LogViewer.js';
 
-export function KeymapSettings({ onClose }: { onClose: () => void }) {
+interface KeymapSettingsProps {
+  onClose: () => void;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
+}
+
+export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettingsProps) {
   const { keymap, setKey } = useKeymap();
   const { deviceId } = useApp();
   const [capturing, setCapturing] = useState<KeymapAction | null>(null);
@@ -83,12 +90,23 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-96 rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-96 rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">キーボードショートカット設定</h2>
           <button onClick={onClose} className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
             閉じる
+          </button>
+        </div>
+
+        <div className="mb-3 flex items-center justify-between border-b border-neutral-200 pb-3 dark:border-neutral-800">
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">テーマ</span>
+          <button
+            onClick={onToggleTheme}
+            className="flex items-center gap-1.5 rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          >
+            {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
+            {theme === 'dark' ? 'ダーク' : 'ライト'}
           </button>
         </div>
 
@@ -109,7 +127,7 @@ export function KeymapSettings({ onClose }: { onClose: () => void }) {
                 }
               >
                 {KEYMAP_ACTION_LABELS[action]}
-                {conflictActions.has(action) && ' ⚠️'}
+                {conflictActions.has(action) && <AlertTriangle size={12} className="ml-1 inline text-red-500" />}
               </span>
               <button
                 onClick={() => setCapturing(action)}

@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { uuidv7 } from '@nestio/shared';
+import { FolderPlus, Plus, X, ChevronDown, ChevronRight, Pencil } from 'lucide-react';
 import { useApp } from '../../state/AppProvider.js';
 import { useFolders, useLists } from '../../db/queries.js';
 import { upsertFolder, deleteFolder, upsertList, deleteList } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { SMART_LISTS } from '../../lib/task-views.js';
-import { EditableLabel } from './EditableLabel.js';
+import { EditableLabel, type EditableLabelHandle } from './EditableLabel.js';
 import type { ViewSelection } from '../../state/view.js';
 
 interface SidebarProps {
@@ -82,12 +83,20 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
 
       <div className="mt-2 flex items-center justify-between px-3 text-xs font-semibold uppercase text-neutral-400">
         <span>リスト</span>
-        <div className="flex gap-2">
-          <button onClick={createFolder} title="フォルダを追加" className="hover:text-neutral-700 dark:hover:text-neutral-200">
-            📁+
+        <div className="flex gap-1">
+          <button
+            onClick={createFolder}
+            title="フォルダを追加"
+            className="flex min-h-8 min-w-8 items-center justify-center hover:text-neutral-700 dark:hover:text-neutral-200"
+          >
+            <FolderPlus size={15} />
           </button>
-          <button onClick={() => createList(null)} title="リストを追加" className="hover:text-neutral-700 dark:hover:text-neutral-200">
-            +
+          <button
+            onClick={() => createList(null)}
+            title="リストを追加"
+            className="flex min-h-8 min-w-8 items-center justify-center hover:text-neutral-700 dark:hover:text-neutral-200"
+          >
+            <Plus size={15} />
           </button>
         </div>
       </div>
@@ -105,18 +114,45 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
           />
         ))}
 
-        {folders.map((f) => (
+        {folders.map((f) => {
+          const labelRef = { current: null as EditableLabelHandle | null };
+          return (
           <div key={f.id}>
-            <div className="group flex items-center gap-1 rounded px-2 py-1.5 hover:bg-neutral-200 dark:hover:bg-neutral-800">
-              <button onClick={() => toggleFolder(f.id)} className="w-4 text-xs">
-                {openFolders.has(f.id) ? '▾' : '▸'}
+            <div className="flex items-center gap-0.5 rounded px-1 py-1 hover:bg-neutral-200 dark:hover:bg-neutral-800">
+              <button
+                onClick={() => toggleFolder(f.id)}
+                className="flex min-h-8 min-w-6 items-center justify-center text-neutral-400"
+              >
+                {openFolders.has(f.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               </button>
-              <EditableLabel value={f.name} className="flex-1 truncate" onCommit={(name) => renameFolder(f.id, name)} />
-              <button onClick={() => createList(f.id)} className="hidden text-xs group-hover:inline">
-                +
+              <EditableLabel
+                ref={(el) => {
+                  labelRef.current = el;
+                }}
+                value={f.name}
+                className="flex-1 truncate px-1"
+                onCommit={(name) => renameFolder(f.id, name)}
+              />
+              <button
+                onClick={() => labelRef.current?.startEditing()}
+                title="名前を変更"
+                className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+              >
+                <Pencil size={13} />
               </button>
-              <button onClick={() => removeFolder(f.id)} className="hidden text-xs text-red-500 group-hover:inline">
-                ✕
+              <button
+                onClick={() => createList(f.id)}
+                title="リストを追加"
+                className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+              >
+                <Plus size={14} />
+              </button>
+              <button
+                onClick={() => removeFolder(f.id)}
+                title="フォルダを削除"
+                className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-red-500"
+              >
+                <X size={14} />
               </button>
             </div>
             {openFolders.has(f.id) && (
@@ -135,7 +171,8 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </nav>
   );
@@ -156,23 +193,35 @@ function ListRow({
   onRename: (name: string) => void;
   onDelete: () => void;
 }) {
+  const labelRef = useRef<EditableLabelHandle | null>(null);
   return (
     <div
       onClick={onSelect}
-      className={`group flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 ${
+      className={`flex cursor-pointer items-center gap-1 rounded px-1 py-1 ${
         active ? 'bg-blue-100 font-medium dark:bg-blue-900/40' : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
       }`}
     >
-      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-      <EditableLabel value={name} className="flex-1 truncate" onCommit={onRename} />
+      <span className="ml-1 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      <EditableLabel ref={labelRef} value={name} className="flex-1 truncate px-1" onCommit={onRename} />
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          labelRef.current?.startEditing();
+        }}
+        title="名前を変更"
+        className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+      >
+        <Pencil size={13} />
+      </button>
       <button
         onClick={(e) => {
           e.stopPropagation();
           onDelete();
         }}
-        className="hidden text-xs text-red-500 group-hover:inline"
+        title="リストを削除"
+        className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-red-500"
       >
-        ✕
+        <X size={14} />
       </button>
     </div>
   );

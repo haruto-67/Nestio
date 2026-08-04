@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { uuidv7 } from '@nestio/shared';
+import { Plus, Pin } from 'lucide-react';
 import { useApp } from '../../state/AppProvider.js';
 import { useNotes } from '../../db/queries.js';
 import { upsertNote } from '../../state/actions.js';
@@ -32,9 +33,10 @@ export function NotesScreen() {
           <h1 className="text-xl font-semibold">メモ</h1>
           <button
             onClick={createNote}
-            className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white dark:bg-white dark:text-neutral-900"
+            className="flex items-center gap-1 rounded bg-neutral-900 px-3 py-1.5 text-sm text-white dark:bg-white dark:text-neutral-900"
           >
-            + 新規メモ
+            <Plus size={14} />
+            新規メモ
           </button>
         </div>
 
@@ -51,7 +53,7 @@ export function NotesScreen() {
               >
                 <div className="mb-1 flex items-center justify-between">
                   <span className="truncate text-sm font-medium text-neutral-800">{note.title || '無題'}</span>
-                  {note.pinned === 1 && <span className="text-xs">📌</span>}
+                  {note.pinned === 1 && <Pin size={12} className="text-amber-600" />}
                 </div>
                 <p className="flex-1 overflow-hidden text-xs whitespace-pre-wrap text-neutral-600">{note.body}</p>
               </button>

@@ -24,6 +24,11 @@ export function useTasks(): TaskRow[] {
   return useLiveQuery(() => db.tasks.filter((t) => t.deleted_at === null).toArray(), [], []) ?? [];
 }
 
+/** ゴミ箱ビュー用：論理削除されたタスク一覧 */
+export function useDeletedTasks(): TaskRow[] {
+  return useLiveQuery(() => db.tasks.filter((t) => t.deleted_at !== null).toArray(), [], []) ?? [];
+}
+
 export function useTask(id: string | null): TaskRow | undefined {
   return useLiveQuery(() => (id ? db.tasks.get(id) : undefined), [id], undefined);
 }
@@ -46,6 +51,11 @@ export function useTriggers(): TriggerRow[] {
 
 export function useNotes(): NoteRow[] {
   return useLiveQuery(() => db.notes.filter((n) => n.deleted_at === null).toArray(), [], []) ?? [];
+}
+
+/** ゴミ箱ビュー用：論理削除されたメモ一覧 */
+export function useDeletedNotes(): NoteRow[] {
+  return useLiveQuery(() => db.notes.filter((n) => n.deleted_at !== null).toArray(), [], []) ?? [];
 }
 
 export function useNote(id: string | null): NoteRow | undefined {

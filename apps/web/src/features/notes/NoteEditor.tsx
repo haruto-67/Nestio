@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Pin } from 'lucide-react';
 import type { NoteWritableFields } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
 import { useNote } from '../../db/queries.js';
@@ -41,9 +42,9 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           <button
             onClick={() => update({ pinned: note.pinned === 1 ? 0 : 1 })}
             title="ピン留め"
-            className={`text-sm ${note.pinned === 1 ? 'text-amber-500' : 'text-neutral-400'}`}
+            className={note.pinned === 1 ? 'text-amber-500' : 'text-neutral-400'}
           >
-            📌
+            <Pin size={16} />
           </button>
           <button onClick={remove} className="text-sm text-red-500">
             削除

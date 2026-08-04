@@ -2,3 +2,41 @@
 
 /* prefers-color-scheme ではなく .dark クラスでダーク/ライトを切り替える */
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* iOS SafariはフォーカスしたinputのfontーSizeが16px未満だと自動でズームする。
+   デスクトップの見た目(text-sm=14px)は変えず、モバイル幅だけ16pxへ引き上げる */
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+@keyframes nestio-fade-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.nestio-modal-panel {
+  animation: nestio-fade-scale-in 150ms ease-out;
+}
+
+@keyframes nestio-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.nestio-overlay {
+  animation: nestio-fade-in 150ms ease-out;
+}
