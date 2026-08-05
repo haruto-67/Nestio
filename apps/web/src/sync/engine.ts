@@ -14,6 +14,29 @@ export function setDeviceId(id: string | null): void {
   deviceId = id;
 }
 
+// 同期状態の可視化用（改修5回目）。UIの「最終同期:N分前」表示のために公開する
+const SYNC_STATUS_EVENT = 'nestio:sync-status-changed';
+export interface SyncStatus {
+  lastSyncAt: number | null;
+  lastError: boolean;
+}
+let syncStatus: SyncStatus = { lastSyncAt: null, lastError: false };
+
+function setSyncStatus(patch: Partial<SyncStatus>): void {
+  syncStatus = { ...syncStatus, ...patch };
+  // vitestのnode環境（windowが無い）から呼ばれるsync engineの単体テストでも安全に動くようにする
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(SYNC_STATUS_EVENT));
+}
+
+export function getSyncStatus(): SyncStatus {
+  return syncStatus;
+}
+
+export function subscribeSyncStatus(onChange: () => void): () => void {
+  window.addEventListener(SYNC_STATUS_EVENT, onChange);
+  return () => window.removeEventListener(SYNC_STATUS_EVENT, onChange);
+}
+
 /** サーバーとの時計ずれを補正したupdated_atを作る（sync-protocol.md 4章） */
 export function nowWithSkew(): number {
   return Date.now() + clockSkewMs;
@@ -26,21 +49,27 @@ export function nowWithSkew(): number {
 export async function pullLoop(): Promise<void> {
   let since = await getMeta<number>(META_KEYS.since, 0);
 
-  for (;;) {
-    const res = await pullChanges(since);
+  try {
+    for (;;) {
+      const res = await pullChanges(since);
 
-    if (res.full_resync_required) {
-      logClientEvent('warn', 'full_resync_required', { since });
-      await resetLocalDataKeepingOutbox();
-      since = 0;
-      continue;
+      if (res.full_resync_required) {
+        logClientEvent('warn', 'full_resync_required', { since });
+        await resetLocalDataKeepingOutbox();
+        since = 0;
+        continue;
+      }
+
+      await applyPullResponse(res);
+      since = res.next_seq;
+      await setMeta(META_KEYS.since, since);
+
+      if (!res.has_more) break;
     }
-
-    await applyPullResponse(res);
-    since = res.next_seq;
-    await setMeta(META_KEYS.since, since);
-
-    if (!res.has_more) break;
+    setSyncStatus({ lastSyncAt: Date.now(), lastError: false });
+  } catch (err) {
+    setSyncStatus({ lastError: true });
+    throw err;
   }
 }
 
@@ -93,6 +122,7 @@ export async function pushLoop(): Promise<void> {
       res = await pushOps(deviceId, readyBatch.map((b) => b.op));
     } catch (err) {
       logClientEvent('warn', 'outbox_push_failed', { error: String(err) });
+      setSyncStatus({ lastError: true });
       return;
     }
 

@@ -27,6 +27,7 @@ import { undo, redo } from './state/undoManager.js';
 import type { FlattenedTaskEntry } from './lib/task-tree.js';
 import { setTaskCollapsed } from './lib/collapsed-tasks.js';
 import { listHatchRuns } from './api/hatch.js';
+import { SyncStatusIndicator } from './ui/SyncStatusIndicator.js';
 
 type Screen = 'tasks' | 'notes';
 
@@ -46,7 +47,9 @@ function loadInitialView(): ViewSelection {
     if (
       parsed &&
       typeof parsed === 'object' &&
-      ('type' in parsed ? (parsed as { type: unknown }).type === 'smart' || (parsed as { type: unknown }).type === 'list' : false)
+      ('type' in parsed
+        ? ['smart', 'list', 'custom'].includes((parsed as { type: unknown }).type as string)
+        : false)
     ) {
       return parsed as ViewSelection;
     }
@@ -419,6 +422,9 @@ function MainLayout() {
             >
               メモ
             </button>
+          </div>
+          <div className="flex justify-center border-b border-neutral-200 py-1 dark:border-neutral-800">
+            <SyncStatusIndicator />
           </div>
           {screen === 'tasks' && <Sidebar view={view} onSelectView={selectView} />}
           <div

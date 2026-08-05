@@ -68,7 +68,7 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
   });
 
   return (
-    <div className="flex h-full flex-col overflow-hidden p-2">
+    <div className="flex h-full flex-col overflow-y-auto p-2">
       <div className="flex items-center justify-between px-2 pb-2">
         <div className="flex items-center gap-1">
           <button
@@ -94,33 +94,6 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
         </div>
         <span className="text-sm font-semibold">{currentMonth}</span>
       </div>
-
-      {unscheduled.length > 0 && (
-        <div className="mb-2 shrink-0 rounded border border-neutral-200 px-2 py-1 dark:border-neutral-700">
-          <button
-            onClick={() => setShowUnscheduled((v) => !v)}
-            className="text-xs font-semibold text-neutral-400"
-          >
-            期限なし（{unscheduled.length}件） {showUnscheduled ? '▾' : '▸'}
-          </button>
-          {showUnscheduled && (
-            <div className="mt-1 flex flex-wrap gap-1 pb-1">
-              {unscheduled.map((t) => (
-                <span
-                  key={t.id}
-                  {...dragHandlers(t)}
-                  onClick={() => onSelect(t.id)}
-                  className={`cursor-pointer truncate rounded border border-neutral-200 bg-white px-2 py-0.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 ${
-                    selectedTaskId === t.id ? 'ring-2 ring-blue-300' : ''
-                  } ${t.completed_at !== null ? 'text-neutral-400 line-through' : ''}`}
-                >
-                  {t.title}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       <div className="grid grid-cols-7 gap-px overflow-y-auto rounded border border-neutral-200 bg-neutral-200 text-xs dark:border-neutral-700 dark:bg-neutral-800">
         {WEEKDAY_LABELS.map((w) => (
@@ -192,6 +165,33 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
           );
         })}
       </div>
+
+      {unscheduled.length > 0 && (
+        <div className="mt-2 shrink-0 rounded border border-neutral-200 px-2 py-1 dark:border-neutral-700">
+          <button
+            onClick={() => setShowUnscheduled((v) => !v)}
+            className="text-xs font-semibold text-neutral-400"
+          >
+            期限なし（{unscheduled.length}件） {showUnscheduled ? '▾' : '▸'}
+          </button>
+          {showUnscheduled && (
+            <div className="mt-1 flex flex-wrap gap-1 pb-1">
+              {unscheduled.map((t) => (
+                <span
+                  key={t.id}
+                  {...dragHandlers(t)}
+                  onClick={() => onSelect(t.id)}
+                  className={`cursor-pointer truncate rounded border border-neutral-200 bg-white px-2 py-0.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 ${
+                    selectedTaskId === t.id ? 'ring-2 ring-blue-300' : ''
+                  } ${t.completed_at !== null ? 'text-neutral-400 line-through' : ''}`}
+                >
+                  {t.title}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

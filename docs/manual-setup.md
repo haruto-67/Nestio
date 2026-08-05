@@ -194,6 +194,17 @@ DISCORD_WEBHOOKS=default:https://discord.com/api/webhooks/...
    - 固定トークンの貼り付けではなく、この認可フローで接続する
    - 既存の `niwatorimc.com/mcp`（Discord）で OAuth Client が必要だったのと同じ理由
 
+### D-4. 添付ファイルの暗号化保存（任意・改修5回目）
+
+有効にすると添付画像がディスク上でAES-256-GCM暗号化される。設定しなくても動作に支障はない。
+
+1. `openssl rand -base64 32` で鍵を生成
+2. `.env` の `ATTACHMENT_ENCRYPTION_KEY` に設定
+3. `docker compose up -d` で再起動
+4. **注意**：鍵を設定する前に保存済みの添付は平文のまま残る（自動判別して読めるので実害は無いが、
+   既存分もまとめて暗号化したい場合は添付を一度削除して再アップロードし直す必要がある）
+5. 鍵を紛失すると、それ以降に暗号化保存された添付は復号できなくなる（バックアップとは別に安全な場所に保管する）
+
 ---
 
 ## E. 環境変数まとめ
@@ -216,6 +227,8 @@ DB_PATH=/var/lib/nestio/nestio.db
 ATTACHMENT_DIR=/var/lib/nestio/attachments
 ATTACHMENT_MAX_BYTES=10485760
 ATTACHMENT_QUOTA_BYTES=2147483648
+# 任意（改修5回目）。`openssl rand -base64 32` で生成。未設定なら添付は平文保存のまま
+ATTACHMENT_ENCRYPTION_KEY=
 
 # Hatch
 CLAUDE_BIN=

@@ -4,7 +4,10 @@ import { useApp } from '../../state/AppProvider.js';
 import { sendClientLogs } from '../../api/client-logs.js';
 import { enablePushNotifications, getPushPermissionState } from '../../lib/push-subscription.js';
 import { createCalendarFeed, listCalendarFeeds, revokeCalendarFeed, type CalendarFeed } from '../../api/calendar.js';
+import { exportAllData, importAllData } from '../../api/export.js';
+import { listSessions, revokeSession, type SessionInfo } from '../../api/sessions.js';
 import { LogViewer } from '../logs/LogViewer.js';
+import { formatDateTimeJst } from '../../lib/datetime.js';
 
 interface KeymapSettingsProps {
   onClose: () => void;
@@ -13,18 +16,31 @@ interface KeymapSettingsProps {
 }
 
 export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettingsProps) {
-  const { deviceId } = useApp();
+  const { deviceId, me } = useApp();
   const [logStatus, setLogStatus] = useState<string | null>(null);
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
   const [feeds, setFeeds] = useState<CalendarFeed[]>([]);
   const [calendarStatus, setCalendarStatus] = useState<string | null>(null);
   const [showLogViewer, setShowLogViewer] = useState(false);
+  const [exportImportStatus, setExportImportStatus] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
 
   useEffect(() => {
     getPushPermissionState().then(setPermission).catch(() => setPermission('unsupported'));
     listCalendarFeeds().then(setFeeds).catch(() => {});
+    listSessions().then(setSessions).catch(() => {});
   }, []);
+
+  const handleRevokeSession = async (id: string) => {
+    try {
+      await revokeSession(id);
+      setSessions(await listSessions());
+      if (sessions.find((s) => s.id === id)?.is_current) window.location.reload();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleSendLogs = async () => {
     if (!deviceId) return;
@@ -61,6 +77,29 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
       setFeeds(await listCalendarFeeds());
     } catch (err) {
       setCalendarStatus('作成に失敗しました');
+      console.error(err);
+    }
+  };
+
+  const handleExport = async () => {
+    setExportImportStatus('エクスポート中…');
+    try {
+      await exportAllData();
+      setExportImportStatus('ダウンロードしました');
+    } catch (err) {
+      setExportImportStatus('エクスポートに失敗しました');
+      console.error(err);
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    if (!me) return;
+    setExportImportStatus('インポート中…');
+    try {
+      const count = await importAllData(me.id, file);
+      setExportImportStatus(`${count}件のデータを取り込みました`);
+    } catch (err) {
+      setExportImportStatus('インポートに失敗しました（ファイル形式を確認してください）');
       console.error(err);
     }
   };
@@ -145,6 +184,28 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
         </div>
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">ログイン中のセッション</span>
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {sessions.map((s) => (
+              <li key={s.id} className="flex items-center justify-between text-xs">
+                <div className="min-w-0 flex-1 truncate text-neutral-500 dark:text-neutral-400">
+                  {s.device_label ?? 'ブラウザ'}
+                  {s.is_current && <span className="ml-1 text-emerald-500">（このデバイス）</span>}
+                  <div className="text-[10px] text-neutral-400">{formatDateTimeJst(s.created_at)}〜</div>
+                </div>
+                <button
+                  onClick={() => handleRevokeSession(s.id)}
+                  className="ml-2 shrink-0 text-red-500 hover:text-red-600"
+                >
+                  ログアウト
+                </button>
+              </li>
+            ))}
+            {sessions.length === 0 && <li className="text-xs text-neutral-400">読み込み中…</li>}
+          </ul>
+        </div>
+
+        <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <div className="flex items-center justify-between">
             <span className="text-xs text-neutral-500 dark:text-neutral-400">サーバーログ（自分専用）</span>
             <button
@@ -167,6 +228,37 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
             </button>
           </div>
           {logStatus && <p className="mt-1 text-xs text-neutral-400">{logStatus}</p>}
+        </div>
+
+        <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">データのエクスポート/インポート</span>
+            <div className="flex gap-1">
+              <button
+                onClick={handleExport}
+                className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                エクスポート
+              </button>
+              <label className="cursor-pointer rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800">
+                インポート
+                <input
+                  type="file"
+                  accept="application/json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImportFile(file);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-neutral-400">
+            添付ファイルの実体は含まれません（機種変更時のデータ移行・手元へのバックアップ用）
+          </p>
+          {exportImportStatus && <p className="mt-1 text-xs text-neutral-400">{exportImportStatus}</p>}
         </div>
       </div>
       {showLogViewer && <LogViewer onClose={() => setShowLogViewer(false)} />}

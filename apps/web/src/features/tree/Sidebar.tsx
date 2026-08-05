@@ -1,13 +1,14 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { uuidv7 } from '@nestio/shared';
-import { FolderPlus, Plus, X, ChevronDown, ChevronRight, Pencil } from 'lucide-react';
+import { FolderPlus, Plus, X, ChevronDown, ChevronRight, Pencil, Tag as TagIcon } from 'lucide-react';
 import { useApp } from '../../state/AppProvider.js';
-import { useFolders, useLists } from '../../db/queries.js';
+import { useFolders, useLists, useTags } from '../../db/queries.js';
 import { upsertFolder, deleteFolder, upsertList, deleteList, upsertTask } from '../../state/actions.js';
 import { useTasks } from '../../db/queries.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { showToast } from '../../ui/toast.js';
 import { SMART_LISTS, SMART_LIST_DOT_CLASS } from '../../lib/task-views.js';
+import { loadCustomViews, deleteCustomView, subscribeCustomViews } from '../../lib/custom-views.js';
 import { EditableLabel, type EditableLabelHandle } from './EditableLabel.js';
 import type { ViewSelection } from '../../state/view.js';
 
@@ -19,6 +20,10 @@ interface SidebarProps {
 export function Sidebar({ view, onSelectView }: SidebarProps) {
   const { me } = useApp();
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
+  const [customViews, setCustomViews] = useState(() => loadCustomViews());
+  const allTags = useTags();
+
+  useEffect(() => subscribeCustomViews(() => setCustomViews(loadCustomViews())), []);
 
   const folders = [...useFolders()].sort((a, b) => a.sort_order - b.sort_order);
   const lists = useLists();
@@ -90,6 +95,40 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${SMART_LIST_DOT_CLASS[sl.key]}`} />
             {sl.label}
           </button>
+        ))}
+        {customViews.map((cv) => (
+          <div
+            key={cv.id}
+            className={`group flex items-center gap-2 rounded px-2 ${
+              view.type === 'custom' && view.id === cv.id
+                ? 'bg-blue-100 font-medium dark:bg-blue-900/40'
+                : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
+            }`}
+          >
+            <button
+              onClick={() => onSelectView({ type: 'custom', id: cv.id })}
+              className="flex flex-1 items-center gap-2 py-1.5 text-left"
+            >
+              <TagIcon size={12} className="shrink-0 text-neutral-400" />
+              <span className="truncate">{cv.name}</span>
+              <span className="shrink-0 text-[10px] text-neutral-400">
+                {cv.tagIds
+                  .map((id) => allTags.find((t) => t.id === id)?.name)
+                  .filter(Boolean)
+                  .join('+')}
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                if (view.type === 'custom' && view.id === cv.id) onSelectView({ type: 'smart', key: 'today' });
+                deleteCustomView(cv.id);
+              }}
+              title="このカスタムビューを削除"
+              className="hidden min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-red-500 group-hover:flex"
+            >
+              <X size={12} />
+            </button>
+          </div>
         ))}
       </div>
 

@@ -8,6 +8,9 @@ import { pushUndo } from '../state/undoManager.js';
 
 type Row = Record<string, unknown>;
 type NonUserSettingsTable = Exclude<SyncableTable, 'user_settings'>;
+
+/** テーブルごとの「本文」フィールド。フィールド単位マージ（改修5回目）の対象はここだけ */
+const MERGEABLE_FIELD: Partial<Record<NonUserSettingsTable, string>> = { tasks: 'note', notes: 'body' };
 interface MutationOptions {
   /** undo/redoの巻き戻し処理自身から呼ぶ時はtrue（自分自身をundoスタックに積まないようにする） */
   skipUndo?: boolean;
@@ -74,6 +77,13 @@ export async function upsertLocal(
   await dexieTable.put(row);
 
   const op: SyncOp = { op_id: uuidv7(), table, id, op: 'upsert', updated_at: updatedAt, fields };
+  // 本文フィールドを書き換える時は、このデバイスが今まで知っていた値をbase_fieldsとして
+  // 一緒に送る。サーバー側はこれと現在の実際の値を比較し、他デバイスが自分の知らない間に
+  // 同じフィールドを書き換えていたら（真の同時編集）マージする（apps/api/src/sync/apply.ts）
+  const mergeableField = MERGEABLE_FIELD[table];
+  if (existing && mergeableField && mergeableField in fields) {
+    op.base_fields = { [mergeableField]: (existing as Row)[mergeableField] };
+  }
   await appendToOutbox(op);
 
   if (!options.skipUndo) {

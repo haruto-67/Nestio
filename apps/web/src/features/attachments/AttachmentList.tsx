@@ -3,7 +3,7 @@ import { Plus, X } from 'lucide-react';
 import type { AttachmentRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
 import { useAttachmentsFor, usePendingAttachmentBlob } from '../../db/queries.js';
-import { createAttachment, deleteAttachment } from '../../state/actions.js';
+import { createAttachment, deleteAttachment, THUMBNAIL_FILENAME_PREFIX } from '../../state/actions.js';
 import { processImageFile } from '../../lib/image-processing.js';
 import { attachmentUrl } from '../../api/attachments.js';
 
@@ -14,7 +14,14 @@ interface AttachmentListProps {
 
 export function AttachmentList({ ownerType, ownerId }: AttachmentListProps) {
   const { me } = useApp();
-  const attachments = useAttachmentsFor(ownerType, ownerId);
+  const allAttachments = useAttachmentsFor(ownerType, ownerId);
+  // サムネイル行（改修5回目）はUI上は独立した添付として見せない。本体側の表示に内部利用するだけ
+  const attachments = allAttachments.filter((a) => !a.filename.startsWith(THUMBNAIL_FILENAME_PREFIX));
+  const thumbBySourceFilename = new Map(
+    allAttachments
+      .filter((a) => a.filename.startsWith(THUMBNAIL_FILENAME_PREFIX))
+      .map((a) => [a.filename.slice(THUMBNAIL_FILENAME_PREFIX.length), a]),
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [processing, setProcessing] = useState(false);
 
@@ -68,7 +75,14 @@ export function AttachmentList({ ownerType, ownerId }: AttachmentListProps) {
       {attachments.length > 0 && (
         <div className="grid grid-cols-3 gap-1.5">
           {attachments.map((a) => (
-            <AttachmentThumbnail key={a.id} attachment={a} onDelete={() => deleteAttachment(a.id)} />
+            <AttachmentThumbnail
+              key={a.id}
+              attachment={a}
+              thumbnail={thumbBySourceFilename.get(a.filename)}
+              onDelete={() => {
+                deleteAttachment(a.id).catch((err) => console.error(err));
+              }}
+            />
           ))}
         </div>
       )}
@@ -76,10 +90,19 @@ export function AttachmentList({ ownerType, ownerId }: AttachmentListProps) {
   );
 }
 
-function AttachmentThumbnail({ attachment, onDelete }: { attachment: AttachmentRow; onDelete: () => void }) {
+function AttachmentThumbnail({
+  attachment,
+  thumbnail,
+  onDelete,
+}: {
+  attachment: AttachmentRow;
+  thumbnail: AttachmentRow | undefined;
+  onDelete: () => void;
+}) {
   // pushLoopでのアップロードが未完了の間はサーバーへのGETが404になるため、
-  // ローカルに残っているBlobがあればそちらをプレビューに使う
-  const pendingBlob = usePendingAttachmentBlob(attachment.sha256);
+  // ローカルに残っているBlobがあればそちらをプレビューに使う。表示用には縮小版（あれば）を優先する
+  const displaySha256 = thumbnail?.sha256 ?? attachment.sha256;
+  const pendingBlob = usePendingAttachmentBlob(displaySha256);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -92,7 +115,7 @@ function AttachmentThumbnail({ attachment, onDelete }: { attachment: AttachmentR
     return () => URL.revokeObjectURL(url);
   }, [pendingBlob]);
 
-  const src = objectUrl ?? attachmentUrl(attachment.sha256);
+  const src = objectUrl ?? attachmentUrl(displaySha256);
 
   return (
     <div className="group relative">

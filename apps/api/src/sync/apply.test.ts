@@ -257,6 +257,218 @@ describe('applySyncOps', () => {
     expect(rowB.completed_at).toBeNull();
   });
 
+  // 改修5回目「何も操作していないタスクのチェックボックスが勝手に外れる」の原因だったバグの回帰テスト。
+  // 既に未完了の子タスクをただ編集しただけ（完了状態も親も変えていない）では、
+  // 無関係な完了済み祖先タスクの完了状態を巻き戻してはいけない
+  it('未完了タスクを完了状態と無関係な項目だけ編集しても、完了済み祖先は巻き戻らない', () => {
+    setup();
+    const parent = uuidv7();
+    const child = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, parent, Date.now(), { title: '親' })]);
+    applySyncOps(db, userId, [makeTaskOp(listId, child, Date.now(), { title: '子', parent_id: parent })]);
+    // 子を先に完了させてから親を完了させる（hasIncompleteDescendantを満たすため）
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: child, op: 'upsert', updated_at: Date.now(), fields: { completed_at: Date.now() } },
+    ]);
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: parent, op: 'upsert', updated_at: Date.now(), fields: { completed_at: Date.now() } },
+    ]);
+    // 子を再び未完了に戻す（親は無関係な兄弟系統として扱う想定と同じシチュエーション）
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: child, op: 'upsert', updated_at: Date.now(), fields: { completed_at: null } },
+    ]);
+
+    const parentRow = db.prepare('SELECT completed_at FROM tasks WHERE id = ?').get(parent) as {
+      completed_at: number | null;
+    };
+    expect(parentRow.completed_at).toBeNull(); // 子が未完了に戻ったので親も正しく巻き戻る
+
+    // ここからは無関係な兄弟タスクで「別の親」を完了させ、以後その子のタイトルだけを編集する
+    const otherParent = uuidv7();
+    const otherChild = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, otherParent, Date.now(), { title: '別の親' })]);
+    applySyncOps(db, userId, [
+      makeTaskOp(listId, otherChild, Date.now(), { title: '別の子', parent_id: otherParent }),
+    ]);
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: otherChild, op: 'upsert', updated_at: Date.now(), fields: { completed_at: Date.now() } },
+    ]);
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: otherParent, op: 'upsert', updated_at: Date.now(), fields: { completed_at: Date.now() } },
+    ]);
+
+    // 全く無関係な、未完了のchildのタイトルだけを編集する（完了状態にも親にも触れない）
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tasks', id: child, op: 'upsert', updated_at: Date.now(), fields: { title: '子（改名）' } },
+    ]);
+
+    const otherParentRow = db.prepare('SELECT completed_at FROM tasks WHERE id = ?').get(otherParent) as {
+      completed_at: number | null;
+    };
+    expect(otherParentRow.completed_at).not.toBeNull(); // 無関係な操作の影響で外れていないこと
+  });
+
+  // 改修5回目「メモ本文のフィールド単位マージ」。base_fieldsで真の同時編集を検出した場合、
+  // 片方を黙って消さずgit風のコンフリクトマーカーで両方残す
+  describe('フィールド単位マージ（base_fields）', () => {
+    it('サーバー側の値がbaseから変わっていなければ、そのまま上書きする（衝突なし）', () => {
+      setup();
+      const taskId = uuidv7();
+      applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { note: '元のメモ' })]);
+
+      applySyncOps(db, userId, [
+        {
+          op_id: uuidv7(),
+          table: 'tasks',
+          id: taskId,
+          op: 'upsert',
+          updated_at: Date.now(),
+          fields: { note: '新しいメモ' },
+          base_fields: { note: '元のメモ' },
+        },
+      ]);
+
+      const row = db.prepare('SELECT note FROM tasks WHERE id = ?').get(taskId) as { note: string };
+      expect(row.note).toBe('新しいメモ');
+    });
+
+    it('他デバイスが自分の知らない間に同じフィールドを書き換えていたら、両方の内容を残す', () => {
+      setup();
+      const taskId = uuidv7();
+      applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { note: '元のメモ' })]);
+
+      // 別デバイスが先に書き換える（base無しの通常push）
+      applySyncOps(db, userId, [
+        {
+          op_id: uuidv7(),
+          table: 'tasks',
+          id: taskId,
+          op: 'upsert',
+          updated_at: Date.now(),
+          fields: { note: '他デバイスの変更' },
+        },
+      ]);
+
+      // このデバイスは古い「元のメモ」をbaseとして、自分の変更をpushする
+      applySyncOps(db, userId, [
+        {
+          op_id: uuidv7(),
+          table: 'tasks',
+          id: taskId,
+          op: 'upsert',
+          updated_at: Date.now(),
+          fields: { note: '自分の変更' },
+          base_fields: { note: '元のメモ' },
+        },
+      ]);
+
+      const row = db.prepare('SELECT note FROM tasks WHERE id = ?').get(taskId) as { note: string };
+      expect(row.note).toContain('他デバイスの変更');
+      expect(row.note).toContain('自分の変更');
+      expect(row.note).toContain('&lt;&lt;&lt;&lt;&lt;&lt;&lt;');
+    });
+
+    it('base_fieldsを送らない旧クライアント相当のopは従来通りLWWで上書きする', () => {
+      setup();
+      const taskId = uuidv7();
+      applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { note: '元のメモ' })]);
+      applySyncOps(db, userId, [
+        {
+          op_id: uuidv7(),
+          table: 'tasks',
+          id: taskId,
+          op: 'upsert',
+          updated_at: Date.now(),
+          fields: { note: '別デバイスの変更' },
+        },
+      ]);
+      applySyncOps(db, userId, [
+        {
+          op_id: uuidv7(),
+          table: 'tasks',
+          id: taskId,
+          op: 'upsert',
+          updated_at: Date.now(),
+          fields: { note: 'base無しの上書き' },
+        },
+      ]);
+
+      const row = db.prepare('SELECT note FROM tasks WHERE id = ?').get(taskId) as { note: string };
+      expect(row.note).toBe('base無しの上書き');
+    });
+  });
+
+  // 改修5回目「習慣トラッキング」用の完了ログ記録
+  describe('task_completionsへの記録', () => {
+    it('通常タスクの完了でtask_completionsに1件記録される', () => {
+      setup();
+      const taskId = uuidv7();
+      applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { title: 'タスク' })]);
+      applySyncOps(db, userId, [
+        { op_id: uuidv7(), table: 'tasks', id: taskId, op: 'upsert', updated_at: Date.now(), fields: { completed_at: Date.now() } },
+      ]);
+
+      const rows = db.prepare('SELECT * FROM task_completions WHERE task_id = ?').all(taskId);
+      expect(rows).toHaveLength(1);
+    });
+
+    it('繰り返しタスクはcompleted_atを立てず期限を進めるだけでも1件記録される', () => {
+      setup();
+      const taskId = uuidv7();
+      const base = Date.now();
+      applySyncOps(db, userId, [
+        makeTaskOp(listId, taskId, base, { title: '繰り返し', rrule: 'FREQ=DAILY', due_date: '2026-08-01' }),
+      ]);
+      applySyncOps(db, userId, [
+        {
+          op_id: uuidv7(),
+          table: 'tasks',
+          id: taskId,
+          op: 'upsert',
+          updated_at: base + 10,
+          fields: { due_date: '2026-08-02', completed_at: null },
+        },
+      ]);
+
+      const rows = db.prepare('SELECT * FROM task_completions WHERE task_id = ?').all(taskId);
+      expect(rows).toHaveLength(1);
+    });
+
+    it('completed_at以外の無関係な編集では記録されない', () => {
+      setup();
+      const taskId = uuidv7();
+      applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { title: 'タスク' })]);
+      applySyncOps(db, userId, [
+        { op_id: uuidv7(), table: 'tasks', id: taskId, op: 'upsert', updated_at: Date.now(), fields: { title: '改名' } },
+      ]);
+
+      const rows = db.prepare('SELECT * FROM task_completions WHERE task_id = ?').all(taskId);
+      expect(rows).toHaveLength(0);
+    });
+
+    it('繰り返しタスクの期限を過去へ戻す編集では記録されない', () => {
+      setup();
+      const taskId = uuidv7();
+      const base = Date.now();
+      applySyncOps(db, userId, [
+        makeTaskOp(listId, taskId, base, { title: '繰り返し', rrule: 'FREQ=DAILY', due_date: '2026-08-10' }),
+      ]);
+      applySyncOps(db, userId, [
+        {
+          op_id: uuidv7(),
+          table: 'tasks',
+          id: taskId,
+          op: 'upsert',
+          updated_at: base + 10,
+          fields: { due_date: '2026-08-05' },
+        },
+      ]);
+
+      const rows = db.prepare('SELECT * FROM task_completions WHERE task_id = ?').all(taskId);
+      expect(rows).toHaveLength(0);
+    });
+  });
+
   it('他ユーザーの行を書き換えようとするとforbidden', () => {
     setup();
     const taskId = uuidv7();

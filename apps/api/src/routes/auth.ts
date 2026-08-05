@@ -95,6 +95,58 @@ authRoute.post('/auth/logout', requireAuth, (c) => {
   return c.body(null, 204);
 });
 
+/** ログイン中の全セッション一覧（改修5回目・改修4回目ブレインストーム案E「アクティブセッション一覧」） */
+authRoute.get('/auth/sessions', requireAuth, (c) => {
+  const db = c.get('db');
+  const userId = c.get('userId');
+  if (!userId) throw new ApiError('unauthenticated', 'セッションが見つかりません');
+  const currentSessionId = getSessionIdFromRequest(c);
+
+  const rows = db
+    .prepare(
+      `SELECT s.id, s.created_at, s.expires_at, d.label AS device_label, d.last_seen AS device_last_seen
+       FROM sessions s LEFT JOIN devices d ON d.id = s.device_id
+       WHERE s.user_id = ? AND s.expires_at > ?
+       ORDER BY s.created_at DESC`,
+    )
+    .all(userId, Date.now()) as {
+    id: string;
+    created_at: number;
+    expires_at: number;
+    device_label: string | null;
+    device_last_seen: number | null;
+  }[];
+
+  return c.json(
+    rows.map((r) => ({
+      id: r.id,
+      created_at: r.created_at,
+      expires_at: r.expires_at,
+      device_label: r.device_label,
+      device_last_seen: r.device_last_seen,
+      is_current: r.id === currentSessionId,
+    })),
+  );
+});
+
+/** 他デバイスのセッションを個別に失効させる（自分自身も含めてよい＝そのままログアウトになる） */
+authRoute.delete('/auth/sessions/:id', requireAuth, (c) => {
+  const db = c.get('db');
+  const userId = c.get('userId');
+  if (!userId) throw new ApiError('unauthenticated', 'セッションが見つかりません');
+
+  const targetId = c.req.param('id');
+  const row = db.prepare('SELECT user_id FROM sessions WHERE id = ?').get(targetId) as
+    | { user_id: string }
+    | undefined;
+  if (!row) return c.body(null, 204);
+  if (row.user_id !== userId) throw new ApiError('forbidden', '他ユーザーのセッションです');
+
+  destroySession(db, targetId);
+  if (targetId === getSessionIdFromRequest(c)) clearSessionCookie(c);
+  return c.body(null, 204);
+});
+
 const deviceRequestSchema = z.object({ label: z.string().min(1).max(200) });
 
 authRoute.post('/devices', requireAuth, async (c) => {

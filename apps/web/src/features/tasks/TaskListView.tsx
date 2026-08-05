@@ -1,8 +1,8 @@
 import { useEffect, useState, type MouseEvent, type DragEvent } from 'react';
 import { uuidv7, type ListSortMode, type TaskRow } from '@nestio/shared';
-import { LayoutList, Kanban, CalendarDays } from 'lucide-react';
+import { LayoutList, Kanban, CalendarDays, Tag as TagIcon } from 'lucide-react';
 import { useApp } from '../../state/AppProvider.js';
-import { useLists, useTasks } from '../../db/queries.js';
+import { useLists, useTasks, useTags, useTaskTags } from '../../db/queries.js';
 import type { ViewSelection } from '../../state/view.js';
 import { filterTasksForView } from '../../lib/filter-tasks.js';
 import { buildTaskTree, flattenTaskTreeWithDepth, type FlattenedTaskEntry } from '../../lib/task-tree.js';
@@ -13,6 +13,7 @@ import { upsertTask, upsertList, completeTask } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { showToast } from '../../ui/toast.js';
 import { setTaskCollapsed } from '../../lib/collapsed-tasks.js';
+import { loadCustomViews, createCustomView, subscribeCustomViews } from '../../lib/custom-views.js';
 import { useKeymap } from '../../state/useKeymap.js';
 import { TaskItem } from './TaskItem.js';
 import { EmptyState } from './EmptyState.js';
@@ -55,8 +56,15 @@ export function TaskListView({
   const { me } = useApp();
   const lists = useLists();
   const tasks = useTasks();
+  const allTags = useTags();
+  const taskTags = useTaskTags();
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<number | 'all'>('all');
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [showTagFilterMenu, setShowTagFilterMenu] = useState(false);
+  const [newViewName, setNewViewName] = useState('');
+  const [customViews, setCustomViewsState] = useState(() => loadCustomViews());
+  useEffect(() => subscribeCustomViews(() => setCustomViewsState(loadCustomViews())), []);
   const [displayMode, setDisplayModeState] = useState<TaskDisplayMode>(loadInitialDisplayMode);
   const setDisplayMode = (mode: TaskDisplayMode) => {
     setDisplayModeState(mode);
@@ -66,14 +74,36 @@ export function TaskListView({
   const listNameById = new Map(lists.map((l) => [l.id, l.name]));
 
   const list = view.type === 'list' ? lists.find((l) => l.id === view.listId) : undefined;
+  const customView = view.type === 'custom' ? customViews.find((v) => v.id === view.id) : undefined;
   const title =
-    view.type === 'list' ? (list?.name ?? '') : (SMART_LISTS.find((s) => s.key === view.key)?.label ?? '');
+    view.type === 'list'
+      ? (list?.name ?? '')
+      : view.type === 'custom'
+        ? (customView?.name ?? '')
+        : (SMART_LISTS.find((s) => s.key === view.key)?.label ?? '');
   const sortMode: ListSortMode = list?.sort_mode ?? 'due';
   const headerAccentClass = view.type === 'smart' ? SMART_LIST_HEADER_ACCENT_CLASS[view.key] : 'border-t-transparent';
 
+  const tagIdsByTaskId = new Map<string, string[]>();
+  for (const tt of taskTags) {
+    const bucket = tagIdsByTaskId.get(tt.task_id);
+    if (bucket) bucket.push(tt.tag_id);
+    else tagIdsByTaskId.set(tt.task_id, [tt.tag_id]);
+  }
+
+  // カスタムビューが要求するタグ条件に、インタラクティブなタグ絞り込みを追加でAND適用する
+  const effectiveTagFilter = [...new Set([...(customView?.tagIds ?? []), ...tagFilter])];
+
   const tasksInViewUnfiltered = filterTasksForView(tasks, view);
-  const tasksInView =
+  const tasksInViewByPriority =
     priorityFilter === 'all' ? tasksInViewUnfiltered : tasksInViewUnfiltered.filter((t) => t.priority === priorityFilter);
+  const tasksInView =
+    effectiveTagFilter.length === 0
+      ? tasksInViewByPriority
+      : tasksInViewByPriority.filter((t) => {
+          const taskTagIds = tagIdsByTaskId.get(t.id) ?? [];
+          return effectiveTagFilter.every((tagId) => taskTagIds.includes(tagId));
+        });
 
   useEffect(() => {
     if (!onVisibleTasksChange) return;
@@ -173,6 +203,9 @@ export function TaskListView({
   if (view.type === 'list' && !list) {
     return <div className="flex-1 p-6 text-sm text-neutral-400">リストが見つかりません</div>;
   }
+  if (view.type === 'custom' && !customView) {
+    return <div className="flex-1 p-6 text-sm text-neutral-400">カスタムビューが見つかりません</div>;
+  }
 
   // タスク詳細パネルが開いている時、タスク行以外のどこをクリックしても閉じる。
   // 行クリック（[data-task-row]）はそれ自体が選択操作なので除外する
@@ -189,7 +222,7 @@ export function TaskListView({
     >
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800 md:px-6 md:py-4">
         <h1 className="min-w-0 flex-1 truncate text-lg font-semibold md:text-xl">{title}</h1>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
           <div className="flex rounded border border-neutral-200 dark:border-neutral-700">
             {(
               [
@@ -225,6 +258,85 @@ export function TaskListView({
               </option>
             ))}
           </select>
+          {allTags.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowTagFilterMenu((v) => !v);
+                }}
+                title="タグで絞り込み"
+                className={`flex items-center gap-1 rounded border p-1 text-xs ${
+                  tagFilter.length > 0
+                    ? 'border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-300'
+                    : 'border-neutral-200 text-neutral-500 dark:border-neutral-700'
+                }`}
+              >
+                <TagIcon size={12} />
+                {tagFilter.length > 0 ? `タグ: ${tagFilter.length}件` : 'タグで絞り込み'}
+              </button>
+              {showTagFilterMenu && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute top-full right-0 z-10 mt-1 flex max-h-64 w-48 flex-col gap-0.5 overflow-y-auto rounded-lg border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                >
+                  {allTags.map((tag) => (
+                    <label
+                      key={tag.id}
+                      className="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={tagFilter.includes(tag.id)}
+                        onChange={(e) => {
+                          setTagFilter((prev) =>
+                            e.target.checked ? [...prev, tag.id] : prev.filter((id) => id !== tag.id),
+                          );
+                        }}
+                      />
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: tag.color }}
+                      />
+                      <span className="truncate">{tag.name}</span>
+                    </label>
+                  ))}
+                  {tagFilter.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => setTagFilter([])}
+                        className="mt-1 rounded px-1 py-1 text-left text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                      >
+                        クリア
+                      </button>
+                      <div className="mt-1 flex gap-1 border-t border-neutral-100 pt-1 dark:border-neutral-800">
+                        <input
+                          value={newViewName}
+                          onChange={(e) => setNewViewName(e.target.value)}
+                          placeholder="ビュー名を入力して保存"
+                          className="min-w-0 flex-1 rounded border border-neutral-200 bg-transparent px-1 py-0.5 text-xs dark:border-neutral-700"
+                        />
+                        <button
+                          onClick={() => {
+                            const trimmed = newViewName.trim();
+                            if (!trimmed) return;
+                            createCustomView(trimmed, tagFilter);
+                            setNewViewName('');
+                            setTagFilter([]);
+                            setShowTagFilterMenu(false);
+                            showToast('カスタムビューを保存しました');
+                          }}
+                          className="shrink-0 rounded border border-blue-300 px-1.5 text-xs text-blue-600 dark:border-blue-700 dark:text-blue-300"
+                        >
+                          保存
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {view.type === 'list' && (
             <select
               value={sortMode}

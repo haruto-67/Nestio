@@ -1,14 +1,13 @@
 import { Hono } from 'hono';
-import fs from 'node:fs';
 import { sha256Schema } from '@nestio/shared';
 import type { AppVariables } from '../middleware/request-context.js';
 import { requireAuth } from '../middleware/auth.js';
 import { ApiError } from '../errors.js';
 import { detectImageMime } from '../attachments/magic-bytes.js';
 import {
-  attachmentFilePath,
   attachmentExists,
   saveAttachmentFile,
+  readAttachmentFile,
   computeSha256,
   getUserAttachmentUsageBytes,
   userOwnsAttachment,
@@ -58,7 +57,7 @@ attachmentsRoute.post('/attachments/:sha256', async (c) => {
     throw new ApiError('validation_failed', '画像形式として認識できませんでした');
   }
 
-  saveAttachmentFile(env.ATTACHMENT_DIR, sha256Param, buf);
+  saveAttachmentFile(env.ATTACHMENT_DIR, sha256Param, buf, env.ATTACHMENT_ENCRYPTION_KEY || undefined);
   logger.info({ sha256: sha256Param, bytes: buf.length, mime }, 'attachment_uploaded');
 
   return c.body(null, 201);
@@ -89,6 +88,6 @@ attachmentsRoute.get('/attachments/:sha256', (c) => {
   // リバースプロキシがCaddy（X-Accel-Redirectのようなnginx専用の委譲機構を持たない）のため、
   // 環境を問わずアプリから直接返す。添付サイズはATTACHMENT_MAX_BYTES（既定10MB）で
   // 上限があるため、同期的な読み込みでも実用上問題にならない。
-  const data = fs.readFileSync(attachmentFilePath(env.ATTACHMENT_DIR, sha256Param));
-  return c.body(data);
+  const data = readAttachmentFile(env.ATTACHMENT_DIR, sha256Param, env.ATTACHMENT_ENCRYPTION_KEY || undefined);
+  return c.body(Uint8Array.from(data));
 });

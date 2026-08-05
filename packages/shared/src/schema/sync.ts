@@ -30,6 +30,13 @@ export const syncOpSchema = z.object({
   op: z.enum(['upsert', 'delete', 'restore']),
   updated_at: epochMsSchema,
   fields: z.record(z.string(), z.unknown()),
+  /**
+   * クライアントが編集を開始した時点で見ていたフィールド値（改修5回目、フィールド単位マージ用の拡張）。
+   * サーバーはこれと現在の行の値を比較し、自分が知らない間に他デバイスが同じフィールドを書き換えて
+   * いた場合（真の同時編集コンフリクト）だけ、素のLWW上書きではなく両方の内容を残すマージを行う。
+   * 未指定なら従来通りLWWで上書きする（後方互換）。
+   */
+  base_fields: z.record(z.string(), z.unknown()).optional(),
 });
 export type SyncOp = z.infer<typeof syncOpSchema>;
 

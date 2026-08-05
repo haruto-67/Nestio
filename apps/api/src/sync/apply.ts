@@ -1,5 +1,11 @@
 import type Database from 'better-sqlite3';
-import { userSettingsWritableFields, type SyncOp, type SyncPushResponse, type SyncRejectReason } from '@nestio/shared';
+import {
+  uuidv7,
+  userSettingsWritableFields,
+  type SyncOp,
+  type SyncPushResponse,
+  type SyncRejectReason,
+} from '@nestio/shared';
 import { SYNC_TABLES, isImplementedSyncTable, type ImplementedSyncTable } from './tables.js';
 import { bumpSeq, getLastSeq } from './seq.js';
 import { wouldCreateCycle, hasIncompleteDescendant, repairAncestorsCompletion } from './task-rules.js';
@@ -99,7 +105,7 @@ function applyOneOp(db: Database.Database, userId: string, op: SyncOp, triggered
   if (!parsed.success) {
     return { ok: false, reason: 'validation_failed' };
   }
-  const fields = parsed.data as Row;
+  const fields = resolveFieldMergeConflict(db, op, parsed.data as Row);
 
   if (op.table === 'tasks') {
     return applyTaskUpsert(db, userId, op, fields, triggeredByHatch);
@@ -110,6 +116,41 @@ function applyOneOp(db: Database.Database, userId: string, op: SyncOp, triggered
 
 function fetchExisting(db: Database.Database, table: string, id: string): Row | undefined {
   return db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as Row | undefined;
+}
+
+/** テーブルごとの「本文」フィールド。フィールド単位マージの対象はここだけ（改修5回目） */
+const MERGEABLE_FIELD: Partial<Record<string, string>> = { tasks: 'note', notes: 'body' };
+
+/**
+ * op.base_fields（クライアントが編集を開始した時点で見ていた値）と現在サーバーに保存されている値を
+ * 比較し、クライアントが知らない間に他デバイスが同じフィールドを書き換えていた場合（真の同時編集）は
+ * 素のLWW上書きをせず、両方の内容をgit風のコンフリクトマーカーで残す。
+ * base_fieldsが無い（旧クライアント・対象外テーブル）場合や衝突が無い場合はfieldsをそのまま返す。
+ */
+function resolveFieldMergeConflict(db: Database.Database, op: SyncOp, fields: Row): Row {
+  const fieldName = MERGEABLE_FIELD[op.table];
+  if (!fieldName) return fields;
+  const incomingValue = fields[fieldName];
+  if (typeof incomingValue !== 'string') return fields;
+  const baseValue = op.base_fields?.[fieldName];
+  if (typeof baseValue !== 'string') return fields;
+
+  const existing = fetchExisting(db, op.table, op.id);
+  const currentValue = existing?.[fieldName];
+  if (typeof currentValue !== 'string') return fields;
+
+  if (currentValue === baseValue) return fields; // サーバー側はbaseから変わっていない→衝突なし
+  if (currentValue === incomingValue) return fields; // 既に同じ内容
+
+  const merged =
+    `<div>&lt;&lt;&lt;&lt;&lt;&lt;&lt; 相手の変更（他デバイスで保存済み）</div>` +
+    currentValue +
+    `<div>=======</div>` +
+    incomingValue +
+    `<div>&gt;&gt;&gt;&gt;&gt;&gt;&gt; あなたの変更</div>` +
+    `<div>&lt;&lt;&lt;&lt;&lt;&lt;&lt; 同時編集が検出されました。不要な方を削除してください &gt;&gt;&gt;&gt;&gt;&gt;&gt;</div>`;
+
+  return { ...fields, [fieldName]: merged };
 }
 
 function applyUpsert(
@@ -265,8 +306,15 @@ function applyTaskUpsert(
   const result = applyUpsert(db, 'tasks', userId, op, fields, existing);
   if (!result.ok) return result;
 
-  const finalCompletedAt = 'completed_at' in fields ? fields.completed_at : (existing?.completed_at ?? null);
-  if (finalCompletedAt === null) {
+  const previousCompletedAt = existing?.completed_at ?? null;
+  const finalCompletedAt = 'completed_at' in fields ? fields.completed_at : previousCompletedAt;
+  // 祖先の完了状態を修復する必要があるのは、このタスクが「新たに未完了の子孫になった」時だけ
+  // （新規作成／完了→未完了への遷移／未完了のまま親を付け替え）。既に未完了のタスクの
+  // タイトルや優先度などを編集しただけでは、無関係な祖先タスクの完了を巻き戻してはいけない
+  const parentChanged = 'parent_id' in fields && fields.parent_id !== (existing?.parent_id ?? null);
+  const becameIncompleteDescendant =
+    finalCompletedAt === null && (isNewTask || previousCompletedAt !== null || parentChanged);
+  if (becameIncompleteDescendant) {
     repairAncestorsCompletion(db, userId, op.id);
   }
 
@@ -296,7 +344,57 @@ function applyTaskUpsert(
     detectListAllCompleted(db, userId, finalListId, triggeredByHatch);
   }
 
+  recordCompletionForStreak(db, userId, op.id, {
+    isNewTask,
+    wasCompleting,
+    finalRrule: ('rrule' in fields ? fields.rrule : (existing?.rrule ?? null)) as string | null,
+    finalCompletedAt: finalCompletedAt as number | null,
+    dueChanged: 'due_at' in fields || 'due_date' in fields,
+    previousDueAt: (existing?.due_at ?? null) as number | null,
+    previousDueDate: (existing?.due_date ?? null) as string | null,
+    finalDueAt: finalDueAt as number | null,
+    finalDueDate: finalDueDate as string | null,
+  });
+
   return { ok: true };
+}
+
+/**
+ * 習慣トラッキング（ストリーク表示）用の完了ログを記録する（改修5回目）。
+ * 通常タスクの完了に加え、繰り返しタスクは`completed_at`を立てず期限を次回分へ
+ * 進めるだけの設計（round3の意図的な仕様）のため、「rruleがあるタスクの期限が
+ * 完了扱いにはならず未来へ進んだ」ことをもって1回のoccurrence完了とみなす。
+ */
+function recordCompletionForStreak(
+  db: Database.Database,
+  userId: string,
+  taskId: string,
+  ctx: {
+    isNewTask: boolean;
+    wasCompleting: boolean;
+    finalRrule: string | null;
+    finalCompletedAt: number | null;
+    dueChanged: boolean;
+    previousDueAt: number | null;
+    previousDueDate: string | null;
+    finalDueAt: number | null;
+    finalDueDate: string | null;
+  },
+): void {
+  const dueAdvanced =
+    (ctx.finalDueAt !== null && (ctx.previousDueAt === null || ctx.finalDueAt > ctx.previousDueAt)) ||
+    (ctx.finalDueDate !== null && (ctx.previousDueDate === null || ctx.finalDueDate > ctx.previousDueDate));
+  const isRecurrenceOccurrenceCompleted =
+    !ctx.isNewTask && ctx.finalRrule !== null && ctx.dueChanged && dueAdvanced && ctx.finalCompletedAt === null;
+
+  if (!ctx.wasCompleting && !isRecurrenceOccurrenceCompleted) return;
+
+  db.prepare('INSERT INTO task_completions (id, user_id, task_id, completed_at) VALUES (?, ?, ?, ?)').run(
+    uuidv7(),
+    userId,
+    taskId,
+    Date.now(),
+  );
 }
 
 /**

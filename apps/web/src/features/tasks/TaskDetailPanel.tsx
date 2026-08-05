@@ -4,7 +4,15 @@ import { uuidv7, type TaskWritableFields, type TaskRow } from '@nestio/shared';
 import { MarkdownField } from '../notes/MarkdownField.js';
 import { useApp } from '../../state/AppProvider.js';
 import { useLists, useTags, useTaskTags, useTasks, useTask } from '../../db/queries.js';
-import { upsertTask, deleteTask, upsertTag, upsertTaskTag, deleteTaskTag, completeTask } from '../../state/actions.js';
+import {
+  upsertTask,
+  deleteTask,
+  upsertTag,
+  upsertTaskTag,
+  deleteTaskTag,
+  completeTask,
+  skipTaskOccurrence,
+} from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { naturalCollator, todayJstDateString } from '../../lib/datetime.js';
 import { RecurrenceEditor } from './RecurrenceEditor.js';
@@ -58,7 +66,7 @@ export function TaskDetailPanel({
     titleInputRef.current?.focus();
     titleInputRef.current?.select();
     onTitleFocused?.();
-  }, []);
+  }, [autoFocusTitle, taskId]);
 
   if (!task || !me) return null;
   const userId = me.id;
@@ -103,15 +111,20 @@ export function TaskDetailPanel({
   };
 
   return (
-    <aside
-      data-task-detail-panel="true"
-      style={{ width: panelResize.width }}
-      className="relative flex h-full shrink-0 flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"
-    >
+    <div className="relative flex h-full shrink-0" style={{ width: panelResize.width }}>
+      {/* ハンドルは非スクロールの外枠に置く。asideの内側に置くと（改修5回目で判明）
+          absolute配置がaside自身のスクロールに巻き込まれ、スクロール後に見失いやすくなる */}
       <div
         onMouseDown={(e) => panelResize.startResize(-1)(e)}
-        className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-blue-400/40"
-      />
+        title="ドラッグして幅を変更"
+        className="group absolute top-0 left-0 z-10 h-full w-3 -translate-x-1/2 cursor-col-resize touch-none"
+      >
+        <div className="mx-auto h-full w-1 group-hover:bg-blue-400/60" />
+      </div>
+      <aside
+        data-task-detail-panel="true"
+        className="nestio-panel-slide-in flex h-full w-full flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"
+      >
       <div className="flex items-center justify-between">
         <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
           閉じる
@@ -216,7 +229,7 @@ export function TaskDetailPanel({
 
       <DueEditor task={task} onChange={update} />
 
-      <RecurrenceEditor task={task} onChange={update} />
+      <RecurrenceEditor task={task} onChange={update} onSkipOccurrence={() => skipTaskOccurrence(userId, task)} />
 
       <div className="flex flex-col gap-1 text-xs text-neutral-500">
         タグ
@@ -252,7 +265,8 @@ export function TaskDetailPanel({
       </div>
 
       <AttachmentList ownerType="task" ownerId={taskId} />
-    </aside>
+      </aside>
+    </div>
   );
 }
 

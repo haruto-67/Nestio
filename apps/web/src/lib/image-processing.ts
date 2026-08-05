@@ -1,4 +1,5 @@
 const MAX_DIMENSION = 1600;
+const THUMBNAIL_MAX_DIMENSION = 320;
 const WEBP_QUALITY = 0.85;
 
 export interface ProcessedImage {
@@ -27,13 +28,9 @@ async function computeSha256(blob: Blob): Promise<string> {
     .join('');
 }
 
-/**
- * アップロード前にクライアント側で長辺1600px・WebPへ変換する（要件定義3.6）。
- * iOSのHEIC出力もcreateImageBitmapでデコードされるため、この変換で解消される。
- */
-export async function processImageFile(file: File | Blob): Promise<ProcessedImage> {
+async function resizeToWebp(file: File | Blob, maxDimension: number): Promise<ProcessedImage> {
   const bitmap = await createImageBitmap(file);
-  const { width, height } = fitWithinMaxDimension(bitmap.width, bitmap.height, MAX_DIMENSION);
+  const { width, height } = fitWithinMaxDimension(bitmap.width, bitmap.height, maxDimension);
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -51,4 +48,21 @@ export async function processImageFile(file: File | Blob): Promise<ProcessedImag
 
   const sha256 = await computeSha256(blob);
   return { blob, sha256, width, height };
+}
+
+/**
+ * アップロード前にクライアント側で長辺1600px・WebPへ変換する（要件定義3.6）。
+ * iOSのHEIC出力もcreateImageBitmapでデコードされるため、この変換で解消される。
+ */
+export function processImageFile(file: File | Blob): Promise<ProcessedImage> {
+  return resizeToWebp(file, MAX_DIMENSION);
+}
+
+/**
+ * 一覧のサムネイル表示専用の低解像度版（長辺320px）を追加生成する（改修5回目・
+ * 改修4回目ブレインストーム案F「添付画像の複数解像度生成」）。AttachmentList等の
+ * 小さいグリッド表示で、本体の1600px画像を毎回フルサイズで読み込まずに済むようにする
+ */
+export function processThumbnail(file: File | Blob): Promise<ProcessedImage> {
+  return resizeToWebp(file, THUMBNAIL_MAX_DIMENSION);
 }

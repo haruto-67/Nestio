@@ -23,6 +23,8 @@ const envSchema = z.object({
   ATTACHMENT_DIR: z.string().default('./data/attachments'),
   ATTACHMENT_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
   ATTACHMENT_QUOTA_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
+  /** base64エンコードされた32バイト鍵。未設定なら添付は平文で保存する（改修5回目） */
+  ATTACHMENT_ENCRYPTION_KEY: z.string().default(''),
 
   CLAUDE_BIN: z.string().default(''),
   CLAUDE_WORKDIR: z.string().default(''),

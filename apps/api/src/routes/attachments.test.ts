@@ -155,6 +155,44 @@ describe('attachments route', () => {
     expect(res.status).toBe(404);
   });
 
+  it('ATTACHMENT_ENCRYPTION_KEY設定時はディスク上で暗号化され、GETでは元の画像がそのまま返る（改修5回目）', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const encryptionKey = crypto.randomBytes(32).toString('base64');
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      LOG_LEVEL: 'error',
+      ATTACHMENT_DIR: attachmentDir,
+      ATTACHMENT_MAX_BYTES: '1000000',
+      ATTACHMENT_QUOTA_BYTES: '2000000',
+      ATTACHMENT_ENCRYPTION_KEY: encryptionKey,
+    } as unknown as NodeJS.ProcessEnv);
+    const app = createApp(env, db, createLogger(env));
+    const sha256 = crypto.createHash('sha256').update(FAKE_PNG).digest('hex');
+
+    const postRes = await app.request(`/api/v1/attachments/${sha256}`, {
+      method: 'POST',
+      headers: { Cookie: `nestio_session=${sessionId}` },
+      body: FAKE_PNG,
+    });
+    expect(postRes.status).toBe(201);
+
+    // ディスク上のファイルは平文のPNGバイト列と一致しない（暗号化されている）
+    const rawOnDisk = fs.readFileSync(path.join(attachmentDir, sha256.slice(0, 2), sha256));
+    expect(rawOnDisk.equals(FAKE_PNG)).toBe(false);
+
+    insertAttachmentRow(db, userId, sha256, FAKE_PNG.length);
+
+    const getRes = await app.request(`/api/v1/attachments/${sha256}`, {
+      headers: { Cookie: `nestio_session=${sessionId}` },
+    });
+    expect(getRes.status).toBe(200);
+    const body = Buffer.from(await getRes.arrayBuffer());
+    expect(body.equals(FAKE_PNG)).toBe(true);
+  });
+
   it('未認証は401', async () => {
     db = createTestDb();
     const app = setupApp(db, attachmentDir);

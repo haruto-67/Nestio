@@ -32,7 +32,7 @@ export const DEFAULT_KEYMAP: Record<KeymapAction, string> = {
   toggle_theme: 'Ctrl+Shift+l',
   show_help: '?',
   add_subtask: 'a',
-  add_sibling_subtask: 'Shift+A',
+  add_sibling_subtask: 'Shift+a',
 };
 
 export const KEYMAP_ACTION_LABELS: Record<KeymapAction, string> = {

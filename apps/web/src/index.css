@@ -29,7 +29,8 @@ select option {
 @media (max-width: 767px) {
   input,
   textarea,
-  select {
+  select,
+  [contenteditable] {
     font-size: 16px;
   }
 }
@@ -91,4 +92,19 @@ select option {
 }
 .nestio-complete-pop {
   animation: nestio-complete-pop 320ms ease-out;
+}
+
+/* タスク詳細パネルが右から軽くスライドインして開く（改修5回目） */
+@keyframes nestio-panel-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.nestio-panel-slide-in {
+  animation: nestio-panel-slide-in 180ms ease-out;
 }

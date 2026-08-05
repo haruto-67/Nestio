@@ -14,7 +14,11 @@ import type {
 import { upsertLocal, deleteLocal, restoreLocal, upsertUserSettingsLocal, commitAndSync } from '../db/local-mutations.js';
 import { computeNextOccurrence } from '../lib/recurrence.js';
 import { savePendingAttachmentBlob } from '../db/attachment-blobs.js';
-import type { ProcessedImage } from '../lib/image-processing.js';
+import { processThumbnail, type ProcessedImage } from '../lib/image-processing.js';
+import { db } from '../db/schema.js';
+
+/** サムネイル行を本体行と区別するためのfilenameの接頭辞（改修5回目。schema変更を避けるための規約） */
+export const THUMBNAIL_FILENAME_PREFIX = '__thumb__';
 
 export function upsertFolder(userId: string, id: string, fields: FolderWritableFields): void {
   commitAndSync(upsertLocal(userId, 'folders', id, fields));
@@ -56,6 +60,15 @@ export function completeTask(userId: string, task: TaskRow, completing: boolean)
   upsertTask(userId, task.id, { completed_at: completing ? Date.now() : null });
 }
 
+/** 今回の1回だけスキップする（完了扱いにはせず、次のoccurrenceへ進めるだけ） */
+export function skipTaskOccurrence(userId: string, task: TaskRow): void {
+  if (!task.rrule) return;
+  const next = computeNextOccurrence(task.rrule, task.due_date !== null);
+  if (next) {
+    upsertTask(userId, task.id, { due_at: next.dueAt, due_date: next.dueDate });
+  }
+}
+
 export function upsertTag(userId: string, id: string, fields: TagWritableFields): void {
   commitAndSync(upsertLocal(userId, 'tags', id, fields));
 }
@@ -94,14 +107,35 @@ export function restoreNote(id: string): void {
 export function upsertAttachment(userId: string, id: string, fields: AttachmentWritableFields): void {
   commitAndSync(upsertLocal(userId, 'attachments', id, fields));
 }
-export function deleteAttachment(id: string): void {
+
+/** 本体を削除する時は、対になっているサムネイル行（あれば）も一緒に削除する */
+export async function deleteAttachment(id: string): Promise<void> {
+  const row = await db.attachments.get(id);
   commitAndSync(deleteLocal('attachments', id));
+  if (!row || row.filename.startsWith(THUMBNAIL_FILENAME_PREFIX)) return;
+
+  const pairedFilename = THUMBNAIL_FILENAME_PREFIX + row.filename;
+  const siblings = await db.attachments
+    .filter(
+      (a) =>
+        a.owner_type === row.owner_type &&
+        a.owner_id === row.owner_id &&
+        a.filename === pairedFilename &&
+        a.deleted_at === null,
+    )
+    .toArray();
+  for (const thumb of siblings) {
+    commitAndSync(deleteLocal('attachments', thumb.id));
+  }
 }
 
 /**
  * Blobを保留ストアに保存してから添付メタデータのopをoutboxに積む。
  * 実際のアップロードは sync/engine.ts の pushLoop が「実体→メタデータ」の順を保証して行う
  * （順序が逆になるとメタデータだけあって実体がない状態が発生するため。sync-protocol.md 9章）。
+ * 一覧のサムネイル表示を軽くするため、本体（長辺1600px）とは別に長辺320pxの縮小版も
+ * 生成してペアで保存する（改修5回目）。filenameの`__thumb__`接頭辞で本体と区別する
+ * （docs/schema.sqlへのカラム追加を避けるための規約。AttachmentList側でこの接頭辞は非表示にする）
  */
 export async function createAttachment(
   userId: string,
@@ -122,6 +156,24 @@ export async function createAttachment(
     width: processed.width,
     height: processed.height,
   });
+
+  try {
+    const thumb = await processThumbnail(processed.blob);
+    await savePendingAttachmentBlob(thumb.sha256, thumb.blob);
+    upsertAttachment(userId, uuidv7(), {
+      owner_type: ownerType,
+      owner_id: ownerId,
+      sha256: thumb.sha256,
+      filename: THUMBNAIL_FILENAME_PREFIX + filename,
+      mime: thumb.blob.type,
+      bytes: thumb.blob.size,
+      width: thumb.width,
+      height: thumb.height,
+    });
+  } catch (err) {
+    // サムネイル生成に失敗しても本体の添付自体は成功させる（フォールバックは本体画像を使う）
+    console.error('thumbnail generation failed', err);
+  }
 }
 
 export { uuidv7 };

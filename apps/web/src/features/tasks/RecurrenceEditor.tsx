@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { TaskRow, TaskWritableFields } from '@nestio/shared';
+import { Flame } from 'lucide-react';
 import { buildRruleString, describeRrule, WEEKDAY_LABELS, type RecurrenceFreq } from '../../lib/recurrence.js';
+import { getTaskStreak } from '../../api/streak.js';
 
 type Mode = 'none' | 'daily' | 'weekly' | 'monthly' | 'custom';
 
@@ -23,12 +25,33 @@ function guessMode(rrule: string | null): Mode {
 interface RecurrenceEditorProps {
   task: TaskRow;
   onChange: (fields: TaskWritableFields) => void;
+  onSkipOccurrence?: () => void;
 }
 
-export function RecurrenceEditor({ task, onChange }: RecurrenceEditorProps) {
+export function RecurrenceEditor({ task, onChange, onSkipOccurrence }: RecurrenceEditorProps) {
   const [mode, setMode] = useState<Mode>(() => guessMode(task.rrule));
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const [customValue, setCustomValue] = useState(task.rrule ?? '');
+  const [streak, setStreak] = useState<number | null>(null);
+
+  // 習慣トラッキング（改修5回目）：繰り返しタスクの連続達成数を取得する
+  useEffect(() => {
+    if (!task.rrule) {
+      setStreak(null);
+      return;
+    }
+    let cancelled = false;
+    getTaskStreak(task.id)
+      .then((s) => {
+        if (!cancelled) setStreak(s.streak);
+      })
+      .catch(() => {
+        if (!cancelled) setStreak(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id, task.rrule, task.due_at, task.due_date]);
 
   const applyPreset = (nextMode: Mode, nextWeekdays: number[] = weekdays) => {
     setMode(nextMode);
@@ -108,6 +131,21 @@ export function RecurrenceEditor({ task, onChange }: RecurrenceEditorProps) {
       )}
 
       {task.rrule && <p className="text-neutral-400">{describeRrule(task.rrule)}</p>}
+      {task.rrule && streak !== null && streak > 0 && (
+        <p className="flex items-center gap-1 text-amber-500">
+          <Flame size={12} />
+          {streak}回連続達成中
+        </p>
+      )}
+      {task.rrule && onSkipOccurrence && (
+        <button
+          onClick={onSkipOccurrence}
+          title="完了扱いにはせず、次回の予定へ進める"
+          className="self-start rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:text-neutral-700 dark:border-neutral-700 dark:hover:text-neutral-200"
+        >
+          今回だけスキップ
+        </button>
+      )}
     </div>
   );
 }

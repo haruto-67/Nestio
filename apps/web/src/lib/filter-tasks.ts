@@ -13,6 +13,11 @@ export function filterTasksForView(tasks: TaskRow[], view: ViewSelection): TaskR
   if (view.type === 'list') {
     return tasks.filter((t) => t.list_id === view.listId);
   }
+  // タグの組み合わせによるカスタムビュー（改修5回目）。タグでの絞り込み自体はTaskListView側で行うため、
+  // ここでは「すべて」と同じ未完了全件を返す
+  if (view.type === 'custom') {
+    return tasks.filter((t) => t.completed_at === null);
+  }
 
   const today = todayJstDateString();
   switch (view.key) {
