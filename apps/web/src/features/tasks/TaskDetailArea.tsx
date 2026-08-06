@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useResizableWidth } from '../../lib/useResizableWidth.js';
 import { TaskDetailPanel } from './TaskDetailPanel.js';
 import { TaskDetailPlaceholder } from './TaskDetailPlaceholder.js';
 
-const CLOSE_ANIMATION_MS = 180;
+// 開閉とも同じ速さに揃える（改修7回目：改修6回目の180msは速すぎるとのフィードバック）
+const TRANSITION_MS = 280;
 
 interface TaskDetailAreaProps {
   taskId: string | null;
@@ -28,19 +29,28 @@ export function TaskDetailArea({ taskId, onClose, ...panelProps }: TaskDetailAre
   const panelResize = useResizableWidth('nestio_detail_panel_width', 320, 220, 1400);
   const [displayedTaskId, setDisplayedTaskId] = useState(taskId);
   const [closing, setClosing] = useState(false);
+  // 「非表示→表示」に変わった時だけ増やす世代番号。この値をkeyにすることで、その時だけ要素を
+  // 再マウントしてCSSアニメーションを確実に再生させる（改修7回目：改修6回目はPCで開いた時に
+  // アニメーションが再生されないことがあった。タスクAからタスクBへの直接切り替え時はkeyが変わらず
+  // 再マウントされないため、意図通りアニメーション無しのままになる）
+  const openGenerationRef = useRef(0);
+  const wasShowingRef = useRef(taskId !== null);
 
   useEffect(() => {
     if (taskId) {
+      if (!wasShowingRef.current) openGenerationRef.current += 1;
+      wasShowingRef.current = true;
       setDisplayedTaskId(taskId);
       setClosing(false);
       return;
     }
+    wasShowingRef.current = false;
     if (!displayedTaskId) return;
     setClosing(true);
     const timer = setTimeout(() => {
       setDisplayedTaskId(null);
       setClosing(false);
-    }, CLOSE_ANIMATION_MS);
+    }, TRANSITION_MS);
     return () => clearTimeout(timer);
   }, [taskId, displayedTaskId]);
 
@@ -49,7 +59,10 @@ export function TaskDetailArea({ taskId, onClose, ...panelProps }: TaskDetailAre
   const visibilityClass = displayedTaskId ? 'flex' : 'hidden md:flex';
 
   return (
-    <div className={`relative h-full shrink-0 ${visibilityClass}`} style={{ width: panelResize.width }}>
+    <div
+      className={`relative h-full shrink-0 overflow-x-hidden ${visibilityClass}`}
+      style={{ width: panelResize.width }}
+    >
       {/* ハンドルは非スクロールの外枠に置く。asideの内側に置くと（改修5回目で判明）
           absolute配置がaside自身のスクロールに巻き込まれ、スクロール後に見失いやすくなる */}
       <div
@@ -59,7 +72,10 @@ export function TaskDetailArea({ taskId, onClose, ...panelProps }: TaskDetailAre
       >
         <div className="mx-auto h-full w-1 group-hover:bg-blue-400/60" />
       </div>
-      <div className={`h-full w-full ${closing ? 'nestio-panel-slide-out' : 'nestio-panel-slide-in'}`}>
+      <div
+        key={openGenerationRef.current}
+        className={`h-full w-full ${closing ? 'nestio-panel-slide-out' : 'nestio-panel-slide-in'}`}
+      >
         {displayedTaskId ? (
           <TaskDetailPanel taskId={displayedTaskId} onClose={onClose} {...panelProps} />
         ) : (

@@ -106,7 +106,8 @@ select option {
   }
 }
 .nestio-panel-slide-in {
-  animation: nestio-panel-slide-in 180ms ease-out;
+  /* 改修7回目：180msは速すぎるとのフィードバックで280msへ延長し、閉じる時と揃える */
+  animation: nestio-panel-slide-in 280ms ease-out;
 }
 
 /* タスク詳細パネルが右へ軽くスライドアウトして閉じる（改修6回目。改修5回目は開く時のみだった） */
@@ -121,5 +122,5 @@ select option {
   }
 }
 .nestio-panel-slide-out {
-  animation: nestio-panel-slide-out 180ms ease-in forwards;
+  animation: nestio-panel-slide-out 280ms ease-in forwards;
 }

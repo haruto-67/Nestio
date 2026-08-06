@@ -509,7 +509,7 @@ function MainLayout() {
               onOutdent={outdentSelected}
               onSelectTask={setSelectedTaskId}
               onCreateAndSelectTask={selectAndFocusTitle}
-              autoFocusTitle={focusTitleTaskId === selectedTaskId}
+              autoFocusTitle={focusTitleTaskId !== null && focusTitleTaskId === selectedTaskId}
               onTitleFocused={() => setFocusTitleTaskId(null)}
             />
           </>

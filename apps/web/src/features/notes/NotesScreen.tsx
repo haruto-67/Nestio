@@ -101,17 +101,21 @@ export function NotesScreen() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col gap-1">
+            // ギャラリー表示のカードをそのまま横長にしたような見た目にする（改修7回目。
+            // 以前はタスク一覧のような細い行＋色ドットで、ギャラリー表示との一体感が無かった）
+            <div className="flex flex-col gap-2">
               {sorted.map((note) => (
                 <button
                   key={note.id}
                   onClick={() => setSelectedNoteId(note.id)}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  className="flex flex-col rounded-lg p-4 text-left shadow-sm"
+                  style={{ backgroundColor: note.color }}
                 >
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: note.color }} />
-                  <span className="w-40 shrink-0 truncate text-sm font-medium">{note.title || '無題'}</span>
-                  <span className="flex-1 truncate text-xs text-neutral-400">{stripHtmlPreview(note.body)}</span>
-                  {note.pinned === 1 && <Pin size={12} className="shrink-0 text-amber-600" />}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-base font-semibold text-neutral-800">{note.title || '無題'}</span>
+                    {note.pinned === 1 && <Pin size={14} className="shrink-0 text-amber-600" />}
+                  </div>
+                  <p className="mt-1 truncate text-sm text-neutral-600">{stripHtmlPreview(note.body)}</p>
                 </button>
               ))}
             </div>

@@ -3,6 +3,7 @@ import type { TaskRow } from '@nestio/shared';
 import { formatDateTimeJst } from '../../lib/datetime.js';
 import { taskDueDateStringJst } from '../../lib/task-views.js';
 import { todayJstDateString } from '../../lib/datetime.js';
+import { isCoarsePointerDevice } from '../../lib/pointer.js';
 
 const COLUMNS: { priority: number; label: string; accentClass: string }[] = [
   { priority: 3, label: '優先度: 高', accentClass: 'border-t-red-400' },
@@ -72,7 +73,7 @@ export function KanbanBoard({
                 return (
                   <div
                     key={task.id}
-                    draggable
+                    draggable={!isCoarsePointerDevice()}
                     onDragStart={(e) => {
                       e.dataTransfer.setData('text/nestio-task-id', task.id);
                       e.dataTransfer.effectAllowed = 'move';

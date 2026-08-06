@@ -4,6 +4,7 @@ import type { TaskNode } from '../../lib/task-tree.js';
 import { formatDateTimeJst, todayJstDateString } from '../../lib/datetime.js';
 import { taskDueDateStringJst } from '../../lib/task-views.js';
 import { isTaskCollapsed, setTaskCollapsed, subscribeTaskCollapsed } from '../../lib/collapsed-tasks.js';
+import { isCoarsePointerDevice } from '../../lib/pointer.js';
 
 const PRIORITY_COLOR: Record<number, string> = {
   1: 'text-blue-500',
@@ -77,7 +78,7 @@ export function TaskItem({
       <div
         onClick={() => onSelect(task.id)}
         data-task-row="true"
-        draggable
+        draggable={!isCoarsePointerDevice()}
         onDragStart={(e) => {
           e.dataTransfer.setData('text/nestio-task-id', task.id);
           e.dataTransfer.effectAllowed = 'move';

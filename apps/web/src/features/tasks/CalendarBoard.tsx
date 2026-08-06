@@ -3,6 +3,7 @@ import type { TaskRow } from '@nestio/shared';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { addDaysToDateString, todayJstDateString } from '../../lib/datetime.js';
 import { taskDueDateStringJst } from '../../lib/task-views.js';
+import { isCoarsePointerDevice } from '../../lib/pointer.js';
 
 const WEEKDAY_LABELS = ['月', '火', '水', '木', '金', '土', '日'];
 
@@ -65,7 +66,7 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
   const currentMonth = monthStart.slice(0, 7);
 
   const dragHandlers = (task: TaskRow) => ({
-    draggable: true,
+    draggable: !isCoarsePointerDevice(),
     onDragStart: (e: DragEvent) => {
       e.dataTransfer.setData('text/nestio-task-id', task.id);
       e.dataTransfer.effectAllowed = 'move';
