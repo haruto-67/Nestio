@@ -18,6 +18,11 @@ function addMonths(dateStr: string, months: number): string {
   return `${ny}-${String(nm).padStart(2, '0')}-01`;
 }
 
+function formatMonthLabelJa(monthStart: string): string {
+  const [y, m] = monthStart.split('-').map(Number) as [number, number];
+  return `${y}年${m}月`;
+}
+
 /** 月の1日を含む週の月曜から6週間分(42日)のグリッドを作る */
 function buildMonthGrid(monthStart: string): string[] {
   const [y, m, d] = monthStart.split('-').map(Number) as [number, number, number];
@@ -68,8 +73,8 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
   });
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto p-2">
-      <div className="flex items-center justify-between px-2 pb-2">
+    <div className="flex h-full flex-col p-2">
+      <div className="flex shrink-0 items-center justify-between px-2 pb-2">
         <div className="flex items-center gap-1">
           <button
             onClick={() => setMonthStart((s) => addMonths(s, -1))}
@@ -78,12 +83,7 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
           >
             <ChevronLeft size={16} />
           </button>
-          <button
-            onClick={() => setMonthStart(firstOfMonth(today))}
-            className="rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-          >
-            今月
-          </button>
+          <span className="min-w-20 text-center text-sm font-semibold">{formatMonthLabelJa(monthStart)}</span>
           <button
             onClick={() => setMonthStart((s) => addMonths(s, 1))}
             title="次の月"
@@ -92,10 +92,17 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
             <ChevronRight size={16} />
           </button>
         </div>
-        <span className="text-sm font-semibold">{currentMonth}</span>
+        <button
+          onClick={() => setMonthStart(firstOfMonth(today))}
+          disabled={currentMonth === today.slice(0, 7)}
+          title="今日を含む月へ戻る"
+          className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800"
+        >
+          今月
+        </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-px overflow-y-auto rounded border border-neutral-200 bg-neutral-200 text-xs dark:border-neutral-700 dark:bg-neutral-800">
+      <div className="grid min-h-0 flex-1 grid-cols-7 grid-rows-[auto_repeat(6,minmax(0,1fr))] gap-px overflow-hidden rounded border border-neutral-200 bg-neutral-200 text-xs dark:border-neutral-700 dark:bg-neutral-800">
         {WEEKDAY_LABELS.map((w) => (
           <div
             key={w}
@@ -125,7 +132,7 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
                 const draggedId = e.dataTransfer.getData('text/nestio-task-id');
                 if (draggedId) onChangeDueDate(draggedId, dateStr);
               }}
-              className={`flex min-h-24 flex-col gap-0.5 p-1 ${
+              className={`flex flex-col gap-0.5 overflow-y-auto p-1 ${
                 inMonth ? 'bg-white dark:bg-neutral-900' : 'bg-neutral-50 dark:bg-neutral-950'
               } ${dragOverDate === dateStr ? 'ring-2 ring-inset ring-blue-300' : ''}`}
             >
@@ -175,7 +182,7 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
             期限なし（{unscheduled.length}件） {showUnscheduled ? '▾' : '▸'}
           </button>
           {showUnscheduled && (
-            <div className="mt-1 flex flex-wrap gap-1 pb-1">
+            <div className="mt-1 flex max-h-24 flex-wrap gap-1 overflow-y-auto pb-1">
               {unscheduled.map((t) => (
                 <span
                   key={t.id}

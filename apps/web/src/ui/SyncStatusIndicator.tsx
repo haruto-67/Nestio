@@ -38,7 +38,10 @@ export function SyncStatusIndicator() {
 
   if (!online) {
     return (
-      <span title="オフラインです。復帰すると自動で同期します" className="flex items-center gap-1 text-xs text-amber-500">
+      <span
+        title="オフラインです。復帰すると自動で同期します"
+        className="flex shrink-0 items-center gap-1 text-xs whitespace-nowrap text-amber-500"
+      >
         <WifiOff size={12} />
         オフライン
       </span>
@@ -47,7 +50,10 @@ export function SyncStatusIndicator() {
 
   if (status.lastError) {
     return (
-      <span title="直近の同期に失敗しました" className="flex items-center gap-1 text-xs text-red-500">
+      <span
+        title="直近の同期に失敗しました"
+        className="flex shrink-0 items-center gap-1 text-xs whitespace-nowrap text-red-500"
+      >
         <RefreshCw size={12} />
         同期エラー
       </span>
@@ -57,7 +63,7 @@ export function SyncStatusIndicator() {
   if (status.lastSyncAt === null) return null;
 
   return (
-    <span title="最終同期時刻" className="text-xs text-neutral-400">
+    <span title="最終同期時刻" className="shrink-0 text-xs whitespace-nowrap text-neutral-400">
       最終同期: {formatAgo(status.lastSyncAt)}
     </span>
   );

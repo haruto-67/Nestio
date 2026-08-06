@@ -125,6 +125,8 @@ export async function pushLoop(): Promise<void> {
       setSyncStatus({ lastError: true });
       return;
     }
+    // pullが起きない限り更新されなかったバグを修正（改修6回目）。push成功も同期が起きたとみなす
+    setSyncStatus({ lastSyncAt: Date.now(), lastError: false });
 
     if (res.clock_skew_ms !== undefined) {
       clockSkewMs = res.clock_skew_ms;

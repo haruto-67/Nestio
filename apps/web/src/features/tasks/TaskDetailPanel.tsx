@@ -18,7 +18,6 @@ import { naturalCollator, todayJstDateString } from '../../lib/datetime.js';
 import { RecurrenceEditor } from './RecurrenceEditor.js';
 import { AttachmentList } from '../attachments/AttachmentList.js';
 import { showToast } from '../../ui/toast.js';
-import { useResizableWidth } from '../../lib/useResizableWidth.js';
 
 const PRIORITY_LABELS = ['なし', '低', '中', '高'] as const;
 
@@ -29,6 +28,8 @@ interface TaskDetailPanelProps {
   onMoveDown: () => void;
   onIndent: () => void;
   onOutdent: () => void;
+  /** パンくずリストで祖先タスクをクリックした時にそのタスクへ移動する */
+  onSelectTask: (taskId: string) => void;
   /** サブタスク作成後にそのタスクを選択し、タイトル入力欄へ自動フォーカスするためのコールバック */
   onCreateAndSelectTask: (taskId: string) => void;
   /** trueの場合、マウント時にタイトル入力欄へ自動フォーカスする（新規作成直後のタスクを開いた時） */
@@ -43,12 +44,12 @@ export function TaskDetailPanel({
   onMoveDown,
   onIndent,
   onOutdent,
+  onSelectTask,
   onCreateAndSelectTask,
   autoFocusTitle,
   onTitleFocused,
 }: TaskDetailPanelProps) {
   const { me } = useApp();
-  const panelResize = useResizableWidth('nestio_detail_panel_width', 320, 220, 1400);
   const task = useTask(taskId);
   const lists = useLists();
   const allTags = useTags();
@@ -72,6 +73,22 @@ export function TaskDetailPanel({
   const userId = me.id;
 
   const update = (fields: TaskWritableFields) => upsertTask(userId, taskId, fields);
+
+  // パンくずリスト（改修6回目）：parent_idを根まで辿る。循環参照はCLAUDE.md絶対原則6で防がれている前提だが、
+  // 万一に備えvisitedで無限ループを避ける
+  const taskById = new Map(tasks.map((t) => [t.id, t]));
+  const ancestors: TaskRow[] = [];
+  {
+    const visited = new Set<string>();
+    let currentParentId = task.parent_id;
+    while (currentParentId && !visited.has(currentParentId)) {
+      visited.add(currentParentId);
+      const parent = taskById.get(currentParentId);
+      if (!parent) break;
+      ancestors.unshift(parent);
+      currentParentId = parent.parent_id;
+    }
+  }
 
   const sortedLists = [...lists].sort((a, b) => naturalCollator.compare(a.name, b.name));
   const taskTagByTagId = new Map(taskTags.filter((tt) => tt.task_id === taskId).map((tt) => [tt.tag_id, tt]));
@@ -111,19 +128,9 @@ export function TaskDetailPanel({
   };
 
   return (
-    <div className="relative flex h-full shrink-0" style={{ width: panelResize.width }}>
-      {/* ハンドルは非スクロールの外枠に置く。asideの内側に置くと（改修5回目で判明）
-          absolute配置がaside自身のスクロールに巻き込まれ、スクロール後に見失いやすくなる */}
-      <div
-        onMouseDown={(e) => panelResize.startResize(-1)(e)}
-        title="ドラッグして幅を変更"
-        className="group absolute top-0 left-0 z-10 h-full w-3 -translate-x-1/2 cursor-col-resize touch-none"
-      >
-        <div className="mx-auto h-full w-1 group-hover:bg-blue-400/60" />
-      </div>
       <aside
         data-task-detail-panel="true"
-        className="nestio-panel-slide-in flex h-full w-full flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"
+        className="flex h-full w-full flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"
       >
       <div className="flex items-center justify-between">
         <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
@@ -133,6 +140,23 @@ export function TaskDetailPanel({
           削除
         </button>
       </div>
+
+      {ancestors.length > 0 && (
+        <div className="-mt-2 flex flex-wrap items-center gap-x-1 text-xs text-neutral-400">
+          {ancestors.map((a) => (
+            <span key={a.id} className="flex items-center gap-x-1">
+              <button
+                onClick={() => onSelectTask(a.id)}
+                className="max-w-32 truncate hover:text-neutral-700 hover:underline dark:hover:text-neutral-200"
+                title={a.title}
+              >
+                {a.title}
+              </button>
+              <span>&gt;</span>
+            </span>
+          ))}
+        </div>
+      )}
 
       <input
         ref={titleInputRef}
@@ -266,7 +290,6 @@ export function TaskDetailPanel({
 
       <AttachmentList ownerType="task" ownerId={taskId} />
       </aside>
-    </div>
   );
 }
 

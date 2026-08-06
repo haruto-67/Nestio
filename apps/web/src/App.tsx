@@ -2,14 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { uuidv7 } from '@nestio/shared';
 import { Menu, Timer, Search, Egg, Keyboard, Trash2, Settings } from 'lucide-react';
 import { AppProvider, useApp } from './state/AppProvider.js';
-import { useTasks } from './db/queries.js';
+import { useTasks, useLists } from './db/queries.js';
+import { SMART_LISTS } from './lib/task-views.js';
+import { loadCustomViews, subscribeCustomViews } from './lib/custom-views.js';
 import { ToastContainer } from './ui/ToastContainer.js';
 import { showToast } from './ui/toast.js';
 import { useResizableWidth } from './lib/useResizableWidth.js';
 import { LoginScreen } from './features/auth/LoginScreen.js';
 import { Sidebar } from './features/tree/Sidebar.js';
 import { TaskListView } from './features/tasks/TaskListView.js';
-import { TaskDetailPanel } from './features/tasks/TaskDetailPanel.js';
+import { TaskDetailArea } from './features/tasks/TaskDetailArea.js';
 import { useTheme } from './state/useTheme.js';
 import { useKeymap } from './state/useKeymap.js';
 import type { ViewSelection } from './state/view.js';
@@ -84,8 +86,24 @@ function Root() {
 function MainLayout() {
   const { me } = useApp();
   const tasks = useTasks();
+  const lists = useLists();
   const [screen, setScreenState] = useState<Screen>(loadInitialScreen);
   const [view, setViewState] = useState<ViewSelection>(loadInitialView);
+  const [customViews, setCustomViewsForTitle] = useState(() => loadCustomViews());
+  useEffect(() => subscribeCustomViews(() => setCustomViewsForTitle(loadCustomViews())), []);
+
+  // ブラウザタブのタイトルを現在のビューに合わせて動的に更新する（改修6回目）
+  useEffect(() => {
+    if (screen === 'notes') {
+      document.title = 'Nestio - メモ';
+      return;
+    }
+    let label = '';
+    if (view.type === 'smart') label = SMART_LISTS.find((s) => s.key === view.key)?.label ?? '';
+    else if (view.type === 'list') label = lists.find((l) => l.id === view.listId)?.name ?? '';
+    else label = customViews.find((v) => v.id === view.id)?.name ?? '';
+    document.title = label ? `Nestio - ${label}` : 'Nestio';
+  }, [screen, view, lists, customViews]);
 
   const setScreen = (s: Screen) => {
     setScreenState(s);
@@ -308,7 +326,7 @@ function MainLayout() {
   });
 
   return (
-    <div className="flex h-screen flex-col bg-white text-neutral-900 dark:bg-neutral-900 dark:text-white">
+    <div className="flex h-screen flex-col bg-[#FBFAF6] text-neutral-900 dark:bg-[#1a1a18] dark:text-white">
       <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800 md:hidden">
         <button
           onClick={() => setDrawerOpen(true)}
@@ -317,7 +335,7 @@ function MainLayout() {
         >
           <Menu size={26} />
         </button>
-        <span className="text-sm font-semibold">Nestio</span>
+        <SyncStatusIndicator />
         <div className="flex gap-1">
           <button
             onClick={() => setShowPomodoro(true)}
@@ -482,19 +500,18 @@ function MainLayout() {
                 quickAddInputElRef.current = el;
               }}
             />
-            {selectedTaskId && (
-              <TaskDetailPanel
-                taskId={selectedTaskId}
-                onClose={() => setSelectedTaskId(null)}
-                onMoveUp={() => moveSelection(-1)}
-                onMoveDown={() => moveSelection(1)}
-                onIndent={indentSelected}
-                onOutdent={outdentSelected}
-                onCreateAndSelectTask={selectAndFocusTitle}
-                autoFocusTitle={focusTitleTaskId === selectedTaskId}
-                onTitleFocused={() => setFocusTitleTaskId(null)}
-              />
-            )}
+            <TaskDetailArea
+              taskId={selectedTaskId}
+              onClose={() => setSelectedTaskId(null)}
+              onMoveUp={() => moveSelection(-1)}
+              onMoveDown={() => moveSelection(1)}
+              onIndent={indentSelected}
+              onOutdent={outdentSelected}
+              onSelectTask={setSelectedTaskId}
+              onCreateAndSelectTask={selectAndFocusTitle}
+              autoFocusTitle={focusTitleTaskId === selectedTaskId}
+              onTitleFocused={() => setFocusTitleTaskId(null)}
+            />
           </>
         ) : (
           <NotesScreen />

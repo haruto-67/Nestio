@@ -112,22 +112,27 @@ export function TaskItem({
               e.stopPropagation();
               toggleExpanded();
             }}
-            className="w-4 text-xs text-neutral-400"
+            title={expanded ? 'サブタスクを折りたたむ' : 'サブタスクを展開する'}
+            className="flex min-h-8 min-w-8 shrink-0 items-center justify-center text-sm text-neutral-400"
           >
             {expanded ? '▾' : '▸'}
           </button>
         ) : (
-          <span className="w-4" />
+          <span className="min-w-8 shrink-0" />
         )}
-        <input
-          type="checkbox"
-          checked={task.completed_at !== null}
-          disabled={disabled}
+        <label
           onClick={(e) => e.stopPropagation()}
-          onChange={(e) => onToggleComplete(task.id, e.target.checked)}
-          title={disabled ? '未完了のサブタスクがあります' : undefined}
-          className={justCompleted ? 'nestio-complete-pop' : undefined}
-        />
+          className="flex min-h-8 min-w-8 shrink-0 items-center justify-center"
+        >
+          <input
+            type="checkbox"
+            checked={task.completed_at !== null}
+            disabled={disabled}
+            onChange={(e) => onToggleComplete(task.id, e.target.checked)}
+            title={disabled ? '未完了のサブタスクがあります' : undefined}
+            className={`h-4 w-4 ${justCompleted ? 'nestio-complete-pop' : ''}`}
+          />
+        </label>
         <span
           className={`truncate text-sm ${task.completed_at !== null ? 'text-neutral-400 line-through' : ''}`}
         >

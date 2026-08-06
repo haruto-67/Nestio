@@ -6,6 +6,7 @@ import { useNote } from '../../db/queries.js';
 import { upsertNote, deleteNote } from '../../state/actions.js';
 import { AttachmentList } from '../attachments/AttachmentList.js';
 import { MarkdownField } from './MarkdownField.js';
+import { useResizableWidth } from '../../lib/useResizableWidth.js';
 
 const NOTE_COLORS = ['#FFF7C0', '#FFD6D6', '#D6FFE0', '#D6E8FF', '#E8D6FF', '#FFFFFF'];
 
@@ -18,6 +19,7 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const { me } = useApp();
   const note = useNote(noteId);
   const [titleDraft, setTitleDraft] = useState(note?.title ?? '');
+  const panelResize = useResizableWidth('nestio_note_editor_width', 320, 220, 1400);
 
   useEffect(() => {
     setTitleDraft(note?.title ?? '');
@@ -34,7 +36,16 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   };
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col gap-3 overflow-y-auto border-l border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+    <div className="relative flex h-full shrink-0" style={{ width: panelResize.width }}>
+      {/* TaskDetailPanelと同じ設計（改修6回目）：ハンドルは非スクロールの外枠に置く */}
+      <div
+        onMouseDown={(e) => panelResize.startResize(-1)(e)}
+        title="ドラッグして幅を変更"
+        className="group absolute top-0 left-0 z-10 h-full w-3 -translate-x-1/2 cursor-col-resize touch-none"
+      >
+        <div className="mx-auto h-full w-1 group-hover:bg-blue-400/60" />
+      </div>
+      <aside className="nestio-panel-slide-in flex h-full w-full shrink-0 flex-col gap-3 overflow-y-auto border-l border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="flex items-center justify-between">
         <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
           閉じる
@@ -86,6 +97,7 @@ export function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       </div>
 
       <AttachmentList ownerType="note" ownerId={noteId} />
-    </aside>
+      </aside>
+    </div>
   );
 }

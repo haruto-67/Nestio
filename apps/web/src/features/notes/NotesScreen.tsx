@@ -6,6 +6,7 @@ import { useNotes } from '../../db/queries.js';
 import { upsertNote } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { NoteEditor } from './NoteEditor.js';
+import { BackgroundMark } from '../../ui/BackgroundMark.js';
 
 type ViewMode = 'gallery' | 'list';
 const VIEW_MODE_KEY = 'nestio_notes_view_mode';
@@ -46,8 +47,9 @@ export function NotesScreen() {
 
   return (
     <div className="flex h-full flex-1 overflow-hidden">
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="mb-4 flex items-center justify-between">
+      <div className="relative flex-1 overflow-y-auto p-4">
+        <BackgroundMark className="pointer-events-none absolute right-6 bottom-6 z-0 h-48 w-48 opacity-40" />
+        <div className="relative z-10 mb-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold">メモ</h1>
           <div className="flex items-center gap-2">
             <div className="flex rounded border border-neutral-200 dark:border-neutral-700">
@@ -76,43 +78,45 @@ export function NotesScreen() {
           </div>
         </div>
 
-        {sorted.length === 0 ? (
-          <p className="mt-10 text-center text-sm text-neutral-400">メモはまだありません</p>
-        ) : viewMode === 'gallery' ? (
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-            {sorted.map((note) => (
-              <button
-                key={note.id}
-                onClick={() => setSelectedNoteId(note.id)}
-                className="flex h-40 flex-col rounded-lg p-3 text-left shadow-sm"
-                style={{ backgroundColor: note.color }}
-              >
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="truncate text-sm font-medium text-neutral-800">{note.title || '無題'}</span>
-                  {note.pinned === 1 && <Pin size={12} className="text-amber-600" />}
-                </div>
-                <p className="flex-1 overflow-hidden text-xs whitespace-pre-wrap text-neutral-600">
-                  {stripHtmlPreview(note.body)}
-                </p>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1">
-            {sorted.map((note) => (
-              <button
-                key={note.id}
-                onClick={() => setSelectedNoteId(note.id)}
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              >
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: note.color }} />
-                <span className="w-40 shrink-0 truncate text-sm font-medium">{note.title || '無題'}</span>
-                <span className="flex-1 truncate text-xs text-neutral-400">{stripHtmlPreview(note.body)}</span>
-                {note.pinned === 1 && <Pin size={12} className="shrink-0 text-amber-600" />}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="relative z-10">
+          {sorted.length === 0 ? (
+            <p className="mt-10 text-center text-sm text-neutral-400">メモはまだありません</p>
+          ) : viewMode === 'gallery' ? (
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+              {sorted.map((note) => (
+                <button
+                  key={note.id}
+                  onClick={() => setSelectedNoteId(note.id)}
+                  className="flex h-40 flex-col rounded-lg p-3 text-left shadow-sm"
+                  style={{ backgroundColor: note.color }}
+                >
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="truncate text-sm font-medium text-neutral-800">{note.title || '無題'}</span>
+                    {note.pinned === 1 && <Pin size={12} className="text-amber-600" />}
+                  </div>
+                  <p className="flex-1 overflow-hidden text-xs whitespace-pre-wrap text-neutral-600">
+                    {stripHtmlPreview(note.body)}
+                  </p>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {sorted.map((note) => (
+                <button
+                  key={note.id}
+                  onClick={() => setSelectedNoteId(note.id)}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                >
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: note.color }} />
+                  <span className="w-40 shrink-0 truncate text-sm font-medium">{note.title || '無題'}</span>
+                  <span className="flex-1 truncate text-xs text-neutral-400">{stripHtmlPreview(note.body)}</span>
+                  {note.pinned === 1 && <Pin size={12} className="shrink-0 text-amber-600" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {selectedNoteId && <NoteEditor noteId={selectedNoteId} onClose={() => setSelectedNoteId(null)} />}
