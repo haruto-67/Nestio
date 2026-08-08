@@ -175,15 +175,39 @@
 | GET | `/mcp/oauth/authorize` | 認可画面。ログイン済みユーザーが許可すると認可コードを発行 |
 | POST | `/mcp/oauth/token` | 認可コード / PKCE 検証子を検証しアクセストークンを発行 |
 
-| ツール | 権限 |
-|---|---|
-| `list_tasks` | read |
-| `search_tasks` | read |
-| `get_task` | read |
-| `list_notes` | read |
-| `create_task` | write |
-| `update_task` | write |
-| `complete_task` | write |
-| `create_note` | write |
+| ツール | 権限 | 内容 |
+|---|---|---|
+| `list_tasks` | read | タスク一覧（既定は未完了のみ。`list_id`/`parent_id`/`include_completed`で絞り込み可） |
+| `search_tasks` | read | タスクをタイトル・本文で全文検索 |
+| `get_task` | read | タスクIDを指定して詳細取得 |
+| `list_notes` | read | メモ一覧 |
+| `create_task` | write | タスク新規作成（`parent_id`でサブタスク化、`tags`でタグ付与） |
+| `update_task` | write | タスク更新（タイトル/本文/優先度/期限/リスト移動/親付け替え/タグ追加削除） |
+| `complete_task` | write | タスクを完了にする（繰り返しの次occurrence計算はしない） |
+| `delete_task` | write | タスクを論理削除（ゴミ箱） |
+| `restore_task` | write | 論理削除したタスクを復元 |
+| `create_note` | write | メモ新規作成 |
+| `update_note` | write | メモ更新（タイトル/本文/ピン留め） |
+| `delete_note` | write | メモを論理削除（ゴミ箱） |
+| `restore_note` | write | 論理削除したメモを復元 |
+| `list_lists` | read | リスト一覧（id/name/folder_id/color/sort_mode） |
+| `create_list` | write | リスト新規作成 |
+| `update_list` | write | リストの名前/所属フォルダ/色を変更 |
+| `delete_list` | write | リストを論理削除（配下タスクはそのまま） |
+| `list_folders` | read | フォルダ一覧 |
+| `create_folder` | write | フォルダ新規作成 |
+| `update_folder` | write | フォルダ名を変更 |
+| `delete_folder` | write | フォルダを論理削除 |
+| `list_tags` | read | タグ一覧 |
+| `create_tag` | write | タグ新規作成 |
+| `update_tag` | write | タグの名前/色を変更 |
+| `delete_tag` | write | タグを論理削除 |
+| `list_triggers` | read | Hatchトリガー一覧 |
+| `create_trigger` | write | Hatchトリガー新規作成 |
+| `update_trigger` | write | Hatchトリガー更新（有効/無効の切り替えを含む） |
+| `delete_trigger` | write | Hatchトリガーを論理削除 |
 
-- 書き込みは内部で `/sync/push` と同じ適用ロジックを通す（seq 採番と検証を共有するため）
+- 書き込みは内部で `/sync/push` と同じ適用ロジックを通す（seq 採番と検証を共有するため）。
+  `update_task` の `parent_id` 付け替えも同じ循環参照チェック（`wouldCreateCycle`）を通る
+- 一覧・並び替え・表示モードなど表示系の設定（`sort_order` の直接操作、ビュー選択等）はMCPには意図的に公開していない。
+  新規作成時の並び順は既存の最後尾に自動で追加される
