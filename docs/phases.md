@@ -443,6 +443,39 @@ Pi本番へデプロイ済み。モバイルのスクロール修正は実機で
 
 ---
 
+## MCP機能拡張（2026-08-08）
+
+改修とは別枠。ユーザーが別プロジェクトからNestioのMCPサーバーを使おうとしたところ、
+「リスト名からIDが分からずアクセスできない」「リスト作成の手段が無い」という報告があり、
+表示系（並び替え・ビュー選択）を除くほぼ全データ操作をMCP経由で可能にした。
+
+- [x] リスト管理：`list_lists` / `create_list` / `update_list` / `delete_list`
+- [x] フォルダ管理：`list_folders` / `create_folder` / `update_folder` / `delete_folder`
+- [x] タグ管理：`list_tags` / `create_tag` / `update_tag` / `delete_tag`
+- [x] タスク/メモの削除・復元：`delete_task` / `restore_task` / `delete_note` / `restore_note`
+- [x] `update_task`を拡張：`list_id`（リスト移動）・`parent_id`（親付け替え。既存の
+      `wouldCreateCycle`循環検知をそのまま継承）・`due_date`（期限の設定/クリア。
+      `due_at`との排他はUIの`onChange`実装と同じく同時にnull化する形で維持）・
+      `add_tags`/`remove_tags`（タグの部分追加削除。全置換ではなく差分指定にしたのは、
+      呼び出し側が現在のタグ一覧を毎回取得しなくて済むようにするため）
+- [x] `list_tasks`を拡張：`parent_id`絞り込み（サブタスクのみ/最上位のみ）、
+      `include_completed`（既定は未完了のみのまま、trueで完了済みも含める）
+- [x] Hatchトリガー管理を追加：`list_triggers` / `create_trigger` / `update_trigger` / `delete_trigger`
+      （`condition_json`/`params_json`は文字列としてそのまま受け渡すのみで、内容のスキーマ検証は
+      行っていない。不正なJSONを渡した場合の挙動は`docs/open-questions.md`に記録した）
+- [x] `docs/api-spec.md` 10章のツール一覧を実装と一致するよう更新（表示系を意図的に除外した
+      旨の注記も追加）
+- [x] 書き込みは既存の`applySyncOps`（`/sync/push`と同一の適用ロジック）を再利用し、
+      安全機構（循環検知・LWW・所有権チェック）を独自実装せず継承
+
+**完了条件**：`pnpm typecheck` / `pnpm lint` / `pnpm test`（新規19件を含む全204件）が通過。
+`apps/api/src/routes/mcp.test.ts`に新規ツール群の統合テスト（リスト/タグのCRUD、
+タスクの削除復元、リスト移動・親付け替え・タグ差分更新、循環参照の拒否、トリガーのCRUD）を追加。
+CI（typecheck-lint-test・e2e両ジョブ）グリーン確認後、Pi本番へデプロイ済み
+（`curl https://nestio.niwatorimc.com/api/v1/health` で200確認済み）。
+
+---
+
 ## 進捗管理
 
 - 完了した項目は `[x]` にしてコミットする

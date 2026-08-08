@@ -146,6 +146,26 @@ URL（`history`/`react-router` 等）とは連動させていない。そのた�
 特定のリスト/タスクへ直接遷移できない。将来必要になった時点で `react-router-dom` 等の追加を検討する
 （現時点で追加すると要件のないルーティング設計を先取りすることになるため見送った）。
 
+### 15. MCPの`create_trigger`/`update_trigger`は`condition_json`/`params_json`の中身を検証しない
+
+MCP機能拡張（2026-08-08）でHatchトリガーをMCP経由で作成・更新できるようにしたが、
+`condition_json`/`params_json`は`z.string()`（`packages/shared`の`triggerWritableFields`）としか
+検証されておらず、中身が期待するキー（`list_id`/`tag_id`/`priority`/`offset_minutes`/`cron`や
+アクション別のパラメータ）を持つ妥当なJSONかはチェックしていない。従来はアプリ内の設定UIだけが
+書き込んでいたため実質的に問題にならなかったが、MCP経由だとClaude側が不正な形のJSON文字列を
+渡す可能性がある。
+**現状の挙動**：不正なJSON文字列を渡しても`create_trigger`/`update_trigger`自体は成功する
+（文字列としては妥当なため）。実際に問題が起きるのはトリガー発火時で、
+`apps/api/src/hatch/event-detector.ts`の条件判定は`JSON.parse`を`try/catch`しており
+パース失敗時は「条件不一致」として静かに無視されるが、`apps/api/src/hatch/action-runner.ts`の
+`JSON.parse(trigger.params_json)`はtry/catchされていない。ただし呼び出し元の
+`apps/api/src/hatch/worker.ts`側で例外を捕捉しているため、ワーカー全体は落ちず、
+`trigger_runs`に失敗として記録されるだけに留まる。
+**判断**：実害はワーカーの1回分の実行失敗（ログに残る）にとどまるため、MCPツール側での
+JSONスキーマ検証は見送った。将来Hatchトリガーの誤設定がユーザー体験上目立つようなら、
+`action_key`ごとの`params_json`スキーマをZodで定義し`create_trigger`/`update_trigger`内で
+検証する対応を検討する。
+
 ### 5. リスト型以外のビュー形式は仕様未定 — 改修4回目で解決済み
 
 ユーザーから「今はリスト型のビューしかないが、それ以外にもビューの形がほしい」との要望があったが、
