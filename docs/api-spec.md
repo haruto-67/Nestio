@@ -211,3 +211,8 @@
   `update_task` の `parent_id` 付け替えも同じ循環参照チェック（`wouldCreateCycle`）を通る
 - 一覧・並び替え・表示モードなど表示系の設定（`sort_order` の直接操作、ビュー選択等）はMCPには意図的に公開していない。
   新規作成時の並び順は既存の最後尾に自動で追加される
+- `create_task`/`update_task` の `note`、`create_note`/`update_note` の `body` は簡易Markdown記法
+  （`**太字**`・`*斜体*`・`` `コード` ``・箇条書き・番号付きリスト・`[text](url)`リンク・空行区切りの段落）を
+  受け付け、サーバー側（`@nestio/shared`の`markdownToSafeHtml`）でUIが許可するHTMLタグへ変換してから保存する
+  （改修8回目）。人間がUIで直接編集する場合はWYSIWYGのリッチテキスト編集のままで、Markdown記法のパースは
+  行わない。この変換はMCP書き込み経路にのみ適用される

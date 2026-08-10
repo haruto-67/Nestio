@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { uuidv7, type SyncOp } from '@nestio/shared';
+import { uuidv7, markdownToSafeHtml, type SyncOp } from '@nestio/shared';
 import { applySyncOps } from '../sync/apply.js';
 import { searchTasks } from '../search/query.js';
 
@@ -9,6 +9,11 @@ export interface ToolDef {
   description: string;
   inputSchema: Record<string, unknown>;
 }
+
+const MARKDOWN_FIELD_DESC =
+  '簡単なMarkdown記法が使える（**太字**、*斜体*、`コード`、- 箇条書き、1. 番号付きリスト、' +
+  '[文字](https://...)リンク、空行区切りの段落）。見出し(#)は太字の段落として表示される。' +
+  'HTMLタグはそのまま書いても解釈されない（文字として表示される）';
 
 /** api-spec.md 10章のツール一覧。書き込み系は/sync/pushと同じ適用ロジック（applySyncOps）を通す */
 export const TOOL_DEFS: ToolDef[] = [
@@ -57,7 +62,7 @@ export const TOOL_DEFS: ToolDef[] = [
       properties: {
         list_id: { type: 'string' },
         title: { type: 'string' },
-        note: { type: 'string' },
+        note: { type: 'string', description: MARKDOWN_FIELD_DESC },
         priority: { type: 'number' },
         due_date: { type: 'string', description: 'YYYY-MM-DD' },
         parent_id: { type: 'string', description: '指定するとこのタスクIDのサブタスクとして作成する' },
@@ -77,7 +82,7 @@ export const TOOL_DEFS: ToolDef[] = [
       properties: {
         id: { type: 'string' },
         title: { type: 'string' },
-        note: { type: 'string' },
+        note: { type: 'string', description: MARKDOWN_FIELD_DESC },
         priority: { type: 'number' },
         due_date: { type: 'string', description: 'YYYY-MM-DD。空文字で期限をクリアする' },
         list_id: { type: 'string', description: '指定すると別のリストへ移動する' },
@@ -112,7 +117,7 @@ export const TOOL_DEFS: ToolDef[] = [
     description: 'メモを新規作成する',
     inputSchema: {
       type: 'object',
-      properties: { title: { type: 'string' }, body: { type: 'string' } },
+      properties: { title: { type: 'string' }, body: { type: 'string', description: MARKDOWN_FIELD_DESC } },
       required: ['title'],
     },
   },
@@ -125,7 +130,7 @@ export const TOOL_DEFS: ToolDef[] = [
       properties: {
         id: { type: 'string' },
         title: { type: 'string' },
-        body: { type: 'string' },
+        body: { type: 'string', description: MARKDOWN_FIELD_DESC },
         pinned: { type: 'boolean' },
       },
       required: ['id'],
@@ -482,7 +487,7 @@ export async function callTool(
         sort_order: nextSortOrderForTasks(db, listId, parentId),
       };
       if (parentId) fields.parent_id = parentId;
-      if (typeof args.note === 'string') fields.note = args.note;
+      if (typeof args.note === 'string') fields.note = markdownToSafeHtml(args.note);
       if (typeof args.priority === 'number') fields.priority = args.priority;
       if (typeof args.due_date === 'string') fields.due_date = args.due_date;
 
@@ -506,7 +511,7 @@ export async function callTool(
       const id = requireString(args, 'id');
       const fields: Record<string, unknown> = {};
       if (typeof args.title === 'string') fields.title = args.title;
-      if (typeof args.note === 'string') fields.note = args.note;
+      if (typeof args.note === 'string') fields.note = markdownToSafeHtml(args.note);
       if (typeof args.priority === 'number') fields.priority = args.priority;
       if (typeof args.due_date === 'string') {
         fields.due_date = args.due_date.length > 0 ? args.due_date : null;
@@ -578,7 +583,7 @@ export async function callTool(
       const title = requireString(args, 'title');
       const id = uuidv7();
       const fields: Record<string, unknown> = { title, sort_order: nextSortOrderForNotes(db, userId) };
-      if (typeof args.body === 'string') fields.body = args.body;
+      if (typeof args.body === 'string') fields.body = markdownToSafeHtml(args.body);
 
       applyOneOpOrThrow(db, userId, {
         op_id: uuidv7(),
@@ -595,7 +600,7 @@ export async function callTool(
       const id = requireString(args, 'id');
       const fields: Record<string, unknown> = {};
       if (typeof args.title === 'string') fields.title = args.title;
-      if (typeof args.body === 'string') fields.body = args.body;
+      if (typeof args.body === 'string') fields.body = markdownToSafeHtml(args.body);
       if (typeof args.pinned === 'boolean') fields.pinned = args.pinned ? 1 : 0;
 
       applyOneOpOrThrow(db, userId, {

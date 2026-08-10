@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { uuidv7 } from '@nestio/shared';
-import { FolderPlus, Plus, X, ChevronDown, ChevronRight, Pencil, Tag as TagIcon } from 'lucide-react';
+import { FolderPlus, Plus, X, ChevronDown, ChevronRight, Pencil, Tag as TagIcon, GripVertical } from 'lucide-react';
+import type { ListRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
 import { useFolders, useLists, useTags } from '../../db/queries.js';
 import { upsertFolder, deleteFolder, upsertList, deleteList, upsertTask } from '../../state/actions.js';
@@ -9,8 +10,11 @@ import { nextSortOrder } from '../../lib/sort-order.js';
 import { showToast } from '../../ui/toast.js';
 import { SMART_LISTS, SMART_LIST_DOT_CLASS } from '../../lib/task-views.js';
 import { loadCustomViews, deleteCustomView, subscribeCustomViews } from '../../lib/custom-views.js';
+import { isCoarsePointerDevice } from '../../lib/pointer.js';
 import { EditableLabel, type EditableLabelHandle } from './EditableLabel.js';
 import type { ViewSelection } from '../../state/view.js';
+
+const LIST_DRAG_TYPE = 'text/nestio-list-id';
 
 interface SidebarProps {
   view: ViewSelection;
@@ -77,6 +81,30 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
     const siblings = tasks.filter((t) => t.list_id === listId && t.parent_id === null);
     upsertTask(userId, taskId, { list_id: listId, parent_id: null, sort_order: nextSortOrder(siblings) });
     showToast('リストを移動しました');
+  };
+
+  // リストをドラッグして別のリストの上にドロップ→その位置へ並び替える（改修8回目）。
+  // ドロップ先が別フォルダに属する場合はそのフォルダへも移動する。sort_orderを1から振り直す
+  // （既存コードにはドラッグでの「間に挿入する」並び替えの前例が無く、末尾追加のnextSortOrderでは
+  // 対応できないため、影響を受けるフォルダ内の全リストを連番に再採番する方式にした）
+  const reorderList = (draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return;
+    const dragged = lists.find((l) => l.id === draggedId);
+    const target = lists.find((l) => l.id === targetId);
+    if (!dragged || !target) return;
+
+    const targetFolderId = target.folder_id;
+    const siblings = (listsByFolder.get(targetFolderId) ?? []).filter((l) => l.id !== draggedId);
+    const targetIdx = siblings.findIndex((l) => l.id === targetId);
+    const reordered = [...siblings];
+    reordered.splice(targetIdx, 0, dragged);
+
+    reordered.forEach((l, i) => {
+      const sortOrder = i + 1;
+      const fields: { sort_order: number; folder_id?: string | null } = { sort_order: sortOrder };
+      if (l.id === draggedId) fields.folder_id = targetFolderId;
+      if (l.sort_order !== sortOrder || l.folder_id !== targetFolderId) upsertList(userId, l.id, fields);
+    });
   };
 
   return (
@@ -164,6 +192,8 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
             onDelete={() => removeList(l.id)}
             onChangeColor={(color) => changeListColor(l.id, color)}
             onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
+            listId={l.id}
+            onDropList={(draggedId) => reorderList(draggedId, l.id)}
           />
         ))}
 
@@ -221,6 +251,8 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
                     onDelete={() => removeList(l.id)}
                     onChangeColor={(color) => changeListColor(l.id, color)}
                     onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
+            listId={l.id}
+            onDropList={(draggedId) => reorderList(draggedId, l.id)}
                   />
                 ))}
               </div>
@@ -250,6 +282,7 @@ const LIST_COLORS = [
 ];
 
 function ListRow({
+  listId,
   name,
   color,
   active,
@@ -258,7 +291,9 @@ function ListRow({
   onDelete,
   onChangeColor,
   onDropTask,
+  onDropList,
 }: {
+  listId: string;
   name: string;
   color: string;
   active: boolean;
@@ -267,6 +302,7 @@ function ListRow({
   onDelete: () => void;
   onChangeColor: (color: string) => void;
   onDropTask: (taskId: string) => void;
+  onDropList: (draggedListId: string) => void;
 }) {
   const labelRef = useRef<EditableLabelHandle | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -275,15 +311,21 @@ function ListRow({
     <div
       onClick={onSelect}
       onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes('text/nestio-task-id')) return;
+        if (!e.dataTransfer.types.includes('text/nestio-task-id') && !e.dataTransfer.types.includes(LIST_DRAG_TYPE)) {
+          return;
+        }
         e.preventDefault();
         setDragOver(true);
       }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => {
-        if (!e.dataTransfer.types.includes('text/nestio-task-id')) return;
         e.preventDefault();
         setDragOver(false);
+        if (e.dataTransfer.types.includes(LIST_DRAG_TYPE)) {
+          const draggedListId = e.dataTransfer.getData(LIST_DRAG_TYPE);
+          if (draggedListId) onDropList(draggedListId);
+          return;
+        }
         const taskId = e.dataTransfer.getData('text/nestio-task-id');
         if (taskId) onDropTask(taskId);
       }}
@@ -295,13 +337,28 @@ function ListRow({
             : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
       }`}
     >
+      {/* リストの並び替え用グリップハンドル（改修8回目）。ここだけをdraggableにすることで
+          行全体のドラッグ operationとは分離し、タッチ環境ではisCoarsePointerDeviceで
+          draggable自体を外してスクロール阻害を避ける（改修7回目で確立したパターンを踏襲） */}
+      <span
+        draggable={!isCoarsePointerDevice()}
+        onDragStart={(e) => {
+          e.dataTransfer.setData(LIST_DRAG_TYPE, listId);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        onClick={(e) => e.stopPropagation()}
+        title="ドラッグして並び替え"
+        className="flex min-h-8 min-w-6 shrink-0 cursor-grab items-center justify-center text-neutral-300 hover:text-neutral-500 active:cursor-grabbing dark:text-neutral-600 dark:hover:text-neutral-400"
+      >
+        <GripVertical size={13} />
+      </span>
       <button
         onClick={(e) => {
           e.stopPropagation();
           setShowColorPicker((v) => !v);
         }}
         title="色を変更"
-        className="ml-0.5 flex min-h-8 min-w-8 shrink-0 items-center justify-center"
+        className="flex min-h-8 min-w-8 shrink-0 items-center justify-center"
       >
         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
       </button>

@@ -12,7 +12,7 @@ import { todayJstDateString } from '../../lib/datetime.js';
 import { upsertTask, upsertList, completeTask } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { showToast } from '../../ui/toast.js';
-import { setTaskCollapsed } from '../../lib/collapsed-tasks.js';
+import { setTaskCollapsed, isTaskCollapsed, subscribeAnyTaskCollapsed } from '../../lib/collapsed-tasks.js';
 import { loadCustomViews, createCustomView, subscribeCustomViews } from '../../lib/custom-views.js';
 import { useKeymap } from '../../state/useKeymap.js';
 import { TaskItem } from './TaskItem.js';
@@ -105,14 +105,19 @@ export function TaskListView({
           return effectiveTagFilter.every((tagId) => taskTagIds.includes(tagId));
         });
 
+  // 折りたたみ状態はDexieではなくlocalStorageで管理しているため、tasksInView等の変化だけでは
+  // 再計算のきっかけにならない。折りたたみが変わるたびに強制的に再計算する（改修8回目）
+  const [collapsedVersion, setCollapsedVersion] = useState(0);
+  useEffect(() => subscribeAnyTaskCollapsed(() => setCollapsedVersion((v) => v + 1)), []);
+
   useEffect(() => {
     if (!onVisibleTasksChange) return;
     if (view.type === 'list') {
-      onVisibleTasksChange(flattenTaskTreeWithDepth(buildTaskTree(tasksInView, sortMode)));
+      onVisibleTasksChange(flattenTaskTreeWithDepth(buildTaskTree(tasksInView, sortMode), isTaskCollapsed));
     } else {
       onVisibleTasksChange(sortTasks(tasksInView, sortMode).map((t) => ({ id: t.id, depth: 0 })));
     }
-  }, [view, tasksInView, sortMode, onVisibleTasksChange]);
+  }, [view, tasksInView, sortMode, onVisibleTasksChange, collapsedVersion]);
 
   if (!me) return null;
   const userId = me.id;
@@ -358,7 +363,9 @@ export function TaskListView({
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') createTask();
+            // IME変換確定のEnterと入力確定のEnterを区別する（日本語入力中に変換確定しただけで
+            // タスクが作成されてしまい、変換中だった文字が入力欄に残ってしまう不具合の修正。改修8回目）
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) createTask();
           }}
           disabled={!targetListId}
           placeholder={targetListId ? '+ タスクを追加' : '先にリストを作成してください'}

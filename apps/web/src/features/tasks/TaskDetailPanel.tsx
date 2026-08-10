@@ -162,6 +162,7 @@ export function TaskDetailPanel({
         ref={titleInputRef}
         value={titleDraft}
         onChange={(e) => setTitleDraft(e.target.value)}
+        onFocus={(e) => e.target.select()}
         onBlur={() => {
           const trimmed = titleDraft.trim();
           if (trimmed && trimmed !== task.title) update({ title: trimmed });
@@ -355,7 +356,7 @@ function TagCreator({ onCreate }: { onCreate: (name: string) => void }) {
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' && value.trim()) {
+        if (e.key === 'Enter' && !e.nativeEvent.isComposing && value.trim()) {
           onCreate(value.trim());
           setValue('');
         }

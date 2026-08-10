@@ -288,7 +288,8 @@ describe('MCP OAuth + tools', () => {
       pinned: number;
     };
     expect(row.title).toBe('新タイトル');
-    expect(row.body).toBe('新本文');
+    // bodyは簡易Markdown→HTML変換を経由して保存される（改修8回目）
+    expect(row.body).toBe('<p>新本文</p>');
     expect(row.pinned).toBe(1);
   });
 
@@ -496,6 +497,33 @@ describe('MCP OAuth + tools', () => {
       deleted_at: number | null;
     };
     expect(deletedRow.deleted_at).not.toBeNull();
+  });
+
+  it('create_task/create_noteのnote・bodyはMarkdown記法がHTMLに変換されて保存される', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+
+    const task = await callTool(app, accessToken, 'create_task', {
+      list_id: listId,
+      title: 'md task',
+      note: '**重要**\n- a\n- b',
+    });
+    const taskRow = db.prepare('SELECT note FROM tasks WHERE id = ?').get(task.id as string) as { note: string };
+    expect(taskRow.note).toBe('<p><b>重要</b></p><ul><li>a</li><li>b</li></ul>');
+
+    const note = await callTool(app, accessToken, 'create_note', { title: 'md note', body: '`code`' });
+    const noteRow = db.prepare('SELECT body FROM notes WHERE id = ?').get(note.id as string) as { body: string };
+    expect(noteRow.body).toBe('<p><code>code</code></p>');
   });
 
   it('不正なcode_verifierではトークンを発行しない', async () => {

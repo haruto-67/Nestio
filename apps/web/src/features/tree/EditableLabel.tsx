@@ -54,7 +54,9 @@ export const EditableLabel = forwardRef<EditableLabelHandle, EditableLabelProps>
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') commit();
+    // IME変換確定のEnterと入力確定のEnterを区別する（日本語入力中に変換確定しただけで
+    // リネームが確定してしまうのを防ぐ。改修8回目）
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) commit();
     if (e.key === 'Escape') {
       setDraft(value);
       setEditing(false);
@@ -64,6 +66,7 @@ export const EditableLabel = forwardRef<EditableLabelHandle, EditableLabelProps>
   return (
     <input
       autoFocus
+      onFocus={(e) => e.target.select()}
       className={`${className} bg-transparent outline-none ring-1 ring-blue-400`}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}

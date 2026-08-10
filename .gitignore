@@ -11,3 +11,5 @@ coverage/
 apps/api/data/
 dev-dist/
 .claude/
+test-results/
+playwright-report/

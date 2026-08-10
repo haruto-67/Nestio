@@ -27,7 +27,7 @@ import { upsertTask, deleteTask, completeTask } from './state/actions.js';
 import { nextSortOrder } from './lib/sort-order.js';
 import { undo, redo } from './state/undoManager.js';
 import type { FlattenedTaskEntry } from './lib/task-tree.js';
-import { setTaskCollapsed } from './lib/collapsed-tasks.js';
+import { setTaskCollapsed, isTaskCollapsed } from './lib/collapsed-tasks.js';
 import { listHatchRuns } from './api/hatch.js';
 import { SyncStatusIndicator } from './ui/SyncStatusIndicator.js';
 
@@ -203,6 +203,14 @@ function MainLayout() {
     showToast('サブタスクを追加しました');
   };
 
+  // 選択中タスクにサブタスクがあれば折りたたみ/展開をトグルする（改修8回目）
+  const toggleSelectedCollapse = () => {
+    if (!selectedTaskId) return;
+    const hasChildren = tasks.some((t) => t.parent_id === selectedTaskId);
+    if (!hasChildren) return;
+    setTaskCollapsed(selectedTaskId, !isTaskCollapsed(selectedTaskId));
+  };
+
   const addSiblingSubtaskToSelected = () => {
     if (!selectedTaskId || !me) return;
     const current = findTask(selectedTaskId);
@@ -219,10 +227,20 @@ function MainLayout() {
     showToast('タスクを追加しました');
   };
 
-  // Escapeは現在開いている一番手前のパネル/モーダルを1つだけ閉じる
+  // Escapeは現在開いている一番手前のパネル/モーダルを1つだけ閉じる。
+  // タイトル欄やメモ欄にフォーカスがある状態でそのままEscapeを押すと、保存はonBlurで
+  // 行われる設計のため未保存の内容が失われてしまう（改修8回目で報告）。閉じる前に
+  // フォーカス中の編集可能要素があればblur()し、同期的にonBlurの保存処理を発火させる
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Escape') return;
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)
+      ) {
+        active.blur();
+      }
       if (showSearch) return setShowSearch(false);
       if (showPomodoro) return setShowPomodoro(false);
       if (showTrash) return setShowTrash(false);
@@ -323,6 +341,10 @@ function MainLayout() {
     onOutdent: outdentSelected,
     onAddSubtask: addSubtaskToSelected,
     onAddSiblingSubtask: addSiblingSubtaskToSelected,
+    onToggleSelectedCollapse: toggleSelectedCollapse,
+    onFocusSelectedTitle: () => {
+      if (selectedTaskId) setFocusTitleTaskId(selectedTaskId);
+    },
   });
 
   return (

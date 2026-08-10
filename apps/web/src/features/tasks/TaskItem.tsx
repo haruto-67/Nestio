@@ -96,7 +96,6 @@ export function TaskItem({
           const draggedId = e.dataTransfer.getData('text/nestio-task-id');
           if (draggedId && draggedId !== task.id) onDropOntoTask(draggedId, task.id);
         }}
-        style={{ paddingLeft: `${depth * 20 + 8}px` }}
         className={`nestio-row-fade-in group flex cursor-pointer items-center gap-2 rounded border-l-4 py-1.5 pr-2 ${
           task.priority > 0 ? PRIORITY_BORDER_COLOR[task.priority] : 'border-l-transparent'
         } ${
@@ -108,18 +107,21 @@ export function TaskItem({
         }`}
       >
         {node.children.length > 0 ? (
+          // チェックボックスより左側全体（インデント分も含む）を折りたたみボタンの当たり判定にする。
+          // 見た目のアイコン自体は変えず、クリック領域だけ広げる（改修8回目）
           <button
             onClick={(e) => {
               e.stopPropagation();
               toggleExpanded();
             }}
             title={expanded ? 'サブタスクを折りたたむ' : 'サブタスクを展開する'}
+            style={{ paddingLeft: `${depth * 20 + 8}px` }}
             className="flex min-h-8 min-w-8 shrink-0 items-center justify-center text-sm text-neutral-400"
           >
             {expanded ? '▾' : '▸'}
           </button>
         ) : (
-          <span className="min-w-8 shrink-0" />
+          <span style={{ paddingLeft: `${depth * 20 + 8}px` }} className="min-w-8 shrink-0" />
         )}
         <label
           onClick={(e) => e.stopPropagation()}

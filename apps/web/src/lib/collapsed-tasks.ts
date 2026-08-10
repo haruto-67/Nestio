@@ -34,3 +34,13 @@ export function subscribeTaskCollapsed(taskId: string, onChange: (collapsed: boo
   window.addEventListener(EVENT_NAME, handler);
   return () => window.removeEventListener(EVENT_NAME, handler);
 }
+
+/**
+ * どのタスクの折りたたみ状態が変わったかを問わず通知を受け取る（改修8回目）。
+ * 表示中タスクの一覧（上下移動・Tabインデントの対象探索に使う展開済みリスト）を
+ * 折りたたみ状態の変化に追従して再計算するために使う
+ */
+export function subscribeAnyTaskCollapsed(onChange: () => void): () => void {
+  window.addEventListener(EVENT_NAME, onChange);
+  return () => window.removeEventListener(EVENT_NAME, onChange);
+}

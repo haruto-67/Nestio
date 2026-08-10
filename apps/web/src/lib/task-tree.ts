@@ -25,8 +25,8 @@ export function buildTaskTree(tasks: TaskRow[], sortMode: ListSortMode): TaskNod
 }
 
 /** ツリーを深さ優先で1列に展開する（J/K移動用） */
-export function flattenTaskTree(nodes: TaskNode[]): string[] {
-  return flattenTaskTreeWithDepth(nodes).map((e) => e.id);
+export function flattenTaskTree(nodes: TaskNode[], isCollapsed?: (taskId: string) => boolean): string[] {
+  return flattenTaskTreeWithDepth(nodes, isCollapsed).map((e) => e.id);
 }
 
 export interface FlattenedTaskEntry {
@@ -35,15 +35,23 @@ export interface FlattenedTaskEntry {
 }
 
 /**
- * ツリーを深さ情報付きで深さ優先展開する。Tabでのインデント対象探索に使う：
- * 「直前に表示されている行」ではなく「同じ深さの直前の兄弟」を正しく見つけるために必要
- * （子孫を挟むと直前の行はより深い階層のことがあるため）
+ * ツリーを深さ情報付きで深さ優先展開する。Tabでのインデント対象探索や、選択中タスクの
+ * 上下移動（前後の行への選択切り替え）に使う：「直前に表示されている行」ではなく
+ * 「同じ深さの直前の兄弟」を正しく見つけるために深さ情報が必要
+ * （子孫を挟むと直前の行はより深い階層のことがあるため）。
+ * isCollapsedを渡すと、折りたたまれたタスクの子孫は展開結果に含めない
+ * （改修8回目：折りたたんで画面上に見えていないタスクが上下移動の対象に
+ * 含まれてしまう不具合の修正。isCollapsed省略時は全件展開する従来どおりの挙動）
  */
-export function flattenTaskTreeWithDepth(nodes: TaskNode[]): FlattenedTaskEntry[] {
+export function flattenTaskTreeWithDepth(
+  nodes: TaskNode[],
+  isCollapsed?: (taskId: string) => boolean,
+): FlattenedTaskEntry[] {
   const entries: FlattenedTaskEntry[] = [];
   function walk(list: TaskNode[], depth: number) {
     for (const node of list) {
       entries.push({ id: node.task.id, depth });
+      if (node.children.length > 0 && isCollapsed?.(node.task.id)) continue;
       walk(node.children, depth + 1);
     }
   }

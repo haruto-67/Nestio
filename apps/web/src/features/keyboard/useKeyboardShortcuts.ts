@@ -16,6 +16,8 @@ export interface ShortcutHandlers {
   onOutdent: () => void;
   onAddSubtask: () => void;
   onAddSiblingSubtask: () => void;
+  onToggleSelectedCollapse: () => void;
+  onFocusSelectedTitle: () => void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -96,6 +98,26 @@ export function useKeyboardShortcuts(keymap: Record<KeymapAction, string>, handl
         }
         if (e.key in PRIORITY_KEYS) {
           h.onSetPriority(PRIORITY_KEYS[e.key] as 0 | 1 | 2 | 3);
+          return;
+        }
+        // サブタスクを持つ選択中タスクの上でEnter：折りたたみ/展開をトグルする固定ショートカット
+        // （G→T・優先度キーと同様カスタマイズ対象外。改修8回目）。
+        // このハンドラ経由でtitleInputへフォーカスが移る可能性があるため、preventDefaultしないと
+        // ブラウザがこのキー入力自体を新しくフォーカスされた入力欄へ文字として送ってしまうことがある
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          h.onToggleSelectedCollapse();
+          return;
+        }
+        // 選択中タスクの詳細パネルのタイトル欄へフォーカスを移す固定ショートカット。
+        // move_up/move_down（j/k）でのタスク選択はキーボード操作のテンポを保つためあえて
+        // フォーカスを奪わない設計だが、そのままではマウス無しでタイトル/メモを編集する手段が
+        // 無かった（改修8回目でのキーボード操作性改善の指摘）。
+        // preventDefaultしないと、フォーカスが移った直後のタイトル入力欄へ「e」の文字自体が
+        // 入力されてしまう（実機・Playwright双方で確認済みの実際の不具合）
+        if (e.key === 'e') {
+          e.preventDefault();
+          h.onFocusSelectedTitle();
           return;
         }
       }
