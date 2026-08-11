@@ -64,10 +64,19 @@ export function TaskDetailPanel({
 
   useEffect(() => {
     if (!autoFocusTitle) return;
-    titleInputRef.current?.focus();
-    titleInputRef.current?.select();
-    onTitleFocused?.();
-  }, [autoFocusTitle, taskId]);
+    // useTask()はDexieのライブクエリのため、taskId切り替え直後はまだ古いタスク（切り替え前の
+    // 親タスク等）のデータをtaskが指したまま1レンダー分先に進んでしまうことがある。
+    // その状態でフォーカス+全選択しても、直後にtaskが正しいデータへ更新された時にinputのvalueが
+    // 書き換わり選択範囲がリセットされてしまう（改修9回目：サブタスク作成時にタイトル欄が
+    // 全選択されない不具合の修正）。task.idがtaskIdと一致してから実行することで防ぐ
+    if (task?.id !== taskId) return;
+    const raf = requestAnimationFrame(() => {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+      onTitleFocused?.();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [autoFocusTitle, taskId, task?.id]);
 
   if (!task || !me) return null;
   const userId = me.id;

@@ -18,7 +18,7 @@ function stripHtmlPreview(html: string): string {
   return (div.textContent ?? '').trim();
 }
 
-export function NotesScreen() {
+export function NotesScreen({ colorFilter }: { colorFilter: string | null }) {
   const { me } = useApp();
   const notes = useNotes();
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
@@ -29,7 +29,8 @@ export function NotesScreen() {
   if (!me) return null;
   const userId = me.id;
 
-  const sorted = [...notes].sort((a, b) => {
+  const filtered = colorFilter === null ? notes : notes.filter((n) => n.color === colorFilter);
+  const sorted = [...filtered].sort((a, b) => {
     if (a.pinned !== b.pinned) return b.pinned - a.pinned;
     return b.updated_at - a.updated_at;
   });

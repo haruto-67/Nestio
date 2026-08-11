@@ -18,6 +18,9 @@ const PRIORITY_BORDER_COLOR: Record<number, string> = {
 };
 const PRIORITY_LABEL: Record<number, string> = { 1: '低', 2: '中', 3: '高' };
 
+// 20pxだと親と1階層目の差が分かりにくいという指摘（改修9回目）を受けて28pxに拡大
+const INDENT_PER_DEPTH_PX = 28;
+
 interface TaskItemProps {
   node: TaskNode;
   depth: number;
@@ -115,13 +118,13 @@ export function TaskItem({
               toggleExpanded();
             }}
             title={expanded ? 'サブタスクを折りたたむ' : 'サブタスクを展開する'}
-            style={{ paddingLeft: `${depth * 20 + 8}px` }}
+            style={{ paddingLeft: `${depth * INDENT_PER_DEPTH_PX + 8}px` }}
             className="flex min-h-8 min-w-8 shrink-0 items-center justify-center text-sm text-neutral-400"
           >
             {expanded ? '▾' : '▸'}
           </button>
         ) : (
-          <span style={{ paddingLeft: `${depth * 20 + 8}px` }} className="min-w-8 shrink-0" />
+          <span style={{ paddingLeft: `${depth * INDENT_PER_DEPTH_PX + 8}px` }} className="min-w-8 shrink-0" />
         )}
         <label
           onClick={(e) => e.stopPropagation()}

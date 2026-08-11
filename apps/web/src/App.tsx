@@ -20,6 +20,7 @@ import { ShortcutHelpModal } from './features/keyboard/ShortcutHelpModal.js';
 import { KeymapSettings } from './features/keyboard/KeymapSettings.js';
 import { SearchModal } from './features/search/SearchModal.js';
 import { NotesScreen } from './features/notes/NotesScreen.js';
+import { NotesColorFilter } from './features/notes/NotesColorFilter.js';
 import { PomodoroTimer } from './features/pomodoro/PomodoroTimer.js';
 import { HatchSettings } from './features/hatch/HatchSettings.js';
 import { TrashView } from './features/trash/TrashView.js';
@@ -122,6 +123,7 @@ function MainLayout() {
   const [showPomodoro, setShowPomodoro] = useState(false);
   const [showHatchSettings, setShowHatchSettings] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
+  const [notesColorFilter, setNotesColorFilter] = useState<string | null>(null);
   const { theme, toggleTheme } = useTheme();
   const { keymap } = useKeymap();
   const sidebarResize = useResizableWidth('nestio_sidebar_width', 256, 160, 900);
@@ -467,6 +469,9 @@ function MainLayout() {
             <SyncStatusIndicator />
           </div>
           {screen === 'tasks' && <Sidebar view={view} onSelectView={selectView} />}
+          {screen === 'notes' && (
+            <NotesColorFilter colorFilter={notesColorFilter} onChangeColorFilter={setNotesColorFilter} />
+          )}
           <div
             onMouseDown={(e) => sidebarResize.startResize(1)(e)}
             className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-blue-400/40"
@@ -496,15 +501,11 @@ function MainLayout() {
                 >
                   <Trash2 size={16} />
                 </button>
-                <button
-                  onClick={() => setShowKeymapSettings(true)}
-                  title="設定"
-                  className="flex min-h-11 min-w-11 items-center justify-center text-neutral-400"
-                >
-                  <Settings size={16} />
-                </button>
               </div>
               {screen === 'tasks' && <Sidebar view={view} onSelectView={selectView} />}
+              {screen === 'notes' && (
+                <NotesColorFilter colorFilter={notesColorFilter} onChangeColorFilter={setNotesColorFilter} />
+              )}
             </div>
             <div className="nestio-overlay flex-1 bg-black/40" onClick={() => setDrawerOpen(false)} />
           </div>
@@ -536,7 +537,7 @@ function MainLayout() {
             />
           </>
         ) : (
-          <NotesScreen />
+          <NotesScreen colorFilter={notesColorFilter} />
         )}
       </div>
 

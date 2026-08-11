@@ -15,6 +15,7 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
   const [runs, setRuns] = useState<TriggerRunRow[]>([]);
   const [editingId, setEditingId] = useState<string | null | 'new'>(null);
   const [testStatus, setTestStatus] = useState<Record<string, string>>({});
+  const [testCountdown, setTestCountdown] = useState<Record<string, number>>({});
 
   const refreshRuns = () => {
     listHatchRuns()
@@ -34,6 +35,9 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
   const editingTrigger: TriggerRow | null =
     editingId && editingId !== 'new' ? (triggers.find((t) => t.id === editingId) ?? null) : null;
 
+  // 実行ログに「どのHatchが発火したか」を表示するための名前引き（改修9回目）
+  const triggerNameById = new Map(triggers.map((t) => [t.id, t.name]));
+
   const handleSave = (draft: TriggerDraft) => {
     const id = editingId === 'new' || editingId === null ? uuidv7() : editingId;
     upsertTrigger(me.id, id, {
@@ -47,11 +51,24 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
     setEditingId(null);
   };
 
+  // テスト実行ボタンを押してから即発火せず10秒待つ（誤操作防止・心の準備のため）。
+  // 待機中はボタン自体が10→0のカウントダウン数字になる（改修9回目）
+  const TEST_DELAY_SECONDS = 10;
   const handleTest = async (trigger: TriggerRow) => {
+    for (let remaining = TEST_DELAY_SECONDS; remaining > 0; remaining--) {
+      setTestCountdown((s) => ({ ...s, [trigger.id]: remaining }));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    setTestCountdown((s) => {
+      const next = { ...s };
+      delete next[trigger.id];
+      return next;
+    });
+
     setTestStatus((s) => ({ ...s, [trigger.id]: '実行中…' }));
     try {
       const { output } = await testHatchTrigger(trigger.id);
-      setTestStatus((s) => ({ ...s, [trigger.id]: `成功: ${output.slice(0, 100)}` }));
+      setTestStatus((s) => ({ ...s, [trigger.id]: `成功: ${output.slice(0, 40)}` }));
     } catch (err) {
       setTestStatus((s) => ({ ...s, [trigger.id]: `失敗: ${err instanceof Error ? err.message : String(err)}` }));
     }
@@ -102,9 +119,15 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
                   <div className="flex gap-1">
                     <button
                       onClick={() => handleTest(t)}
-                      className="min-h-8 rounded px-2 text-blue-500 hover:bg-blue-50 hover:underline dark:hover:bg-blue-950/40"
+                      disabled={testCountdown[t.id] !== undefined}
+                      title={testCountdown[t.id] !== undefined ? 'この秒数の後にテスト実行されます' : undefined}
+                      className={`min-h-8 rounded px-2 hover:underline ${
+                        testCountdown[t.id] !== undefined
+                          ? 'w-6 text-center font-mono text-neutral-500'
+                          : 'text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40'
+                      }`}
                     >
-                      テスト実行
+                      {testCountdown[t.id] !== undefined ? testCountdown[t.id] : 'テスト実行'}
                     </button>
                     <button
                       onClick={() => setEditingId(t.id)}
@@ -138,12 +161,15 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
             <ul className="flex flex-col gap-1">
               {runs.length === 0 && <li className="text-xs text-neutral-400">実行履歴はありません</li>}
               {runs.slice(0, 30).map((r) => (
-                <li key={r.id} className="text-xs text-neutral-400">
-                  <span className="text-neutral-500 dark:text-neutral-300">
+                <li key={r.id} className="flex items-baseline gap-2 text-xs text-neutral-400" title={r.error ?? r.output}>
+                  <span className="shrink-0 text-neutral-500 dark:text-neutral-300">
                     {HATCH_RUN_STATUS_LABELS[r.status] ?? r.status}
-                  </span>{' '}
-                  {formatDateTimeJst(r.created_at)}
-                  {r.error && <span className="ml-2 break-all text-red-500">{r.error}</span>}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-neutral-600 dark:text-neutral-300">
+                    {triggerNameById.get(r.trigger_id) ?? '(削除済みのトリガー)'}
+                  </span>
+                  <span className="shrink-0">{formatDateTimeJst(r.created_at)}</span>
+                  {r.error && <span className="min-w-0 shrink truncate text-red-500">{r.error}</span>}
                 </li>
               ))}
             </ul>

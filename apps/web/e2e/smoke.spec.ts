@@ -91,6 +91,9 @@ test('カンバン/カレンダー表示に切り替えられる', async ({ page
   await page.goto('/');
   await page.getByText('E2Eスモークテスト用リスト', { exact: true }).click();
 
+  // 表示方法（リスト/カンバン/カレンダー切替）は改修9回目でポップオーバーの中に集約された。
+  // 切替後もポップオーバーは開いたままなので、2回目はトグルボタンを押し直さない
+  await page.locator('button[title="表示方法"]').click();
   await page.locator('button[title="カンバン"]').click();
   await expect(page.locator('span').filter({ hasText: '優先度: 高' })).toBeVisible();
 

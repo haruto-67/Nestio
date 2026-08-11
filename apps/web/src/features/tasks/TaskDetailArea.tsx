@@ -77,7 +77,19 @@ export function TaskDetailArea({ taskId, onClose, ...panelProps }: TaskDetailAre
         className={`h-full w-full ${closing ? 'nestio-panel-slide-out' : 'nestio-panel-slide-in'}`}
       >
         {displayedTaskId ? (
-          <TaskDetailPanel taskId={displayedTaskId} onClose={onClose} {...panelProps} />
+          <TaskDetailPanel
+            taskId={displayedTaskId}
+            onClose={onClose}
+            {...panelProps}
+            // displayedTaskIdはtaskIdの変化をuseEffect経由で1テンポ遅れて追従するため、
+            // 切り替え直後の1レンダーだけ「表示中はまだ前のタスクなのにautoFocusTitleは
+            // 新タスク向けにtrue」という食い違いが起きる。そのまま素通しすると前のタスクの
+            // タイトル欄を誤ってフォーカス+全選択してしまい、直後に正しいタスクへ表示が
+            // 追いついた時には全選択が解除された状態になる（改修9回目：サブタスク作成時に
+            // タイトル欄が全選択されない不具合の根本原因）。displayedTaskIdが追いつくまでは
+            // autoFocusTitleを渡さない
+            autoFocusTitle={panelProps.autoFocusTitle && displayedTaskId === taskId}
+          />
         ) : (
           <TaskDetailPlaceholder />
         )}

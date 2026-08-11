@@ -83,11 +83,12 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
     showToast('リストを移動しました');
   };
 
-  // リストをドラッグして別のリストの上にドロップ→その位置へ並び替える（改修8回目）。
+  // リストをドラッグして別のリストの上にドロップ→その位置へ並び替える（改修8回目。
+  // 改修9回目でドロップ先の上半分/下半分どちらに離したかで挿入位置を前後に決められるよう拡張）。
   // ドロップ先が別フォルダに属する場合はそのフォルダへも移動する。sort_orderを1から振り直す
   // （既存コードにはドラッグでの「間に挿入する」並び替えの前例が無く、末尾追加のnextSortOrderでは
   // 対応できないため、影響を受けるフォルダ内の全リストを連番に再採番する方式にした）
-  const reorderList = (draggedId: string, targetId: string) => {
+  const reorderList = (draggedId: string, targetId: string, position: 'before' | 'after') => {
     if (draggedId === targetId) return;
     const dragged = lists.find((l) => l.id === draggedId);
     const target = lists.find((l) => l.id === targetId);
@@ -96,8 +97,9 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
     const targetFolderId = target.folder_id;
     const siblings = (listsByFolder.get(targetFolderId) ?? []).filter((l) => l.id !== draggedId);
     const targetIdx = siblings.findIndex((l) => l.id === targetId);
+    const insertIdx = position === 'before' ? targetIdx : targetIdx + 1;
     const reordered = [...siblings];
-    reordered.splice(targetIdx, 0, dragged);
+    reordered.splice(insertIdx, 0, dragged);
 
     reordered.forEach((l, i) => {
       const sortOrder = i + 1;
@@ -193,7 +195,7 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
             onChangeColor={(color) => changeListColor(l.id, color)}
             onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
             listId={l.id}
-            onDropList={(draggedId) => reorderList(draggedId, l.id)}
+            onDropList={(draggedId, position) => reorderList(draggedId, l.id, position)}
           />
         ))}
 
@@ -252,7 +254,7 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
                     onChangeColor={(color) => changeListColor(l.id, color)}
                     onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
             listId={l.id}
-            onDropList={(draggedId) => reorderList(draggedId, l.id)}
+            onDropList={(draggedId, position) => reorderList(draggedId, l.id, position)}
                   />
                 ))}
               </div>
@@ -302,49 +304,75 @@ function ListRow({
   onDelete: () => void;
   onChangeColor: (color: string) => void;
   onDropTask: (taskId: string) => void;
-  onDropList: (draggedListId: string) => void;
+  onDropList: (draggedListId: string, position: 'before' | 'after') => void;
 }) {
   const labelRef = useRef<EditableLabelHandle | null>(null);
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
+  const [taskDragOver, setTaskDragOver] = useState(false);
+  // リスト並び替え時、ドロップ先の上半分/下半分どちらに離したかで挿入位置（前/後）を示す線
+  // （改修9回目：行全体をハイライトするだけでは挿入位置が分かりにくいという指摘への対応）
+  const [listDragEdge, setListDragEdge] = useState<'before' | 'after' | null>(null);
   return (
     <div
+      ref={rowRef}
       onClick={onSelect}
       onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes('text/nestio-task-id') && !e.dataTransfer.types.includes(LIST_DRAG_TYPE)) {
+        if (e.dataTransfer.types.includes(LIST_DRAG_TYPE)) {
+          e.preventDefault();
+          const rect = e.currentTarget.getBoundingClientRect();
+          setListDragEdge(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
           return;
         }
-        e.preventDefault();
-        setDragOver(true);
+        if (e.dataTransfer.types.includes('text/nestio-task-id')) {
+          e.preventDefault();
+          setTaskDragOver(true);
+        }
       }}
-      onDragLeave={() => setDragOver(false)}
+      onDragLeave={() => {
+        setTaskDragOver(false);
+        setListDragEdge(null);
+      }}
       onDrop={(e) => {
         e.preventDefault();
-        setDragOver(false);
+        setTaskDragOver(false);
         if (e.dataTransfer.types.includes(LIST_DRAG_TYPE)) {
           const draggedListId = e.dataTransfer.getData(LIST_DRAG_TYPE);
-          if (draggedListId) onDropList(draggedListId);
+          if (draggedListId) onDropList(draggedListId, listDragEdge ?? 'before');
+          setListDragEdge(null);
           return;
         }
         const taskId = e.dataTransfer.getData('text/nestio-task-id');
         if (taskId) onDropTask(taskId);
       }}
       className={`relative flex cursor-pointer items-center gap-1 rounded px-1 py-1 ${
-        dragOver
+        taskDragOver
           ? 'bg-blue-100 dark:bg-blue-900/40'
           : active
             ? 'bg-blue-100 font-medium dark:bg-blue-900/40'
             : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
       }`}
     >
+      {listDragEdge && (
+        <div
+          className={`absolute inset-x-1 h-0.5 rounded-full bg-blue-500 ${listDragEdge === 'before' ? '-top-0.5' : '-bottom-0.5'}`}
+        />
+      )}
       {/* リストの並び替え用グリップハンドル（改修8回目）。ここだけをdraggableにすることで
           行全体のドラッグ operationとは分離し、タッチ環境ではisCoarsePointerDeviceで
-          draggable自体を外してスクロール阻害を避ける（改修7回目で確立したパターンを踏襲） */}
+          draggable自体を外してスクロール阻害を避ける（改修7回目で確立したパターンを踏襲）。
+          ドラッグ中に見せる画像（setDragImage）は行全体にし、つまんでいるのはハンドルだけでも
+          見た目には行全体が追従しているように見せる（改修9回目：ハンドルの小さいアイコンだけが
+          追従して分かりにくいという指摘への対応） */}
       <span
         draggable={!isCoarsePointerDevice()}
         onDragStart={(e) => {
           e.dataTransfer.setData(LIST_DRAG_TYPE, listId);
           e.dataTransfer.effectAllowed = 'move';
+          if (rowRef.current) {
+            const rect = rowRef.current.getBoundingClientRect();
+            e.dataTransfer.setDragImage(rowRef.current, e.clientX - rect.left, e.clientY - rect.top);
+          }
         }}
         onClick={(e) => e.stopPropagation()}
         title="ドラッグして並び替え"
