@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from 'react';
 import { uuidv7 } from '@nestio/shared';
 import { FolderPlus, Plus, X, ChevronDown, ChevronRight, Pencil, Tag as TagIcon, GripVertical } from 'lucide-react';
 import type { ListRow } from '@nestio/shared';
@@ -21,11 +21,28 @@ interface SidebarProps {
   onSelectView: (v: ViewSelection) => void;
 }
 
+interface TouchDragState {
+  draggedId: string;
+  overId: string | null;
+  edge: 'before' | 'after' | null;
+}
+
 export function Sidebar({ view, onSelectView }: SidebarProps) {
   const { me } = useApp();
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
   const [customViews, setCustomViews] = useState(() => loadCustomViews());
   const allTags = useTags();
+  // リストのグリップハンドルをタッチでドラッグする用の状態（改修9回目のフォローアップ）。
+  // HTML5のネイティブDrag and Dropはタッチにほぼ対応していないため（改修7回目で判明した既知の
+  // 制約）、ハンドルだけをPointer Eventsで独自にドラッグ実装する。ハンドル自体は小さく専用の
+  // 当たり判定なので、タスク行のdraggable全面禁止（改修7回目）とは違い、ここだけタッチでも
+  // ドラッグを有効化しても一覧のスクロールを阻害しない
+  const [touchDrag, setTouchDrag] = useState<TouchDragState | null>(null);
+  // 実際のドラッグ判定ロジックはstateではなくrefで持つ。連続するpointermoveがReactの
+  // 再レンダーを待たずに矢継ぎ早に届いた場合、setTouchDragで更新した直後のstateを
+  // クロージャ越しにまだ古い値のまま読んでしまい判定を取りこぼすことがあるため
+  // （改修9回目フォローアップで発覚。stateは表示専用、refが判定の正）
+  const touchDragRef = useRef<TouchDragState | null>(null);
 
   useEffect(() => subscribeCustomViews(() => setCustomViews(loadCustomViews())), []);
 
@@ -107,6 +124,40 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
       if (l.id === draggedId) fields.folder_id = targetFolderId;
       if (l.sort_order !== sortOrder || l.folder_id !== targetFolderId) upsertList(userId, l.id, fields);
     });
+  };
+
+  // タッチでのリスト並び替え。グリップハンドルにPointer Captureをかけているため、
+  // move/up はハンドル自身で発火し続ける。指の下に今どのリスト行があるかは
+  // elementFromPointで都度判定する（data-list-row-id目印）
+  const handleGripPointerDown = (e: ReactPointerEvent<HTMLSpanElement>, listId: string) => {
+    if (e.pointerType === 'mouse') return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const next: TouchDragState = { draggedId: listId, overId: null, edge: null };
+    touchDragRef.current = next;
+    setTouchDrag(next);
+  };
+
+  const handleGripPointerMove = (e: ReactPointerEvent<HTMLSpanElement>) => {
+    if (!touchDragRef.current) return;
+    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-list-row-id]');
+    if (!(target instanceof HTMLElement)) return;
+    const overId = target.getAttribute('data-list-row-id');
+    if (!overId) return;
+    const rect = target.getBoundingClientRect();
+    const edge: 'before' | 'after' = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+    const next: TouchDragState = { ...touchDragRef.current, overId, edge };
+    touchDragRef.current = next;
+    setTouchDrag(next);
+  };
+
+  const handleGripPointerUp = () => {
+    const current = touchDragRef.current;
+    if (current?.overId && current.overId !== current.draggedId && current.edge) {
+      reorderList(current.draggedId, current.overId, current.edge);
+    }
+    touchDragRef.current = null;
+    setTouchDrag(null);
   };
 
   return (
@@ -196,6 +247,11 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
             onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
             listId={l.id}
             onDropList={(draggedId, position) => reorderList(draggedId, l.id, position)}
+            onGripPointerDown={(e) => handleGripPointerDown(e, l.id)}
+            onGripPointerMove={handleGripPointerMove}
+            onGripPointerUp={handleGripPointerUp}
+            touchDragEdge={touchDrag?.overId === l.id ? touchDrag.edge : null}
+            isBeingTouchDragged={touchDrag?.draggedId === l.id}
           />
         ))}
 
@@ -253,8 +309,13 @@ export function Sidebar({ view, onSelectView }: SidebarProps) {
                     onDelete={() => removeList(l.id)}
                     onChangeColor={(color) => changeListColor(l.id, color)}
                     onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
-            listId={l.id}
-            onDropList={(draggedId, position) => reorderList(draggedId, l.id, position)}
+                    listId={l.id}
+                    onDropList={(draggedId, position) => reorderList(draggedId, l.id, position)}
+                    onGripPointerDown={(e) => handleGripPointerDown(e, l.id)}
+                    onGripPointerMove={handleGripPointerMove}
+                    onGripPointerUp={handleGripPointerUp}
+                    touchDragEdge={touchDrag?.overId === l.id ? touchDrag.edge : null}
+                    isBeingTouchDragged={touchDrag?.draggedId === l.id}
                   />
                 ))}
               </div>
@@ -294,6 +355,11 @@ function ListRow({
   onChangeColor,
   onDropTask,
   onDropList,
+  onGripPointerDown,
+  onGripPointerMove,
+  onGripPointerUp,
+  touchDragEdge,
+  isBeingTouchDragged,
 }: {
   listId: string;
   name: string;
@@ -305,6 +371,11 @@ function ListRow({
   onChangeColor: (color: string) => void;
   onDropTask: (taskId: string) => void;
   onDropList: (draggedListId: string, position: 'before' | 'after') => void;
+  onGripPointerDown: (e: ReactPointerEvent<HTMLSpanElement>) => void;
+  onGripPointerMove: (e: ReactPointerEvent<HTMLSpanElement>) => void;
+  onGripPointerUp: (e: ReactPointerEvent<HTMLSpanElement>) => void;
+  touchDragEdge: 'before' | 'after' | null;
+  isBeingTouchDragged: boolean;
 }) {
   const labelRef = useRef<EditableLabelHandle | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -313,9 +384,13 @@ function ListRow({
   // リスト並び替え時、ドロップ先の上半分/下半分どちらに離したかで挿入位置（前/後）を示す線
   // （改修9回目：行全体をハイライトするだけでは挿入位置が分かりにくいという指摘への対応）
   const [listDragEdge, setListDragEdge] = useState<'before' | 'after' | null>(null);
+  // マウスのネイティブDnD（listDragEdge）とタッチの自前ドラッグ（touchDragEdge）のどちらか
+  // 有効な方の挿入線を表示する
+  const effectiveDragEdge = listDragEdge ?? touchDragEdge;
   return (
     <div
       ref={rowRef}
+      data-list-row-id={listId}
       onClick={onSelect}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes(LIST_DRAG_TYPE)) {
@@ -346,6 +421,8 @@ function ListRow({
         if (taskId) onDropTask(taskId);
       }}
       className={`relative flex cursor-pointer items-center gap-1 rounded px-1 py-1 ${
+        isBeingTouchDragged ? 'opacity-40' : ''
+      } ${
         taskDragOver
           ? 'bg-blue-100 dark:bg-blue-900/40'
           : active
@@ -353,9 +430,9 @@ function ListRow({
             : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
       }`}
     >
-      {listDragEdge && (
+      {effectiveDragEdge && (
         <div
-          className={`absolute inset-x-1 h-0.5 rounded-full bg-blue-500 ${listDragEdge === 'before' ? '-top-0.5' : '-bottom-0.5'}`}
+          className={`absolute inset-x-1 h-0.5 rounded-full bg-blue-500 ${effectiveDragEdge === 'before' ? '-top-0.5' : '-bottom-0.5'}`}
         />
       )}
       {/* リストの並び替え用グリップハンドル（改修8回目）。ここだけをdraggableにすることで
@@ -363,7 +440,11 @@ function ListRow({
           draggable自体を外してスクロール阻害を避ける（改修7回目で確立したパターンを踏襲）。
           ドラッグ中に見せる画像（setDragImage）は行全体にし、つまんでいるのはハンドルだけでも
           見た目には行全体が追従しているように見せる（改修9回目：ハンドルの小さいアイコンだけが
-          追従して分かりにくいという指摘への対応） */}
+          追従して分かりにくいという指摘への対応）。
+          タッチではHTML5 DnDのdraggableをそもそも無効化しているため（上記コメントの理由）
+          並び替え自体ができなくなっていた。ハンドルだけPointer Eventsで独自にドラッグを実装し、
+          タッチでも並び替えできるようにする（改修9回目フォローアップ）。touch-noneで
+          ブラウザ標準のスクロールジェスチャーと衝突しないようにする */}
       <span
         draggable={!isCoarsePointerDevice()}
         onDragStart={(e) => {
@@ -374,9 +455,12 @@ function ListRow({
             e.dataTransfer.setDragImage(rowRef.current, e.clientX - rect.left, e.clientY - rect.top);
           }
         }}
+        onPointerDown={onGripPointerDown}
+        onPointerMove={onGripPointerMove}
+        onPointerUp={onGripPointerUp}
         onClick={(e) => e.stopPropagation()}
         title="ドラッグして並び替え"
-        className="flex min-h-8 min-w-6 shrink-0 cursor-grab items-center justify-center text-neutral-300 hover:text-neutral-500 active:cursor-grabbing dark:text-neutral-600 dark:hover:text-neutral-400"
+        className="flex min-h-8 min-w-6 shrink-0 cursor-grab touch-none items-center justify-center text-neutral-300 hover:text-neutral-500 active:cursor-grabbing dark:text-neutral-600 dark:hover:text-neutral-400"
       >
         <GripVertical size={13} />
       </span>
