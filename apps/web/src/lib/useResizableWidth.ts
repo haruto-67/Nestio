@@ -22,6 +22,7 @@ export function useResizableWidth(storageKey: string, defaultWidth: number, min:
     function onMouseUp() {
       if (!draggingRef.current) return;
       draggingRef.current = null;
+      document.body.style.userSelect = '';
       setWidth((w) => {
         localStorage.setItem(storageKey, String(w));
         return w;
@@ -35,8 +36,15 @@ export function useResizableWidth(storageKey: string, defaultWidth: number, min:
     };
   }, [storageKey, min, max]);
 
-  /** direction: ハンドルが右端にある場合は1（右へドラッグで拡大）、左端にある場合は-1 */
-  const startResize = (direction: 1 | -1) => (e: { clientX: number }) => {
+  /**
+   * direction: ハンドルが右端にある場合は1（右へドラッグで拡大）、左端にある場合は-1。
+   * preventDefault()だけだとブラウザによってはドラッグ中にハンドル以外の場所を通過した際
+   * テキストが選択されてしまうことがあるため、ドラッグ中はbody全体でuser-selectを止める
+   * （PCで幅変更時に文字がドラッグ選択されてしまうという指摘への対応）
+   */
+  const startResize = (direction: 1 | -1) => (e: { clientX: number; preventDefault: () => void }) => {
+    e.preventDefault();
+    document.body.style.userSelect = 'none';
     draggingRef.current = { startX: e.clientX, startWidth: width, direction };
   };
 

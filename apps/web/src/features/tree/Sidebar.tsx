@@ -420,7 +420,7 @@ function ListRow({
         const taskId = e.dataTransfer.getData('text/nestio-task-id');
         if (taskId) onDropTask(taskId);
       }}
-      className={`relative flex cursor-pointer items-center gap-1 rounded px-1 py-1 ${
+      className={`relative flex cursor-pointer items-center gap-1 rounded px-1 py-1 select-none [-webkit-touch-callout:none] ${
         isBeingTouchDragged ? 'opacity-40' : ''
       } ${
         taskDragOver
