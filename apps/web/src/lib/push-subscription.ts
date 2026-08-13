@@ -46,7 +46,26 @@ export async function disablePushNotifications(): Promise<void> {
   await subscription.unsubscribe();
 }
 
-export async function getPushPermissionState(): Promise<NotificationPermission | 'unsupported'> {
-  if (!('Notification' in window)) return 'unsupported';
-  return Notification.permission;
+export interface PushSubscriptionState {
+  permission: NotificationPermission | 'unsupported';
+  /** 許可(permission==='granted')だけでなく、実際にこの端末の購読がサーバーに登録済みかどうか。
+   * 許可済みでも購読作成に失敗している場合があるため、設定画面の表示や自動プロンプトの判定には
+   * こちらを使うこと（permissionだけを見ると「許可済みなのに届かない」を検知できない） */
+  subscribed: boolean;
+}
+
+export async function getPushSubscriptionState(): Promise<PushSubscriptionState> {
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return { permission: 'unsupported', subscribed: false };
+  }
+  const permission = Notification.permission;
+  if (permission !== 'granted') return { permission, subscribed: false };
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    return { permission, subscribed: subscription !== null };
+  } catch {
+    return { permission, subscribed: false };
+  }
 }

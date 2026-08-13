@@ -12,6 +12,10 @@ export function unsubscribePush(endpoint: string): Promise<void> {
   return apiClient.del('/push/subscribe', { endpoint });
 }
 
+export function sendTestPush(): Promise<{ subscription_count: number }> {
+  return apiClient.post('/push/test', {});
+}
+
 export function schedulePomodoroPush(durationSec: number, taskId?: string): Promise<{ id: string }> {
   return apiClient.post('/pomodoro/schedule', { duration_sec: durationSec, task_id: taskId });
 }

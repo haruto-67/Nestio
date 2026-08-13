@@ -4,39 +4,84 @@ import { useApp } from '../../state/AppProvider.js';
 import { useTriggers } from '../../db/queries.js';
 import { upsertTrigger, deleteTrigger, uuidv7 } from '../../state/actions.js';
 import { listHatchActions, listHatchRuns, testHatchTrigger, type HatchActionMetadata } from '../../api/hatch.js';
+import { requestPushPermissionPrompt } from '../../lib/push-prompt.js';
 import { formatDateTimeJst } from '../../lib/datetime.js';
 import { HATCH_EVENT_LABELS, HATCH_ACTION_LABELS, HATCH_RUN_STATUS_LABELS } from './hatch-labels.js';
 import { TriggerForm, type TriggerDraft } from './TriggerForm.js';
 
-export function HatchSettings({ onClose }: { onClose: () => void }) {
-  const { me } = useApp();
-  const triggers = useTriggers();
+function useHatchActions(): HatchActionMetadata[] {
   const [actions, setActions] = useState<HatchActionMetadata[]>([]);
-  const [runs, setRuns] = useState<TriggerRunRow[]>([]);
-  const [editingId, setEditingId] = useState<string | null | 'new'>(null);
-  const [testStatus, setTestStatus] = useState<Record<string, string>>({});
-  const [testCountdown, setTestCountdown] = useState<Record<string, number>>({});
-
-  const refreshRuns = () => {
-    listHatchRuns()
-      .then(setRuns)
-      .catch(() => {});
-  };
-
   useEffect(() => {
     listHatchActions()
       .then(setActions)
       .catch(() => setActions([]));
-    refreshRuns();
   }, []);
+  return actions;
+}
+
+/** トリガーごとの実行履歴。長い一覧が全Hatch分まとめて出てくると見づらいので、
+ * それぞれのHatch行の下に折りたたみで持たせる（ユーザーフィードバック対応） */
+function TriggerRunHistory({ triggerId, refreshSignal }: { triggerId: string; refreshSignal: number }) {
+  const [open, setOpen] = useState(false);
+  const [runs, setRuns] = useState<TriggerRunRow[] | null>(null);
+
+  const load = () => {
+    listHatchRuns(triggerId)
+      .then(setRuns)
+      .catch(() => setRuns([]));
+  };
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next) load();
+  };
+
+  useEffect(() => {
+    if (open) load();
+  }, [refreshSignal]);
+
+  return (
+    <div className="mt-1">
+      <button onClick={toggle} className="text-neutral-400 hover:underline">
+        {open ? '実行履歴を隠す' : '実行履歴を見る'}
+      </button>
+      {open && (
+        <ul className="mt-1 flex flex-col gap-1 border-t border-neutral-100 pt-1 dark:border-neutral-800">
+          {runs === null && <li className="text-neutral-400">読み込み中…</li>}
+          {runs !== null && runs.length === 0 && <li className="text-neutral-400">実行履歴はありません</li>}
+          {runs?.slice(0, 20).map((r) => (
+            <li key={r.id} className="flex items-baseline gap-2" title={r.error ?? r.output}>
+              <span className="shrink-0 text-neutral-500 dark:text-neutral-300">
+                {HATCH_RUN_STATUS_LABELS[r.status] ?? r.status}
+              </span>
+              <span className="shrink-0">{formatDateTimeJst(r.created_at)}</span>
+              {r.error ? (
+                <span className="min-w-0 flex-1 truncate text-red-500">{r.error}</span>
+              ) : (
+                <span className="min-w-0 flex-1 truncate">{r.output}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export function HatchSettings({ onClose }: { onClose: () => void }) {
+  const { me } = useApp();
+  const triggers = useTriggers();
+  const actions = useHatchActions();
+  const [editingId, setEditingId] = useState<string | null | 'new'>(null);
+  const [testStatus, setTestStatus] = useState<Record<string, string>>({});
+  const [testCountdown, setTestCountdown] = useState<Record<string, number>>({});
+  const [runsRefreshSignal, setRunsRefreshSignal] = useState<Record<string, number>>({});
 
   if (!me) return null;
 
   const editingTrigger: TriggerRow | null =
     editingId && editingId !== 'new' ? (triggers.find((t) => t.id === editingId) ?? null) : null;
-
-  // 実行ログに「どのHatchが発火したか」を表示するための名前引き（改修9回目）
-  const triggerNameById = new Map(triggers.map((t) => [t.id, t.name]));
 
   const handleSave = (draft: TriggerDraft) => {
     const id = editingId === 'new' || editingId === null ? uuidv7() : editingId;
@@ -48,7 +93,14 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
       params_json: JSON.stringify(draft.params),
       enabled: draft.enabled ? 1 : 0,
     });
+    if (draft.enabled && draft.action_key === 'push_notify') {
+      requestPushPermissionPrompt('Hatchの').catch(() => {});
+    }
     setEditingId(null);
+  };
+
+  const handleToggleEnabled = (t: TriggerRow) => {
+    upsertTrigger(me.id, t.id, { enabled: t.enabled === 1 ? 0 : 1 });
   };
 
   // テスト実行ボタンを押してから即発火せず10秒待つ（誤操作防止・心の準備のため）。
@@ -72,7 +124,7 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
     } catch (err) {
       setTestStatus((s) => ({ ...s, [trigger.id]: `失敗: ${err instanceof Error ? err.message : String(err)}` }));
     }
-    refreshRuns();
+    setRunsRefreshSignal((s) => ({ ...s, [trigger.id]: (s[trigger.id] ?? 0) + 1 }));
   };
 
   return (
@@ -112,9 +164,23 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
             {triggers.map((t) => (
               <li key={t.id} className="rounded border border-neutral-200 p-2 text-xs dark:border-neutral-700">
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleToggleEnabled(t)}
+                      title={t.enabled === 1 ? '無効にする' : '有効にする'}
+                      aria-label={t.enabled === 1 ? '無効にする' : '有効にする'}
+                      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                        t.enabled === 1 ? 'bg-blue-500' : 'bg-neutral-300 dark:bg-neutral-700'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                          t.enabled === 1 ? 'translate-x-4' : 'translate-x-0.5'
+                        }`}
+                      />
+                    </button>
                     <span className="font-medium">{t.name}</span>
-                    {t.enabled === 0 && <span className="ml-2 text-neutral-400">（無効）</span>}
+                    {t.enabled === 0 && <span className="text-neutral-400">（無効）</span>}
                   </div>
                   <div className="flex gap-1">
                     <button
@@ -147,33 +213,10 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
                   {HATCH_EVENT_LABELS[t.event]} → {HATCH_ACTION_LABELS[t.action_key]}
                 </p>
                 {testStatus[t.id] && <p className="mt-1 break-all text-neutral-400">{testStatus[t.id]}</p>}
+                <TriggerRunHistory triggerId={t.id} refreshSignal={runsRefreshSignal[t.id] ?? 0} />
               </li>
             ))}
           </ul>
-
-          <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">実行ログ</span>
-              <button onClick={refreshRuns} className="text-xs text-blue-500 hover:underline">
-                更新
-              </button>
-            </div>
-            <ul className="flex flex-col gap-1">
-              {runs.length === 0 && <li className="text-xs text-neutral-400">実行履歴はありません</li>}
-              {runs.slice(0, 30).map((r) => (
-                <li key={r.id} className="flex items-baseline gap-2 text-xs text-neutral-400" title={r.error ?? r.output}>
-                  <span className="shrink-0 text-neutral-500 dark:text-neutral-300">
-                    {HATCH_RUN_STATUS_LABELS[r.status] ?? r.status}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate font-medium text-neutral-600 dark:text-neutral-300">
-                    {triggerNameById.get(r.trigger_id) ?? '(削除済みのトリガー)'}
-                  </span>
-                  <span className="shrink-0">{formatDateTimeJst(r.created_at)}</span>
-                  {r.error && <span className="min-w-0 shrink truncate text-red-500">{r.error}</span>}
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
       </div>
     </div>

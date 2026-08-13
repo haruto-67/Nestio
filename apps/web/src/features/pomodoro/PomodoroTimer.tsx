@@ -1,5 +1,6 @@
 import { useTasks } from '../../db/queries.js';
 import { schedulePomodoroPush, cancelPomodoroPush } from '../../api/push.js';
+import { requestPushPermissionPrompt } from '../../lib/push-prompt.js';
 import { usePersistedPomodoroState } from './usePersistedPomodoroState.js';
 
 const PRESETS = [
@@ -24,6 +25,7 @@ export function PomodoroTimer({ onClose }: { onClose: () => void }) {
 
   const start = async () => {
     startPersisted();
+    requestPushPermissionPrompt('ポモドーロ終了の').catch(() => {});
     try {
       const { id } = await schedulePomodoroPush(durationSec, taskId || undefined);
       setScheduleId(id);

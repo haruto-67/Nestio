@@ -5,6 +5,7 @@ import type { AppVariables } from '../middleware/request-context.js';
 import { requireAuth } from '../middleware/auth.js';
 import { ApiError } from '../errors.js';
 import { schedulePomodoroPush, cancelScheduledPush } from '../push/scheduler.js';
+import { sendPushToUser } from '../push/sender.js';
 
 export const pushRoute = new Hono<{ Variables: AppVariables }>();
 
@@ -14,6 +15,7 @@ pushRoute.get('/push/vapid-public-key', (c) => {
 });
 
 pushRoute.use('/push/subscribe', requireAuth);
+pushRoute.use('/push/test', requireAuth);
 pushRoute.use('/pomodoro/*', requireAuth);
 
 pushRoute.post('/push/subscribe', async (c) => {
@@ -42,6 +44,23 @@ pushRoute.delete('/push/subscribe', async (c) => {
   const body = unsubscribeSchema.parse(await c.req.json());
   db.prepare('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?').run(userId, body.endpoint);
   return c.body(null, 204);
+});
+
+/** 設定画面から手動でテスト送信するための口。実際に届くか（OS側の通知許可・購読の生死）を確認する用 */
+pushRoute.post('/push/test', async (c) => {
+  const db = c.get('db');
+  const env = c.get('env');
+  const logger = c.get('logger');
+  const userId = c.get('userId');
+  if (!userId) throw new ApiError('unauthenticated', 'セッションが見つかりません');
+
+  const { count } = db
+    .prepare('SELECT count(*) as count FROM push_subscriptions WHERE user_id = ?')
+    .get(userId) as { count: number };
+  if (count === 0) throw new ApiError('not_found', '通知購読が登録されていません。まず「有効にする」を押してください');
+
+  await sendPushToUser(db, env, logger, userId, { title: 'テスト通知', body: 'この通知が届いていれば設定は正常です' });
+  return c.json({ subscription_count: count });
 });
 
 pushRoute.post('/pomodoro/schedule', async (c) => {

@@ -95,6 +95,37 @@ describe('push routes', () => {
     expect(cancelAgainRes.status).toBe(404);
   });
 
+  it('POST /push/test は購読が無ければ404、あれば送信して件数を返す', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+
+    const noSubRes = await app.request('/api/v1/push/test', {
+      method: 'POST',
+      headers: { Cookie: `nestio_session=${sessionId}` },
+    });
+    expect(noSubRes.status).toBe(404);
+
+    await app.request('/api/v1/push/subscribe', {
+      method: 'POST',
+      headers: { Cookie: `nestio_session=${sessionId}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: 'https://push.example.com/test-endpoint',
+        keys: { p256dh: 'p256dh-value', auth: 'auth-value' },
+      }),
+    });
+
+    const withSubRes = await app.request('/api/v1/push/test', {
+      method: 'POST',
+      headers: { Cookie: `nestio_session=${sessionId}` },
+    });
+    expect(withSubRes.status).toBe(200);
+    const body = (await withSubRes.json()) as { subscription_count: number };
+    expect(body.subscription_count).toBe(1);
+  });
+
   it('未認証でのsubscribeは401', async () => {
     db = createTestDb();
     const app = setupApp(db);

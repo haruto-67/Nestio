@@ -18,6 +18,7 @@ import { naturalCollator, todayJstDateString } from '../../lib/datetime.js';
 import { RecurrenceEditor } from './RecurrenceEditor.js';
 import { AttachmentList } from '../attachments/AttachmentList.js';
 import { showToast } from '../../ui/toast.js';
+import { requestPushPermissionPrompt } from '../../lib/push-prompt.js';
 
 const PRIORITY_LABELS = ['なし', '低', '中', '高'] as const;
 
@@ -309,9 +310,13 @@ function DueEditor({ task, onChange }: { task: TaskRow; onChange: (fields: TaskW
   const mode: DueMode = task.due_at !== null ? 'timed' : task.due_date !== null ? 'all_day' : 'none';
 
   const setMode = (next: DueMode) => {
-    if (next === 'none') onChange({ due_at: null, due_date: null });
+    if (next === 'none') {
+      onChange({ due_at: null, due_date: null });
+      return;
+    }
     if (next === 'all_day') onChange({ due_at: null, due_date: todayJstDateString() });
     if (next === 'timed') onChange({ due_date: null, due_at: Date.now() });
+    requestPushPermissionPrompt('期限のリマインダーには').catch(() => {});
   };
 
   return (

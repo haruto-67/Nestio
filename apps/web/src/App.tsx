@@ -6,6 +6,7 @@ import { useTasks, useLists } from './db/queries.js';
 import { SMART_LISTS } from './lib/task-views.js';
 import { loadCustomViews, subscribeCustomViews } from './lib/custom-views.js';
 import { ToastContainer } from './ui/ToastContainer.js';
+import { PushPermissionPrompt } from './ui/PushPermissionPrompt.js';
 import { showToast } from './ui/toast.js';
 import { useResizableWidth } from './lib/useResizableWidth.js';
 import { LoginScreen } from './features/auth/LoginScreen.js';
@@ -558,6 +559,7 @@ function MainLayout() {
         />
       )}
       <ToastContainer />
+      <PushPermissionPrompt />
     </div>
   );
 }

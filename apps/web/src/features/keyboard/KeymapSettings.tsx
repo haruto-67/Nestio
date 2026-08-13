@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Moon, Sun } from 'lucide-react';
 import { useApp } from '../../state/AppProvider.js';
 import { sendClientLogs } from '../../api/client-logs.js';
-import { enablePushNotifications, getPushPermissionState } from '../../lib/push-subscription.js';
+import { enablePushNotifications, getPushSubscriptionState, type PushSubscriptionState } from '../../lib/push-subscription.js';
+import { sendTestPush } from '../../api/push.js';
 import { createCalendarFeed, listCalendarFeeds, revokeCalendarFeed, type CalendarFeed } from '../../api/calendar.js';
 import { exportAllData, importAllData } from '../../api/export.js';
 import { listSessions, revokeSession, type SessionInfo } from '../../api/sessions.js';
@@ -19,7 +20,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
   const { deviceId, me } = useApp();
   const [logStatus, setLogStatus] = useState<string | null>(null);
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
-  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [pushState, setPushState] = useState<PushSubscriptionState>({ permission: 'default', subscribed: false });
   const [feeds, setFeeds] = useState<CalendarFeed[]>([]);
   const [calendarStatus, setCalendarStatus] = useState<string | null>(null);
   const [showLogViewer, setShowLogViewer] = useState(false);
@@ -27,7 +28,9 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
 
   useEffect(() => {
-    getPushPermissionState().then(setPermission).catch(() => setPermission('unsupported'));
+    getPushSubscriptionState()
+      .then(setPushState)
+      .catch(() => setPushState({ permission: 'unsupported', subscribed: false }));
     listCalendarFeeds().then(setFeeds).catch(() => {});
     listSessions().then(setSessions).catch(() => {});
   }, []);
@@ -59,9 +62,19 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
     try {
       await enablePushNotifications();
       setNotificationStatus('通知を有効にしました');
-      setPermission(await getPushPermissionState());
+      setPushState(await getPushSubscriptionState());
     } catch (err) {
       setNotificationStatus(err instanceof Error ? err.message : '有効化に失敗しました');
+    }
+  };
+
+  const handleTestNotification = async () => {
+    setNotificationStatus('テスト通知を送信中…');
+    try {
+      const { subscription_count } = await sendTestPush();
+      setNotificationStatus(`${subscription_count}件の端末へ送信しました（届かない場合は端末のOS通知設定を確認してください）`);
+    } catch (err) {
+      setNotificationStatus(err instanceof Error ? err.message : 'テスト通知の送信に失敗しました');
     }
   };
 
@@ -141,20 +154,38 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
         <div className="border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <div className="flex items-center justify-between">
             <span className="text-xs text-neutral-500 dark:text-neutral-400">
-              通知（期限リマインダー・ポモドーロ終了）
+              通知（期限リマインダー・ポモドーロ終了・Hatch）
             </span>
-            {permission === 'granted' ? (
-              <span className="text-xs text-emerald-500">有効</span>
+            {pushState.subscribed ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-emerald-500">この端末で有効</span>
+                <button
+                  onClick={handleTestNotification}
+                  className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                >
+                  テスト送信
+                </button>
+              </div>
+            ) : pushState.permission === 'denied' ? (
+              <span className="text-xs text-neutral-400">ブラウザで拒否されています</span>
             ) : (
               <button
                 onClick={handleEnableNotifications}
-                disabled={permission === 'unsupported'}
+                disabled={pushState.permission === 'unsupported'}
                 className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
-                {permission === 'unsupported' ? '非対応' : '有効にする'}
+                {pushState.permission === 'unsupported' ? '非対応' : '有効にする'}
               </button>
             )}
           </div>
+          {pushState.permission === 'denied' && (
+            <p className="mt-1 text-xs text-neutral-400">
+              一度拒否するとこの画面からは再許可できません。ブラウザのサイト設定から通知を許可してください
+            </p>
+          )}
+          <p className="mt-1 text-xs text-neutral-400">
+            通知は端末（ブラウザ）ごとの登録です。PCとスマホ両方で受け取るには、それぞれの端末でこの画面を開いて有効にしてください
+          </p>
           {notificationStatus && <p className="mt-1 text-xs text-neutral-400">{notificationStatus}</p>}
         </div>
 
