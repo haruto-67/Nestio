@@ -1,12 +1,15 @@
 import { useEffect, useRef } from 'react';
-import { normalizeKeyCombo, isBareCharCombo, type KeymapAction } from '../../lib/keymap.js';
+import { normalizeKeyCombo, normalizeKeyComboUnified, isBareCharCombo, type KeymapAction } from '../../lib/keymap.js';
 
 export interface ShortcutHandlers {
   onQuickAdd: () => void;
   onSearch: () => void;
   onToggleComplete: () => void;
   onDelete: () => void;
-  onSetPriority: (p: 0 | 1 | 2 | 3) => void;
+  onSetPriorityNone: () => void;
+  onSetPriorityLow: () => void;
+  onSetPriorityMid: () => void;
+  onSetPriorityHigh: () => void;
   onToggleTheme: () => void;
   onShowHelp: () => void;
   onGotoToday: () => void;
@@ -19,11 +22,11 @@ export interface ShortcutHandlers {
   /** Enter：状況に応じて選択中タスクの折りたたみトグル/サイドバーでの選択/メモの選択を行う（改修10回目で汎用化） */
   onActivate: () => void;
   onFocusSelectedTitle: () => void;
-  /** 左側エリア（サイドバーのフォルダ/リストツリー）へキーボードフォーカスを移す固定ショートカット（改修10回目） */
+  /** 左側エリア（サイドバーのフォルダ/リストツリー）へキーボードフォーカスを移す（改修10回目） */
   onFocusSidebar: () => void;
   /** タスク画面/メモ画面を切り替える（改修11回目） */
   onSwitchScreen: () => void;
-  /** カーソルのあるエリアの先頭/末尾の項目へ移動する（Home/End、改修11回目） */
+  /** カーソルのあるエリアの先頭/末尾の項目へ移動する（改修11回目） */
   onGotoFirst: () => void;
   onGotoLast: () => void;
   /** 修飾キー無しの1文字キー入力。カーソルのあるエリアでエクスプローラー風の
@@ -61,79 +64,80 @@ const ACTION_HANDLER_KEYS: Record<KeymapAction, NoArgHandlerKey> = {
   add_subtask: 'onAddSubtask',
   add_sibling_subtask: 'onAddSiblingSubtask',
   switch_screen: 'onSwitchScreen',
+  goto_today: 'onGotoToday',
+  priority_none: 'onSetPriorityNone',
+  priority_low: 'onSetPriorityLow',
+  priority_mid: 'onSetPriorityMid',
+  priority_high: 'onSetPriorityHigh',
+  focus_title: 'onFocusSelectedTitle',
+  focus_sidebar: 'onFocusSidebar',
+  activate: 'onActivate',
+  goto_first: 'onGotoFirst',
+  goto_last: 'onGotoLast',
 };
 
-/** カスタマイズ不可の固定ショートカット。全て修飾キー必須にしてあり、キーマップの
- * カスタマイズ値と衝突する可能性はキーマップ側のバリデーション（isBareCharCombo）で防ぐ */
-function buildFixedActions(h: ShortcutHandlers): Record<string, () => void> {
-  return {
-    'Ctrl+k': h.onSearch, // Cmd/Ctrl+K：キーマップの割り当てに加えて常に有効な検索の別名
-    'Ctrl+Shift+t': h.onGotoToday,
-    'Ctrl+Shift+1': () => h.onSetPriority(0),
-    'Ctrl+Shift+2': () => h.onSetPriority(1),
-    'Ctrl+Shift+3': () => h.onSetPriority(2),
-    'Ctrl+Shift+4': () => h.onSetPriority(3),
-    'Ctrl+Shift+e': h.onFocusSelectedTitle,
-    'Ctrl+Shift+h': h.onFocusSidebar,
-  };
-}
-
 /**
- * キーマップに従ってショートカットを発火する。入力欄フォーカス中は無効化。
- * 「今日へ」・優先度の1〜4キー・E（タイトルへ）・H（サイドバーへ）はカスタマイズ対象外の
- * 固定ショートカット（docs/open-questions.md 5章）。
+ * キーマップに従ってショートカットを発火する。入力欄フォーカス中や、suppressed が
+ * true の間（モーダル/設定画面が開いている時。改修11回目フォローアップ）は無効化。
  *
- * 全ショートカットは修飾キー必須（改修11回目）。修飾キー無しの1文字キー入力はどれにも
- * マッチしなかった場合、タイプアヘッド（頭文字ジャンプ）として扱う
+ * 全ショートカットは修飾キー必須がデフォルトだが、ユーザーが意図して無修飾の文字キーへ
+ * 再割り当てすることも許可している（改修11回目フォローアップ）。修飾キー無しの1文字キー
+ * 入力はどれにもマッチしなかった場合、タイプアヘッド（頭文字ジャンプ）として扱う
  */
-export function useKeyboardShortcuts(keymap: Record<KeymapAction, string>, handlers: ShortcutHandlers): void {
+export function useKeyboardShortcuts(
+  keymap: Record<KeymapAction, string>,
+  handlers: ShortcutHandlers,
+  suppressed = false,
+): void {
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
   const keymapRef = useRef(keymap);
   keymapRef.current = keymap;
+  const suppressedRef = useRef(suppressed);
+  suppressedRef.current = suppressed;
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return;
+      if (suppressedRef.current) return;
       const h = handlersRef.current;
       const km = keymapRef.current;
-      const combo = normalizeKeyCombo(e);
+      const specificCombo = normalizeKeyCombo(e);
+      const unifiedCombo = normalizeKeyComboUnified(e);
 
-      const fixedAction = buildFixedActions(h)[combo];
-      if (fixedAction) {
+      // 検索だけは常時Ctrl/Cmd+Kでも起動できる固定の別名（キーマップの割り当てを壊しても
+      // 検索だけは必ず使えるようにするための保険）。CtrlとCmdを区別できるようにしたため
+      // （改修11回目フォローアップ）、ここは意図的にunifiedComboで判定しどちらでも動くようにする
+      if (unifiedCombo === 'Ctrl+k') {
         e.preventDefault();
-        fixedAction();
-        return;
-      }
-
-      // サブタスクを持つ選択中タスクの上でEnter：折りたたみ/展開をトグルする固定ショートカット
-      // （改修8回目）。このハンドラ経由でtitleInputへフォーカスが移る可能性があるため、
-      // preventDefaultしないとブラウザがこのキー入力自体を新しくフォーカスされた入力欄へ
-      // 文字として送ってしまうことがある
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        h.onActivate();
-        return;
-      }
-      if (e.key === 'Home') {
-        e.preventDefault();
-        h.onGotoFirst();
-        return;
-      }
-      if (e.key === 'End') {
-        e.preventDefault();
-        h.onGotoLast();
+        h.onSearch();
         return;
       }
 
       if (e.key === 'Tab' && isWithinTaskDetailPanel(e.target)) return;
 
+      // まずCmd/Ctrlを明示的に使い分けたいユーザー設定（specificCombo）を優先し、
+      // 見つからなければ「Ctrl+…」形式の既定値に対する後方互換マッチ（unifiedCombo。
+      // Ctrl/Cmdどちらでも動く）を試す（改修11回目フォローアップ）
+      let matchedAction: KeymapAction | null = null;
       for (const [action, key] of Object.entries(km) as [KeymapAction, string][]) {
-        if (key === combo) {
-          e.preventDefault();
-          h[ACTION_HANDLER_KEYS[action]]();
-          return;
+        if (key === specificCombo) {
+          matchedAction = action;
+          break;
         }
+      }
+      if (!matchedAction && specificCombo !== unifiedCombo) {
+        for (const [action, key] of Object.entries(km) as [KeymapAction, string][]) {
+          if (key === unifiedCombo) {
+            matchedAction = action;
+            break;
+          }
+        }
+      }
+      if (matchedAction) {
+        e.preventDefault();
+        h[ACTION_HANDLER_KEYS[matchedAction]]();
+        return;
       }
 
       // ここまでで何にもマッチしなかった、修飾キー無しの1文字キー入力はタイプアヘッドとして扱う

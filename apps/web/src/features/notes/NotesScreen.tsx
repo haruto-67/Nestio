@@ -136,7 +136,12 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
 
   return (
     <div className="flex h-full flex-1 overflow-hidden">
-      <div ref={containerRef} className="relative flex-1 overflow-y-auto p-4">
+      {/* メモ詳細が開いている間、モバイル幅では一覧を隠して詳細に画面を譲る
+          （改修11回目フォローアップ：TaskListView/TaskDetailAreaと同じ不具合がメモにもあった） */}
+      <div
+        ref={containerRef}
+        className={`relative flex-1 overflow-y-auto p-4 ${selectedNoteId ? 'hidden md:block' : 'block'}`}
+      >
         <BackgroundMark className="pointer-events-none absolute right-6 bottom-6 z-0 h-48 w-48 opacity-40" />
         <div className="relative z-10 mb-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold">メモ</h1>

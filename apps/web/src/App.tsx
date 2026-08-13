@@ -77,7 +77,9 @@ function Root() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-neutral-400">読み込み中...</div>
+      <div className="flex min-h-screen items-center justify-center text-sm text-neutral-400">
+        読み込み中...
+      </div>
     );
   }
   if (!me) {
@@ -209,7 +211,10 @@ function MainLayout() {
     if (!prev || prev.depth !== currentDepth) return;
     const newParentId = prev.id;
     const siblings = tasks.filter((t) => t.parent_id === newParentId);
-    upsertTask(me.id, selectedTaskId, { parent_id: newParentId, sort_order: nextSortOrder(siblings) });
+    upsertTask(me.id, selectedTaskId, {
+      parent_id: newParentId,
+      sort_order: nextSortOrder(siblings),
+    });
     setTaskCollapsed(newParentId, false);
   };
 
@@ -219,7 +224,10 @@ function MainLayout() {
     if (!task || !task.parent_id) return;
     const grandParentId = findTask(task.parent_id)?.parent_id ?? null;
     const siblings = tasks.filter((t) => t.parent_id === grandParentId);
-    upsertTask(me.id, selectedTaskId, { parent_id: grandParentId, sort_order: nextSortOrder(siblings) });
+    upsertTask(me.id, selectedTaskId, {
+      parent_id: grandParentId,
+      sort_order: nextSortOrder(siblings),
+    });
   };
 
   // カーソル移動(selectedTaskId)と詳細パネルの開閉(detailOpen)をまとめて行う通常の「選択」操作。
@@ -390,81 +398,111 @@ function MainLayout() {
     };
   }, [me]);
 
-  useKeyboardShortcuts(keymap, {
-    onQuickAdd: () => quickAddInputElRef.current?.focus(),
-    onSearch: () => setShowSearch(true),
-    onToggleComplete: () => {
-      if (!selectedTaskId || !me) return;
-      const task = findTask(selectedTaskId);
-      if (!task) return;
-      completeTask(me.id, task, task.completed_at === null);
+  // モーダル/設定画面が開いている間はグローバルショートカットを無効化する（改修11回目
+  // フォローアップ：設定画面等でショートカットキーを押すと背後の一覧が反応してしまう不具合の対応）。
+  // detailOpen/notesEditorOpenは画面を覆う独立モーダルではなく、その状態でこそj/k等の
+  // ショートカットが必要な通常の操作対象なので含めない
+  const shortcutsSuppressed =
+    showSearch ||
+    showPomodoro ||
+    showTrash ||
+    showHatchSettings ||
+    showAdminPanel ||
+    showKeymapSettings ||
+    showHelp ||
+    drawerOpen;
+
+  useKeyboardShortcuts(
+    keymap,
+    {
+      onQuickAdd: () => quickAddInputElRef.current?.focus(),
+      onSearch: () => setShowSearch(true),
+      onToggleComplete: () => {
+        if (!selectedTaskId || !me) return;
+        const task = findTask(selectedTaskId);
+        if (!task) return;
+        completeTask(me.id, task, task.completed_at === null);
+      },
+      onDelete: () => {
+        if (!selectedTaskId) return;
+        deleteTask(selectedTaskId);
+        setSelectedTaskId(null);
+        setDetailOpen(false);
+        showToast('削除しました');
+      },
+      onSetPriorityNone: () => {
+        if (!selectedTaskId || !me) return;
+        upsertTask(me.id, selectedTaskId, { priority: 0 });
+      },
+      onSetPriorityLow: () => {
+        if (!selectedTaskId || !me) return;
+        upsertTask(me.id, selectedTaskId, { priority: 1 });
+      },
+      onSetPriorityMid: () => {
+        if (!selectedTaskId || !me) return;
+        upsertTask(me.id, selectedTaskId, { priority: 2 });
+      },
+      onSetPriorityHigh: () => {
+        if (!selectedTaskId || !me) return;
+        upsertTask(me.id, selectedTaskId, { priority: 3 });
+      },
+      onToggleTheme: toggleTheme,
+      onShowHelp: () => setShowHelp(true),
+      onGotoToday: () => selectView({ type: 'smart', key: 'today' }),
+      // フォーカスが左側のサイドバーにある間はj/kでツリーを移動し、メモ画面ではメモ一覧を移動する。
+      // それ以外（通常のタスク一覧）は従来通りタスクのカーソル移動（改修10回目）
+      onMoveUp: () => {
+        if (sidebarFocused) return sidebarRef.current?.moveCursor(-1);
+        if (screen === 'notes') return notesRef.current?.moveCursor(-1);
+        moveSelection(-1);
+      },
+      onMoveDown: () => {
+        if (sidebarFocused) return sidebarRef.current?.moveCursor(1);
+        if (screen === 'notes') return notesRef.current?.moveCursor(1);
+        moveSelection(1);
+      },
+      onIndent: indentSelected,
+      onOutdent: outdentSelected,
+      onAddSubtask: addSubtaskToSelected,
+      onAddSiblingSubtask: addSiblingSubtaskToSelected,
+      onActivate: () => {
+        if (sidebarFocused) return sidebarRef.current?.activateCursor();
+        if (screen === 'notes') return notesRef.current?.activateCursor();
+        toggleSelectedCollapse();
+      },
+      onFocusSelectedTitle: () => {
+        if (selectedTaskId) setFocusTitleTaskId(selectedTaskId);
+      },
+      // hキー：左側エリア（サイドバー）へフォーカスを移す。メモ画面ではサイドバーが
+      // 表示されない（NotesColorFilterに差し替わる）ため無効（改修10回目）
+      onFocusSidebar: () => {
+        if (screen !== 'tasks') return;
+        setSidebarFocused(true);
+      },
+      // タスク/メモ画面切り替え（改修11回目）。切り替え後は前の画面のサイドバーフォーカスを
+      // 引きずらないようリセットする
+      onSwitchScreen: () => {
+        setScreen(screen === 'tasks' ? 'notes' : 'tasks');
+        setSidebarFocused(false);
+      },
+      onGotoFirst: () => {
+        if (sidebarFocused) return sidebarRef.current?.gotoFirst();
+        if (screen === 'notes') return notesRef.current?.gotoFirst();
+        gotoFirstTask();
+      },
+      onGotoLast: () => {
+        if (sidebarFocused) return sidebarRef.current?.gotoLast();
+        if (screen === 'notes') return notesRef.current?.gotoLast();
+        gotoLastTask();
+      },
+      onTypeahead: (char) => {
+        if (sidebarFocused) return sidebarRef.current?.typeahead(char);
+        if (screen === 'notes') return notesRef.current?.typeahead(char);
+        typeaheadTask(char);
+      },
     },
-    onDelete: () => {
-      if (!selectedTaskId) return;
-      deleteTask(selectedTaskId);
-      setSelectedTaskId(null);
-      setDetailOpen(false);
-      showToast('削除しました');
-    },
-    onSetPriority: (p) => {
-      if (!selectedTaskId || !me) return;
-      upsertTask(me.id, selectedTaskId, { priority: p });
-    },
-    onToggleTheme: toggleTheme,
-    onShowHelp: () => setShowHelp(true),
-    onGotoToday: () => selectView({ type: 'smart', key: 'today' }),
-    // フォーカスが左側のサイドバーにある間はj/kでツリーを移動し、メモ画面ではメモ一覧を移動する。
-    // それ以外（通常のタスク一覧）は従来通りタスクのカーソル移動（改修10回目）
-    onMoveUp: () => {
-      if (sidebarFocused) return sidebarRef.current?.moveCursor(-1);
-      if (screen === 'notes') return notesRef.current?.moveCursor(-1);
-      moveSelection(-1);
-    },
-    onMoveDown: () => {
-      if (sidebarFocused) return sidebarRef.current?.moveCursor(1);
-      if (screen === 'notes') return notesRef.current?.moveCursor(1);
-      moveSelection(1);
-    },
-    onIndent: indentSelected,
-    onOutdent: outdentSelected,
-    onAddSubtask: addSubtaskToSelected,
-    onAddSiblingSubtask: addSiblingSubtaskToSelected,
-    onActivate: () => {
-      if (sidebarFocused) return sidebarRef.current?.activateCursor();
-      if (screen === 'notes') return notesRef.current?.activateCursor();
-      toggleSelectedCollapse();
-    },
-    onFocusSelectedTitle: () => {
-      if (selectedTaskId) setFocusTitleTaskId(selectedTaskId);
-    },
-    // hキー：左側エリア（サイドバー）へフォーカスを移す。メモ画面ではサイドバーが
-    // 表示されない（NotesColorFilterに差し替わる）ため無効（改修10回目）
-    onFocusSidebar: () => {
-      if (screen !== 'tasks') return;
-      setSidebarFocused(true);
-    },
-    // タスク/メモ画面切り替え（改修11回目）。切り替え後は前の画面のサイドバーフォーカスを
-    // 引きずらないようリセットする
-    onSwitchScreen: () => {
-      setScreen(screen === 'tasks' ? 'notes' : 'tasks');
-      setSidebarFocused(false);
-    },
-    onGotoFirst: () => {
-      if (sidebarFocused) return sidebarRef.current?.gotoFirst();
-      if (screen === 'notes') return notesRef.current?.gotoFirst();
-      gotoFirstTask();
-    },
-    onGotoLast: () => {
-      if (sidebarFocused) return sidebarRef.current?.gotoLast();
-      if (screen === 'notes') return notesRef.current?.gotoLast();
-      gotoLastTask();
-    },
-    onTypeahead: (char) => {
-      if (sidebarFocused) return sidebarRef.current?.typeahead(char);
-      if (screen === 'notes') return notesRef.current?.typeahead(char);
-      typeaheadTask(char);
-    },
-  });
+    shortcutsSuppressed,
+  );
 
   return (
     <div className="flex h-screen flex-col bg-[#FBFAF6] text-neutral-900 dark:bg-[#1a1a18] dark:text-white">
@@ -620,7 +658,10 @@ function MainLayout() {
             />
           )}
           {screen === 'notes' && (
-            <NotesColorFilter colorFilter={notesColorFilter} onChangeColorFilter={setNotesColorFilter} />
+            <NotesColorFilter
+              colorFilter={notesColorFilter}
+              onChangeColorFilter={setNotesColorFilter}
+            />
           )}
           <div
             onMouseDown={(e) => sidebarResize.startResize(1)(e)}
@@ -654,10 +695,16 @@ function MainLayout() {
               </div>
               {screen === 'tasks' && <Sidebar view={view} onSelectView={selectView} />}
               {screen === 'notes' && (
-                <NotesColorFilter colorFilter={notesColorFilter} onChangeColorFilter={setNotesColorFilter} />
+                <NotesColorFilter
+                  colorFilter={notesColorFilter}
+                  onChangeColorFilter={setNotesColorFilter}
+                />
               )}
             </div>
-            <div className="nestio-overlay flex-1 bg-black/40" onClick={() => setDrawerOpen(false)} />
+            <div
+              className="nestio-overlay flex-1 bg-black/40"
+              onClick={() => setDrawerOpen(false)}
+            />
           </div>
         )}
 
@@ -677,6 +724,7 @@ function MainLayout() {
                 onSelectTask={selectTask}
                 onCreateAndSelectTask={selectAndFocusTitle}
                 onVisibleTasksChange={handleVisibleTasksChange}
+                detailOpen={detailOpen}
                 quickAddInputRef={(el) => {
                   quickAddInputElRef.current = el;
                 }}
@@ -695,14 +743,22 @@ function MainLayout() {
               />
             </>
           ) : (
-            <NotesScreen ref={notesRef} colorFilter={notesColorFilter} onEditorOpenChange={setNotesEditorOpen} />
+            <NotesScreen
+              ref={notesRef}
+              colorFilter={notesColorFilter}
+              onEditorOpenChange={setNotesEditorOpen}
+            />
           )}
         </div>
       </div>
 
       {showHelp && <ShortcutHelpModal onClose={() => setShowHelp(false)} />}
       {showKeymapSettings && (
-        <KeymapSettings theme={theme} onToggleTheme={toggleTheme} onClose={() => setShowKeymapSettings(false)} />
+        <KeymapSettings
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onClose={() => setShowKeymapSettings(false)}
+        />
       )}
       {showHatchSettings && <HatchSettings onClose={() => setShowHatchSettings(false)} />}
       {showAdminPanel && me?.is_admin && <AdminPanel onClose={() => setShowAdminPanel(false)} />}

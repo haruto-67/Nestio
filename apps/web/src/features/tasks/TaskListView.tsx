@@ -39,6 +39,11 @@ interface TaskListViewProps {
   onCreateAndSelectTask: (id: string) => void;
   onVisibleTasksChange?: (entries: FlattenedTaskEntry[]) => void;
   quickAddInputRef?: (el: HTMLInputElement | null) => void;
+  /** trueの間、モバイル幅では一覧を隠して詳細パネルに画面を譲る。detailOpen（詳細パネルの
+   * 開閉）で判定する必要があり、selectedTaskId（カーソル位置。詳細を開かないj/k移動でも
+   * 立つ）で判定すると誤ってモバイルで一覧が消えてしまう（改修11回目フォローアップ：
+   * モバイルで詳細を開くと一覧と詳細が半々に潰れて事実上開けなかった不具合の修正） */
+  detailOpen?: boolean;
 }
 
 function firstListId(lists: { id: string; sort_order: number }[]): string | undefined {
@@ -53,6 +58,7 @@ export function TaskListView({
   onCreateAndSelectTask,
   onVisibleTasksChange,
   quickAddInputRef,
+  detailOpen = false,
 }: TaskListViewProps) {
   const { me } = useApp();
   const lists = useLists();
@@ -226,7 +232,9 @@ export function TaskListView({
 
   return (
     <div
-      className={`flex h-full flex-1 flex-col overflow-hidden border-t-4 ${headerAccentClass}`}
+      className={`h-full flex-1 flex-col overflow-hidden border-t-4 ${headerAccentClass} ${
+        detailOpen ? 'hidden md:flex' : 'flex'
+      }`}
       onClick={closeDetailUnlessRowClick}
     >
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800 md:px-6 md:py-4">
