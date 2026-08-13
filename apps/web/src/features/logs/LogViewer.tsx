@@ -41,7 +41,7 @@ export function LogViewer({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-[40rem] flex-col rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
+        className="flex max-h-[85vh] w-[40rem] flex-col rounded-xl bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">ログビューア</h2>
@@ -60,11 +60,11 @@ export function LogViewer({ onClose }: { onClose: () => void }) {
             onChange={(e) => setRequestId(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && load()}
             placeholder="request_id で絞り込み"
-            className="flex-1 rounded border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
+            className="flex-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
           />
           <button
             onClick={load}
-            className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
           >
             更新
           </button>
@@ -75,7 +75,7 @@ export function LogViewer({ onClose }: { onClose: () => void }) {
           {!loading && entries.length === 0 && <p className="text-xs text-neutral-400">ログはありません</p>}
           <ul className="flex flex-col gap-1">
             {entries.map((entry, i) => (
-              <li key={i} className="rounded border border-neutral-200 p-2 text-xs dark:border-neutral-700">
+              <li key={i} className="rounded-md border border-neutral-200 p-2 text-xs dark:border-neutral-700">
                 <button
                   className="flex w-full items-start gap-2 text-left"
                   onClick={() => setExpandedIndex(expandedIndex === i ? null : i)}

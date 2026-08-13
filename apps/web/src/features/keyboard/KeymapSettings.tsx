@@ -128,7 +128,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-96 rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel">
+      <div onClick={(e) => e.stopPropagation()} className="w-96 rounded-xl bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">設定</h2>
           <button onClick={onClose} className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
@@ -140,7 +140,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
           <span className="text-xs text-neutral-500 dark:text-neutral-400">外観（テーマ）</span>
           <button
             onClick={onToggleTheme}
-            className="flex items-center gap-1.5 rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+            className="flex items-center gap-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
           >
             {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
             {theme === 'dark' ? 'ダーク' : 'ライト'}
@@ -161,7 +161,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
                 <span className="text-xs text-emerald-500">この端末で有効</span>
                 <button
                   onClick={handleTestNotification}
-                  className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                  className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
                 >
                   テスト送信
                 </button>
@@ -172,7 +172,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
               <button
                 onClick={handleEnableNotifications}
                 disabled={pushState.permission === 'unsupported'}
-                className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
                 {pushState.permission === 'unsupported' ? '非対応' : '有効にする'}
               </button>
@@ -194,7 +194,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
             <span className="text-xs text-neutral-500 dark:text-neutral-400">カレンダー購読（ICS）</span>
             <button
               onClick={handleCreateFeed}
-              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               + URLを作成
             </button>
@@ -242,7 +242,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
               <span className="text-xs text-neutral-500 dark:text-neutral-400">サーバーログ（管理者用）</span>
               <button
                 onClick={() => setShowLogViewer(true)}
-                className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
                 開く
               </button>
@@ -255,7 +255,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
             <span className="text-xs text-neutral-500 dark:text-neutral-400">同期の不具合を報告</span>
             <button
               onClick={handleSendLogs}
-              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               ログを送信
             </button>
@@ -269,11 +269,11 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
             <div className="flex gap-1">
               <button
                 onClick={handleExport}
-                className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
                 エクスポート
               </button>
-              <label className="cursor-pointer rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800">
+              <label className="cursor-pointer rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800">
                 インポート
                 <input
                   type="file"

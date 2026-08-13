@@ -97,13 +97,13 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
           onClick={() => setMonthStart(firstOfMonth(today))}
           disabled={currentMonth === today.slice(0, 7)}
           title="今日を含む月へ戻る"
-          className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-800"
         >
           今月
         </button>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-7 grid-rows-[auto_repeat(6,minmax(0,1fr))] gap-px overflow-hidden rounded border border-neutral-200 bg-neutral-200 text-xs dark:border-neutral-700 dark:bg-neutral-800">
+      <div className="grid min-h-0 flex-1 grid-cols-7 grid-rows-[auto_repeat(6,minmax(0,1fr))] gap-px overflow-hidden rounded-md border border-neutral-200 bg-neutral-200 text-xs dark:border-neutral-700 dark:bg-neutral-800">
         {WEEKDAY_LABELS.map((w) => (
           <div
             key={w}
@@ -153,7 +153,7 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
                   key={t.id}
                   {...dragHandlers(t)}
                   onClick={() => onSelect(t.id)}
-                  className={`flex cursor-pointer items-center gap-1 truncate rounded px-1 py-0.5 ${
+                  className={`flex cursor-pointer items-center gap-1 truncate rounded-md px-1 py-0.5 ${
                     selectedTaskId === t.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
                   }`}
                 >
@@ -175,7 +175,7 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
       </div>
 
       {unscheduled.length > 0 && (
-        <div className="mt-2 shrink-0 rounded border border-neutral-200 px-2 py-1 dark:border-neutral-700">
+        <div className="mt-2 shrink-0 rounded-md border border-neutral-200 px-2 py-1 dark:border-neutral-700">
           <button
             onClick={() => setShowUnscheduled((v) => !v)}
             className="text-xs font-semibold text-neutral-400"
@@ -189,7 +189,7 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
                   key={t.id}
                   {...dragHandlers(t)}
                   onClick={() => onSelect(t.id)}
-                  className={`cursor-pointer truncate rounded border border-neutral-200 bg-white px-2 py-0.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 ${
+                  className={`cursor-pointer truncate rounded-md border border-neutral-200 bg-white px-2 py-0.5 text-xs dark:border-neutral-700 dark:bg-neutral-800 ${
                     selectedTaskId === t.id ? 'ring-2 ring-blue-300' : ''
                   } ${t.completed_at !== null ? 'text-neutral-400 line-through' : ''}`}
                 >

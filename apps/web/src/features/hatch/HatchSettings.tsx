@@ -131,7 +131,7 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-[32rem] flex-col rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
+        className="flex max-h-[85vh] w-[32rem] flex-col rounded-xl bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Hatch トリガー設定</h2>
@@ -151,7 +151,7 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
           ) : (
             <button
               onClick={() => setEditingId('new')}
-              className="mb-3 w-full rounded border border-dashed border-neutral-300 py-2 text-xs text-neutral-500 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              className="mb-3 w-full rounded-md border border-dashed border-neutral-300 py-2 text-xs text-neutral-500 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
             >
               + 新規トリガー
             </button>
@@ -162,7 +162,7 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
               <li className="text-xs text-neutral-400">トリガーはまだありません</li>
             )}
             {triggers.map((t) => (
-              <li key={t.id} className="rounded border border-neutral-200 p-2 text-xs dark:border-neutral-700">
+              <li key={t.id} className="rounded-md border border-neutral-200 p-2 text-xs dark:border-neutral-700">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <button
@@ -187,7 +187,7 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
                       onClick={() => handleTest(t)}
                       disabled={testCountdown[t.id] !== undefined}
                       title={testCountdown[t.id] !== undefined ? 'この秒数の後にテスト実行されます' : undefined}
-                      className={`min-h-8 rounded px-2 hover:underline ${
+                      className={`min-h-8 rounded-md px-2 hover:underline ${
                         testCountdown[t.id] !== undefined
                           ? 'w-6 text-center font-mono text-neutral-500'
                           : 'text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40'
@@ -197,13 +197,13 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
                     </button>
                     <button
                       onClick={() => setEditingId(t.id)}
-                      className="min-h-8 rounded px-2 text-neutral-500 hover:bg-neutral-100 hover:underline dark:hover:bg-neutral-800"
+                      className="min-h-8 rounded-md px-2 text-neutral-500 hover:bg-neutral-100 hover:underline dark:hover:bg-neutral-800"
                     >
                       編集
                     </button>
                     <button
                       onClick={() => deleteTrigger(t.id)}
-                      className="min-h-8 rounded px-2 text-red-500 hover:bg-red-50 hover:underline dark:hover:bg-red-950/40"
+                      className="min-h-8 rounded-md px-2 text-red-500 hover:bg-red-50 hover:underline dark:hover:bg-red-950/40"
                     >
                       削除
                     </button>

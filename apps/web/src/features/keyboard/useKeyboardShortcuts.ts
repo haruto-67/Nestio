@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { normalizeKeyCombo, type KeymapAction } from '../../lib/keymap.js';
+import { normalizeKeyCombo, isBareCharCombo, type KeymapAction } from '../../lib/keymap.js';
 
 export interface ShortcutHandlers {
   onQuickAdd: () => void;
@@ -21,6 +21,14 @@ export interface ShortcutHandlers {
   onFocusSelectedTitle: () => void;
   /** 左側エリア（サイドバーのフォルダ/リストツリー）へキーボードフォーカスを移す固定ショートカット（改修10回目） */
   onFocusSidebar: () => void;
+  /** タスク画面/メモ画面を切り替える（改修11回目） */
+  onSwitchScreen: () => void;
+  /** カーソルのあるエリアの先頭/末尾の項目へ移動する（Home/End、改修11回目） */
+  onGotoFirst: () => void;
+  onGotoLast: () => void;
+  /** 修飾キー無しの1文字キー入力。カーソルのあるエリアでエクスプローラー風の
+   * タイプアヘッド（頭文字ジャンプ）を行う（改修11回目） */
+  onTypeahead: (char: string) => void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -34,8 +42,6 @@ function isWithinTaskDetailPanel(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.closest('[data-task-detail-panel]') !== null;
 }
-
-const PRIORITY_KEYS: Record<string, 0 | 1 | 2 | 3> = { '1': 0, '2': 1, '3': 2, '4': 3 };
 
 type NoArgHandlerKey = {
   [K in keyof ShortcutHandlers]: ShortcutHandlers[K] extends () => void ? K : never;
@@ -54,12 +60,31 @@ const ACTION_HANDLER_KEYS: Record<KeymapAction, NoArgHandlerKey> = {
   show_help: 'onShowHelp',
   add_subtask: 'onAddSubtask',
   add_sibling_subtask: 'onAddSiblingSubtask',
+  switch_screen: 'onSwitchScreen',
 };
+
+/** カスタマイズ不可の固定ショートカット。全て修飾キー必須にしてあり、キーマップの
+ * カスタマイズ値と衝突する可能性はキーマップ側のバリデーション（isBareCharCombo）で防ぐ */
+function buildFixedActions(h: ShortcutHandlers): Record<string, () => void> {
+  return {
+    'Ctrl+k': h.onSearch, // Cmd/Ctrl+K：キーマップの割り当てに加えて常に有効な検索の別名
+    'Ctrl+Shift+t': h.onGotoToday,
+    'Ctrl+Shift+1': () => h.onSetPriority(0),
+    'Ctrl+Shift+2': () => h.onSetPriority(1),
+    'Ctrl+Shift+3': () => h.onSetPriority(2),
+    'Ctrl+Shift+4': () => h.onSetPriority(3),
+    'Ctrl+Shift+e': h.onFocusSelectedTitle,
+    'Ctrl+Shift+h': h.onFocusSidebar,
+  };
+}
 
 /**
  * キーマップに従ってショートカットを発火する。入力欄フォーカス中は無効化。
- * 「G→T」（今日へ）と優先度の1〜4キーはカスタマイズ対象外の固定ショートカット
- * （docs/open-questions.md 5章）。
+ * 「今日へ」・優先度の1〜4キー・E（タイトルへ）・H（サイドバーへ）はカスタマイズ対象外の
+ * 固定ショートカット（docs/open-questions.md 5章）。
+ *
+ * 全ショートカットは修飾キー必須（改修11回目）。修飾キー無しの1文字キー入力はどれにも
+ * マッチしなかった場合、タイプアヘッド（頭文字ジャンプ）として扱う
  */
 export function useKeyboardShortcuts(keymap: Record<KeymapAction, string>, handlers: ShortcutHandlers): void {
   const handlersRef = useRef(handlers);
@@ -68,74 +93,41 @@ export function useKeyboardShortcuts(keymap: Record<KeymapAction, string>, handl
   keymapRef.current = keymap;
 
   useEffect(() => {
-    let pendingG = false;
-    let gTimer: ReturnType<typeof setTimeout> | undefined;
-
     function onKeyDown(e: KeyboardEvent) {
       if (isEditableTarget(e.target)) return;
       const h = handlersRef.current;
       const km = keymapRef.current;
+      const combo = normalizeKeyCombo(e);
 
-      if (pendingG) {
-        pendingG = false;
-        if (e.key.toLowerCase() === 't') {
-          e.preventDefault();
-          h.onGotoToday();
-        }
-        return;
-      }
-
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
+      const fixedAction = buildFixedActions(h)[combo];
+      if (fixedAction) {
         e.preventDefault();
-        h.onSearch();
+        fixedAction();
         return;
       }
 
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-        if (e.key === 'g' || e.key === 'G') {
-          pendingG = true;
-          gTimer = setTimeout(() => {
-            pendingG = false;
-          }, 1000);
-          return;
-        }
-        if (e.key in PRIORITY_KEYS) {
-          h.onSetPriority(PRIORITY_KEYS[e.key] as 0 | 1 | 2 | 3);
-          return;
-        }
-        // サブタスクを持つ選択中タスクの上でEnter：折りたたみ/展開をトグルする固定ショートカット
-        // （G→T・優先度キーと同様カスタマイズ対象外。改修8回目）。
-        // このハンドラ経由でtitleInputへフォーカスが移る可能性があるため、preventDefaultしないと
-        // ブラウザがこのキー入力自体を新しくフォーカスされた入力欄へ文字として送ってしまうことがある
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          h.onActivate();
-          return;
-        }
-        // 左側エリア（サイドバー）へフォーカスを移す固定ショートカット。vimのhと同じ「左」の意味合いで
-        // 割り当てる。j/k（move_up/move_down）は元々タスク一覧の移動用だったが、フォーカスが
-        // サイドバーにある間はそちらの移動に使う（改修10回目）
-        if (e.key === 'h') {
-          e.preventDefault();
-          h.onFocusSidebar();
-          return;
-        }
-        // 選択中タスクの詳細パネルのタイトル欄へフォーカスを移す固定ショートカット。
-        // move_up/move_down（j/k）でのタスク選択はキーボード操作のテンポを保つためあえて
-        // フォーカスを奪わない設計だが、そのままではマウス無しでタイトル/メモを編集する手段が
-        // 無かった（改修8回目でのキーボード操作性改善の指摘）。
-        // preventDefaultしないと、フォーカスが移った直後のタイトル入力欄へ「e」の文字自体が
-        // 入力されてしまう（実機・Playwright双方で確認済みの実際の不具合）
-        if (e.key === 'e') {
-          e.preventDefault();
-          h.onFocusSelectedTitle();
-          return;
-        }
+      // サブタスクを持つ選択中タスクの上でEnter：折りたたみ/展開をトグルする固定ショートカット
+      // （改修8回目）。このハンドラ経由でtitleInputへフォーカスが移る可能性があるため、
+      // preventDefaultしないとブラウザがこのキー入力自体を新しくフォーカスされた入力欄へ
+      // 文字として送ってしまうことがある
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        h.onActivate();
+        return;
+      }
+      if (e.key === 'Home') {
+        e.preventDefault();
+        h.onGotoFirst();
+        return;
+      }
+      if (e.key === 'End') {
+        e.preventDefault();
+        h.onGotoLast();
+        return;
       }
 
       if (e.key === 'Tab' && isWithinTaskDetailPanel(e.target)) return;
 
-      const combo = normalizeKeyCombo(e);
       for (const [action, key] of Object.entries(km) as [KeymapAction, string][]) {
         if (key === combo) {
           e.preventDefault();
@@ -143,12 +135,15 @@ export function useKeyboardShortcuts(keymap: Record<KeymapAction, string>, handl
           return;
         }
       }
+
+      // ここまでで何にもマッチしなかった、修飾キー無しの1文字キー入力はタイプアヘッドとして扱う
+      // （エクスプローラーと同じ挙動：頭文字にジャンプ。同じ文字を連続で押すと次の候補へ循環する）
+      if (isBareCharCombo(e)) {
+        h.onTypeahead(e.key);
+      }
     }
 
     window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      if (gTimer) clearTimeout(gTimer);
-    };
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 }

@@ -17,7 +17,7 @@ const WEEKDAY_LABELS: Record<string, string> = {
 };
 
 const fieldClass =
-  'w-full rounded border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900';
+  'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900';
 const labelClass = 'mb-1 block text-xs text-neutral-500 dark:text-neutral-400';
 
 export interface TriggerDraft {
@@ -452,7 +452,7 @@ export function TriggerForm({
 
   return (
     <form
-      className="flex flex-col gap-3 rounded border border-neutral-200 p-3 dark:border-neutral-700"
+      className="flex flex-col gap-3 rounded-md border border-neutral-200 p-3 dark:border-neutral-700"
       onSubmit={(e) => {
         e.preventDefault();
         onSave(draft);
@@ -521,11 +521,11 @@ export function TriggerForm({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          className="rounded-md border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
         >
           キャンセル
         </button>
-        <button type="submit" className="rounded bg-blue-500 px-3 py-1 text-xs text-white hover:bg-blue-600">
+        <button type="submit" className="rounded-md bg-blue-500 px-3 py-1 text-xs text-white hover:bg-blue-600">
           保存
         </button>
       </div>

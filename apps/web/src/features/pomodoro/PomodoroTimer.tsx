@@ -49,7 +49,7 @@ export function PomodoroTimer({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-72 rounded-lg bg-white p-5 text-center shadow-lg dark:bg-neutral-900 nestio-modal-panel"
+        className="w-72 rounded-xl bg-white p-5 text-center shadow-lg dark:bg-neutral-900 nestio-modal-panel"
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">ポモドーロ</h2>
@@ -69,7 +69,7 @@ export function PomodoroTimer({ onClose }: { onClose: () => void }) {
                 <button
                   key={p.sec}
                   onClick={() => setDurationSec(p.sec)}
-                  className={`rounded border px-3 py-1 text-xs ${
+                  className={`rounded-md border px-3 py-1 text-xs ${
                     durationSec === p.sec
                       ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40'
                       : 'border-neutral-200 dark:border-neutral-700'
@@ -82,7 +82,7 @@ export function PomodoroTimer({ onClose }: { onClose: () => void }) {
             <select
               value={taskId}
               onChange={(e) => setTaskId(e.target.value)}
-              className="mb-3 w-full rounded border border-neutral-200 bg-transparent p-1.5 text-xs dark:border-neutral-700"
+              className="mb-3 w-full rounded-md border border-neutral-200 bg-transparent p-1.5 text-xs dark:border-neutral-700"
             >
               <option value="">タスクに紐付けない</option>
               {incompleteTasks.map((t) => (
@@ -99,7 +99,7 @@ export function PomodoroTimer({ onClose }: { onClose: () => void }) {
             if (running) stop();
             else start().catch((err) => console.error(err));
           }}
-          className="w-full rounded bg-neutral-900 py-2 text-sm text-white dark:bg-white dark:text-neutral-900"
+          className="w-full rounded-md bg-neutral-900 py-2 text-sm text-white dark:bg-white dark:text-neutral-900"
         >
           {running ? '中断' : '開始'}
         </button>

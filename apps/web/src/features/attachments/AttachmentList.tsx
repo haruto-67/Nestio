@@ -122,7 +122,7 @@ function AttachmentThumbnail({
       <img
         src={src}
         alt={attachment.filename}
-        className="h-16 w-full rounded bg-neutral-100 object-cover dark:bg-neutral-800"
+        className="h-16 w-full rounded-md bg-neutral-100 object-cover dark:bg-neutral-800"
         onError={(e) => {
           e.currentTarget.style.opacity = '0.3';
         }}

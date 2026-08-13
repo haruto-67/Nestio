@@ -58,7 +58,7 @@ export function KanbanBoard({
               const draggedId = e.dataTransfer.getData('text/nestio-task-id');
               if (draggedId) onChangePriority(draggedId, col.priority);
             }}
-            className={`flex w-64 shrink-0 flex-col rounded border-t-4 bg-neutral-50 dark:bg-neutral-900 ${col.accentClass} ${
+            className={`flex w-64 shrink-0 flex-col rounded-md border-t-4 bg-neutral-50 dark:bg-neutral-900 ${col.accentClass} ${
               dragOverPriority === col.priority ? 'ring-2 ring-blue-300' : ''
             }`}
           >
@@ -79,7 +79,7 @@ export function KanbanBoard({
                       e.dataTransfer.effectAllowed = 'move';
                     }}
                     onClick={() => onSelect(task.id)}
-                    className={`nestio-row-fade-in cursor-pointer rounded border border-neutral-200 bg-white p-2 shadow-sm dark:border-neutral-700 dark:bg-neutral-800 ${
+                    className={`nestio-row-fade-in cursor-pointer rounded-md border border-neutral-200 bg-white p-2 shadow-sm dark:border-neutral-700 dark:bg-neutral-800 ${
                       selectedTaskId === task.id ? 'ring-2 ring-blue-300' : ''
                     }`}
                   >

@@ -18,7 +18,7 @@ export function TrashView({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-96 flex-col rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
+        className="flex max-h-[85vh] w-96 flex-col rounded-xl bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">ゴミ箱</h2>
@@ -35,7 +35,7 @@ export function TrashView({ onClose }: { onClose: () => void }) {
           ) : (
             <ul className="mb-3 flex flex-col gap-1">
               {sortedTasks.map((t) => (
-                <li key={t.id} className="flex items-center justify-between gap-2 rounded px-1 py-1 text-sm">
+                <li key={t.id} className="flex items-center justify-between gap-2 rounded-md px-1 py-1 text-sm">
                   <span className="min-w-0 flex-1 truncate text-neutral-500 dark:text-neutral-400">{t.title}</span>
                   <button
                     onClick={() => restoreTask(t.id)}
@@ -56,7 +56,7 @@ export function TrashView({ onClose }: { onClose: () => void }) {
           ) : (
             <ul className="flex flex-col gap-1">
               {sortedNotes.map((n) => (
-                <li key={n.id} className="flex items-center justify-between gap-2 rounded px-1 py-1 text-sm">
+                <li key={n.id} className="flex items-center justify-between gap-2 rounded-md px-1 py-1 text-sm">
                   <span className="min-w-0 flex-1 truncate text-neutral-500 dark:text-neutral-400">
                     {n.title || '無題'}
                   </span>

@@ -22,7 +22,7 @@ export function NotesColorFilter({ colorFilter, onChangeColorFilter }: NotesColo
         <span className="px-2 pt-1 pb-0.5 text-xs font-semibold text-neutral-400 uppercase">色で絞り込み</span>
         <button
           onClick={() => onChangeColorFilter(null)}
-          className={`flex items-center gap-2 rounded px-2 py-1.5 text-left ${
+          className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left ${
             colorFilter === null
               ? 'bg-blue-100 font-medium dark:bg-blue-900/40'
               : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
@@ -36,7 +36,7 @@ export function NotesColorFilter({ colorFilter, onChangeColorFilter }: NotesColo
             key={color}
             onClick={() => onChangeColorFilter(color)}
             title={color}
-            className={`flex items-center gap-2 rounded px-2 py-1.5 text-left ${
+            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left ${
               colorFilter === color
                 ? 'bg-blue-100 font-medium dark:bg-blue-900/40'
                 : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'

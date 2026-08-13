@@ -30,11 +30,17 @@ interface SidebarProps {
   focused?: boolean;
   /** リストの選択やEsc等、キーボードでのツリー移動から離脱する時に呼ばれる */
   onLeaveFocus?: () => void;
+  /** マウスでサイドバーの項目をクリックした時に呼ばれる。クリックでもカーソルが
+   * その場所へ追従するようにする（改修11回目） */
+  onEnterFocus?: () => void;
 }
 
 export interface SidebarHandle {
   moveCursor: (delta: number) => void;
   activateCursor: () => void;
+  gotoFirst: () => void;
+  gotoLast: () => void;
+  typeahead: (char: string) => void;
 }
 
 interface TouchDragState {
@@ -43,15 +49,16 @@ interface TouchDragState {
   edge: 'before' | 'after' | null;
 }
 
-/** キーボードツリー移動(h→j/k→Enter)で辿れる項目。Sidebarの描画順と一致させる（改修10回目） */
+/** キーボードツリー移動(h→j/k→Enter)で辿れる項目。Sidebarの描画順と一致させる（改修10回目）。
+ * labelはタイプアヘッド（頭文字ジャンプ、改修11回目）の照合に使う */
 type NavEntry =
-  | { type: 'smart'; key: (typeof SMART_LISTS)[number]['key'] }
-  | { type: 'custom'; id: string }
-  | { type: 'list'; id: string }
-  | { type: 'folder'; id: string };
+  | { type: 'smart'; key: (typeof SMART_LISTS)[number]['key']; label: string }
+  | { type: 'custom'; id: string; label: string }
+  | { type: 'list'; id: string; label: string }
+  | { type: 'folder'; id: string; label: string };
 
 export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
-  { view, onSelectView, focused = false, onLeaveFocus },
+  { view, onSelectView, focused = false, onLeaveFocus, onEnterFocus },
   ref,
 ) {
   const { me } = useApp();
@@ -97,33 +104,83 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
   // キーボードツリー移動用の辿れる項目一覧。JSXでの描画順（スマートリスト→カスタムビュー→
   // トップレベルのリスト→フォルダ（開いていれば中のリストも続けて））と必ず一致させる
   const entries: NavEntry[] = [
-    ...SMART_LISTS.map((sl) => ({ type: 'smart' as const, key: sl.key })),
-    ...customViews.map((cv) => ({ type: 'custom' as const, id: cv.id })),
-    ...(listsByFolder.get(null) ?? []).map((l) => ({ type: 'list' as const, id: l.id })),
+    ...SMART_LISTS.map((sl) => ({ type: 'smart' as const, key: sl.key, label: sl.label })),
+    ...customViews.map((cv) => ({ type: 'custom' as const, id: cv.id, label: cv.name })),
+    ...(listsByFolder.get(null) ?? []).map((l) => ({ type: 'list' as const, id: l.id, label: l.name })),
     ...folders.flatMap((f) => [
-      { type: 'folder' as const, id: f.id },
+      { type: 'folder' as const, id: f.id, label: f.name },
       ...(openFolders.has(f.id)
-        ? (listsByFolder.get(f.id) ?? []).map((l) => ({ type: 'list' as const, id: l.id }))
+        ? (listsByFolder.get(f.id) ?? []).map((l) => ({ type: 'list' as const, id: l.id, label: l.name }))
         : []),
     ]),
   ];
   const [cursorIndex, setCursorIndex] = useState(0);
 
+  const findEntryIndexForView = (v: ViewSelection): number =>
+    entries.findIndex((e) => {
+      if (e.type === 'smart') return v.type === 'smart' && v.key === e.key;
+      if (e.type === 'custom') return v.type === 'custom' && v.id === e.id;
+      if (e.type === 'list') return v.type === 'list' && v.listId === e.id;
+      return false;
+    });
+
   // hキーでフォーカスが入った瞬間、現在表示中のビューにカーソルを合わせる（無ければ先頭）
   useEffect(() => {
     if (!focused) return;
-    const idx = entries.findIndex((e) => {
-      if (e.type === 'smart') return view.type === 'smart' && view.key === e.key;
-      if (e.type === 'custom') return view.type === 'custom' && view.id === e.id;
-      if (e.type === 'list') return view.type === 'list' && view.listId === e.id;
-      return false;
-    });
+    const idx = findEntryIndexForView(view);
     setCursorIndex(idx >= 0 ? idx : 0);
   }, [focused]);
 
+  /** フォルダ以外のエントリはカーソルが乗った時点で中央を即座にプレビュー切り替えする
+   * （エクスプローラーのツリーと同じ挙動。改修11回目） */
+  const previewEntry = (entry: NavEntry | undefined) => {
+    if (!entry) return;
+    if (entry.type === 'smart') onSelectView({ type: 'smart', key: entry.key });
+    else if (entry.type === 'custom') onSelectView({ type: 'custom', id: entry.id });
+    else if (entry.type === 'list') onSelectView({ type: 'list', listId: entry.id });
+  };
+
+  // マウスでのクリックでもキーボードのカーソルがそこに追従するようにする（改修11回目）
+  const selectEntryByClick = (v: ViewSelection) => {
+    const idx = findEntryIndexForView(v);
+    if (idx >= 0) setCursorIndex(idx);
+    onSelectView(v);
+    onEnterFocus?.();
+  };
+  const toggleFolderByClick = (id: string) => {
+    const idx = entries.findIndex((e) => e.type === 'folder' && e.id === id);
+    if (idx >= 0) setCursorIndex(idx);
+    toggleFolder(id);
+    onEnterFocus?.();
+  };
+
   useImperativeHandle(ref, () => ({
     moveCursor: (delta: number) => {
-      setCursorIndex((i) => Math.min(Math.max(i + delta, 0), entries.length - 1));
+      setCursorIndex((i) => {
+        const next = Math.min(Math.max(i + delta, 0), entries.length - 1);
+        previewEntry(entries[next]);
+        return next;
+      });
+    },
+    gotoFirst: () => {
+      setCursorIndex(0);
+      previewEntry(entries[0]);
+    },
+    gotoLast: () => {
+      const last = entries.length - 1;
+      setCursorIndex(last);
+      previewEntry(entries[last]);
+    },
+    typeahead: (char: string) => {
+      const lower = char.toLowerCase();
+      const matches = entries
+        .map((entry, i) => ({ i, entry }))
+        .filter(({ entry }) => entry.label.toLowerCase().startsWith(lower));
+      if (matches.length === 0) return;
+      const next = matches.find((m) => m.i > cursorIndex) ?? matches[0];
+      if (!next) return;
+      setCursorIndex(next.i);
+      previewEntry(next.entry);
     },
     activateCursor: () => {
       const entry = entries[cursorIndex];
@@ -132,9 +189,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
         toggleFolder(entry.id);
         return;
       }
-      if (entry.type === 'smart') onSelectView({ type: 'smart', key: entry.key });
-      else if (entry.type === 'custom') onSelectView({ type: 'custom', id: entry.id });
-      else onSelectView({ type: 'list', listId: entry.id });
+      previewEntry(entry);
       onLeaveFocus?.();
     },
   }));
@@ -240,8 +295,8 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
         {SMART_LISTS.map((sl) => (
           <button
             key={sl.key}
-            onClick={() => onSelectView({ type: 'smart', key: sl.key })}
-            className={`flex items-center gap-2 rounded px-2 py-1.5 text-left ${
+            onClick={() => selectEntryByClick({ type: 'smart', key: sl.key })}
+            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left ${
               cursorEntry?.type === 'smart' && cursorEntry.key === sl.key ? cursorRingClass : ''
             } ${
               view.type === 'smart' && view.key === sl.key
@@ -256,7 +311,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
         {customViews.map((cv) => (
           <div
             key={cv.id}
-            className={`group flex items-center gap-2 rounded px-2 ${
+            className={`group flex items-center gap-2 rounded-md px-2 ${
               cursorEntry?.type === 'custom' && cursorEntry.id === cv.id ? cursorRingClass : ''
             } ${
               view.type === 'custom' && view.id === cv.id
@@ -265,7 +320,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             }`}
           >
             <button
-              onClick={() => onSelectView({ type: 'custom', id: cv.id })}
+              onClick={() => selectEntryByClick({ type: 'custom', id: cv.id })}
               className="flex flex-1 items-center gap-2 py-1.5 text-left"
             >
               <TagIcon size={12} className="shrink-0 text-neutral-400" />
@@ -319,7 +374,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             color={l.color}
             active={view.type === 'list' && view.listId === l.id}
             cursorHighlighted={cursorEntry?.type === 'list' && cursorEntry.id === l.id}
-            onSelect={() => onSelectView({ type: 'list', listId: l.id })}
+            onSelect={() => selectEntryByClick({ type: 'list', listId: l.id })}
             onRename={(name) => renameList(l.id, name)}
             onDelete={() => removeList(l.id)}
             onChangeColor={(color) => changeListColor(l.id, color)}
@@ -339,12 +394,12 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
           return (
           <div key={f.id}>
             <div
-              className={`flex items-center gap-0.5 rounded px-1 py-1 hover:bg-neutral-200 dark:hover:bg-neutral-800 ${
+              className={`flex items-center gap-0.5 rounded-md px-1 py-1 hover:bg-neutral-200 dark:hover:bg-neutral-800 ${
                 cursorEntry?.type === 'folder' && cursorEntry.id === f.id ? cursorRingClass : ''
               }`}
             >
               <button
-                onClick={() => toggleFolder(f.id)}
+                onClick={() => toggleFolderByClick(f.id)}
                 className="flex min-h-8 min-w-6 items-center justify-center text-neutral-400"
               >
                 {openFolders.has(f.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -388,7 +443,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                     color={l.color}
                     active={view.type === 'list' && view.listId === l.id}
                     cursorHighlighted={cursorEntry?.type === 'list' && cursorEntry.id === l.id}
-                    onSelect={() => onSelectView({ type: 'list', listId: l.id })}
+                    onSelect={() => selectEntryByClick({ type: 'list', listId: l.id })}
                     onRename={(name) => renameList(l.id, name)}
                     onDelete={() => removeList(l.id)}
                     onChangeColor={(color) => changeListColor(l.id, color)}
@@ -506,7 +561,7 @@ function ListRow({
         const taskId = e.dataTransfer.getData('text/nestio-task-id');
         if (taskId) onDropTask(taskId);
       }}
-      className={`relative flex cursor-pointer items-center gap-1 rounded px-1 py-1 select-none [-webkit-touch-callout:none] ${
+      className={`relative flex cursor-pointer items-center gap-1 rounded-md px-1 py-1 select-none [-webkit-touch-callout:none] ${
         isBeingTouchDragged ? 'opacity-40' : ''
       } ${cursorHighlighted ? 'ring-2 ring-inset ring-blue-400' : ''} ${
         taskDragOver
@@ -563,7 +618,7 @@ function ListRow({
       {showColorPicker && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute top-full left-0 z-10 mt-1 flex w-44 flex-wrap gap-1 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+          className="absolute top-full left-0 z-10 mt-1 flex w-44 flex-wrap gap-1 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
         >
           {LIST_COLORS.map((c) => (
             <button

@@ -134,6 +134,9 @@ function MainLayout() {
   // 左側エリア（サイドバー）へキーボードフォーカスを移す機能（改修10回目）。
   // trueの間はj/k・Enterがタスク一覧ではなくサイドバーのツリー移動に使われる
   const [sidebarFocused, setSidebarFocused] = useState(false);
+  // メモ詳細(NoteEditor)が開いているか。NotesScreen内部で管理しているselectedNoteIdを
+  // Escの一括クローズ処理から参照するために持つ（改修11回目）
+  const [notesEditorOpen, setNotesEditorOpen] = useState(false);
   const sidebarRef = useRef<SidebarHandle>(null);
   const notesRef = useRef<NotesScreenHandle>(null);
   const { theme, toggleTheme } = useTheme();
@@ -159,6 +162,29 @@ function MainLayout() {
     const idx = selectedTaskId ? entries.findIndex((e) => e.id === selectedTaskId) : -1;
     const nextIdx = Math.min(Math.max(idx + delta, 0), entries.length - 1);
     setSelectedTaskId(entries[nextIdx]?.id ?? null);
+  };
+
+  const gotoFirstTask = () => {
+    const entries = visibleTaskEntriesRef.current;
+    setSelectedTaskId(entries[0]?.id ?? null);
+  };
+  const gotoLastTask = () => {
+    const entries = visibleTaskEntriesRef.current;
+    setSelectedTaskId(entries[entries.length - 1]?.id ?? null);
+  };
+
+  // タスク一覧でのタイプアヘッド（頭文字ジャンプ）。同じ文字を連続で押すと次の候補へ循環する（改修11回目）
+  const typeaheadTask = (char: string) => {
+    const entries = visibleTaskEntriesRef.current;
+    if (entries.length === 0) return;
+    const lower = char.toLowerCase();
+    const currentIdx = selectedTaskId ? entries.findIndex((e) => e.id === selectedTaskId) : -1;
+    const matches = entries
+      .map((e, i) => ({ i, title: tasks.find((t) => t.id === e.id)?.title ?? '' }))
+      .filter(({ title }) => title.toLowerCase().startsWith(lower));
+    if (matches.length === 0) return;
+    const next = matches.find((m) => m.i > currentIdx) ?? matches[0];
+    if (next) setSelectedTaskId(entries[next.i]?.id ?? null);
   };
 
   const findTask = (id: string) => tasks.find((t) => t.id === id);
@@ -273,10 +299,19 @@ function MainLayout() {
       if (showHelp) return setShowHelp(false);
       if (drawerOpen) return setDrawerOpen(false);
       if (sidebarFocused) return setSidebarFocused(false);
-      // 詳細パネルを閉じるだけの1段階目ではカーソル(selectedTaskId)は維持し、
-      // そこからj/kで移動を再開できるようにする。完全な選択解除は2段階目のEscで行う
-      if (detailOpen) return setDetailOpen(false);
-      if (selectedTaskId) return setSelectedTaskId(null);
+      // selectedTaskId/detailOpenはタスク画面専用、notesEditorOpenはメモ画面専用の状態。
+      // 画面を切り替えても値は保持される（カーソル位置を覚えておくため）ため、screenで
+      // 絞り込まないと「メモ画面にいるのにタスク画面の古い選択が先にEscを消費してしまい、
+      // メモ詳細が閉じない」不具合になる（改修11回目で発覚）
+      if (screen === 'tasks') {
+        // 詳細パネルを閉じるだけの1段階目ではカーソル(selectedTaskId)は維持し、
+        // そこからj/kで移動を再開できるようにする。完全な選択解除は2段階目のEscで行う
+        if (detailOpen) return setDetailOpen(false);
+        if (selectedTaskId) return setSelectedTaskId(null);
+      } else {
+        // メモ詳細も同様に、Escでは閉じるだけでメモ一覧のカーソル位置は維持する（改修11回目）
+        if (notesEditorOpen) return notesRef.current?.closeEditor();
+      }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -292,6 +327,8 @@ function MainLayout() {
     sidebarFocused,
     detailOpen,
     selectedTaskId,
+    notesEditorOpen,
+    screen,
   ]);
 
   // Ctrl/Cmd+Z(元に戻す)・Ctrl/Cmd+Shift+Z(やり直す)はTab/Escapeと同様固定のショートカット。
@@ -405,6 +442,27 @@ function MainLayout() {
     onFocusSidebar: () => {
       if (screen !== 'tasks') return;
       setSidebarFocused(true);
+    },
+    // タスク/メモ画面切り替え（改修11回目）。切り替え後は前の画面のサイドバーフォーカスを
+    // 引きずらないようリセットする
+    onSwitchScreen: () => {
+      setScreen(screen === 'tasks' ? 'notes' : 'tasks');
+      setSidebarFocused(false);
+    },
+    onGotoFirst: () => {
+      if (sidebarFocused) return sidebarRef.current?.gotoFirst();
+      if (screen === 'notes') return notesRef.current?.gotoFirst();
+      gotoFirstTask();
+    },
+    onGotoLast: () => {
+      if (sidebarFocused) return sidebarRef.current?.gotoLast();
+      if (screen === 'notes') return notesRef.current?.gotoLast();
+      gotoLastTask();
+    },
+    onTypeahead: (char) => {
+      if (sidebarFocused) return sidebarRef.current?.typeahead(char);
+      if (screen === 'notes') return notesRef.current?.typeahead(char);
+      typeaheadTask(char);
     },
   });
 
@@ -551,7 +609,14 @@ function MainLayout() {
               view={view}
               onSelectView={selectView}
               focused={sidebarFocused}
-              onLeaveFocus={() => setSidebarFocused(false)}
+              onLeaveFocus={() => {
+                setSidebarFocused(false);
+                // Enterでリストを選んだ時、カーソルも中央（先頭タスク）へ移す
+                // （改修11回目：エクスプローラーで右矢印/Enterするとペインの先頭項目に
+                // フォーカスが移るのと同じ挙動にしてほしいという要望）
+                gotoFirstTask();
+              }}
+              onEnterFocus={() => setSidebarFocused(true)}
             />
           )}
           {screen === 'notes' && (
@@ -596,34 +661,43 @@ function MainLayout() {
           </div>
         )}
 
-        {screen === 'tasks' ? (
-          <>
-            <TaskListView
-              view={view}
-              selectedTaskId={selectedTaskId}
-              onSelectTask={selectTask}
-              onCreateAndSelectTask={selectAndFocusTitle}
-              onVisibleTasksChange={handleVisibleTasksChange}
-              quickAddInputRef={(el) => {
-                quickAddInputElRef.current = el;
-              }}
-            />
-            <TaskDetailArea
-              taskId={detailOpen ? selectedTaskId : null}
-              onClose={() => setDetailOpen(false)}
-              onMoveUp={() => moveSelection(-1)}
-              onMoveDown={() => moveSelection(1)}
-              onIndent={indentSelected}
-              onOutdent={outdentSelected}
-              onSelectTask={selectTask}
-              onCreateAndSelectTask={selectAndFocusTitle}
-              autoFocusTitle={focusTitleTaskId !== null && focusTitleTaskId === selectedTaskId}
-              onTitleFocused={() => setFocusTitleTaskId(null)}
-            />
-          </>
-        ) : (
-          <NotesScreen ref={notesRef} colorFilter={notesColorFilter} />
-        )}
+        {/* 中央エリアをクリックした時、サイドバーにあったキーボードフォーカスをここへ戻す
+            （改修11回目：左エリアにカーソルがある時に中央をクリックしたらそこへ追従してほしい、
+            という要望への対応）。captureフェーズだとコントロール済みのチェックボックス
+            （タスク完了チェック）のonChangeより先にステート更新が走り、チェックが
+            効かなくなる不具合が出たためbubbleフェーズのonClickを使う。チェックボックスの
+            <label>は独自にstopPropagationしているため、チェックボックスのクリックはここまで
+            伝播しない（意図通り。行クリックには影響しない） */}
+        <div className="flex min-h-0 flex-1" onClick={() => setSidebarFocused(false)}>
+          {screen === 'tasks' ? (
+            <>
+              <TaskListView
+                view={view}
+                selectedTaskId={selectedTaskId}
+                onSelectTask={selectTask}
+                onCreateAndSelectTask={selectAndFocusTitle}
+                onVisibleTasksChange={handleVisibleTasksChange}
+                quickAddInputRef={(el) => {
+                  quickAddInputElRef.current = el;
+                }}
+              />
+              <TaskDetailArea
+                taskId={detailOpen ? selectedTaskId : null}
+                onClose={() => setDetailOpen(false)}
+                onMoveUp={() => moveSelection(-1)}
+                onMoveDown={() => moveSelection(1)}
+                onIndent={indentSelected}
+                onOutdent={outdentSelected}
+                onSelectTask={selectTask}
+                onCreateAndSelectTask={selectAndFocusTitle}
+                autoFocusTitle={focusTitleTaskId !== null && focusTitleTaskId === selectedTaskId}
+                onTitleFocused={() => setFocusTitleTaskId(null)}
+              />
+            </>
+          ) : (
+            <NotesScreen ref={notesRef} colorFilter={notesColorFilter} onEditorOpenChange={setNotesEditorOpen} />
+          )}
+        </div>
       </div>
 
       {showHelp && <ShortcutHelpModal onClose={() => setShowHelp(false)} />}

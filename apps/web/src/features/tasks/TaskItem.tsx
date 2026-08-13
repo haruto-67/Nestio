@@ -100,7 +100,7 @@ export function TaskItem({
           const draggedId = e.dataTransfer.getData('text/nestio-task-id');
           if (draggedId && draggedId !== task.id) onDropOntoTask(draggedId, task.id);
         }}
-        className={`nestio-row-fade-in group flex cursor-pointer items-center gap-2 rounded border-l-4 py-1.5 pr-2 ${
+        className={`nestio-row-fade-in group flex cursor-pointer items-center gap-2 rounded-md border-l-4 py-1.5 pr-2 ${
           task.priority > 0 ? PRIORITY_BORDER_COLOR[task.priority] : 'border-l-transparent'
         } ${
           dragOver

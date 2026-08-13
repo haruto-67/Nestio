@@ -242,7 +242,7 @@ export function TaskListView({
                 setShowDisplayMenu(false);
               }}
               title="絞り込み"
-              className={`relative flex min-h-8 min-w-8 items-center justify-center rounded border ${
+              className={`relative flex min-h-8 min-w-8 items-center justify-center rounded-md border ${
                 priorityFilter !== 'all' || tagFilter.length > 0
                   ? 'border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-300'
                   : 'border-neutral-200 text-neutral-500 dark:border-neutral-700'
@@ -256,13 +256,13 @@ export function TaskListView({
             {showFilterMenu && (
               <div
                 onClick={(e) => e.stopPropagation()}
-                className="absolute top-full right-0 z-10 mt-1 flex w-52 flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                className="absolute top-full right-0 z-10 mt-1 flex w-52 flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
               >
                 <select
                   value={priorityFilter}
                   onChange={(e) => setPriorityFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
                   title="優先度で絞り込み"
-                  className="w-full rounded border border-neutral-200 bg-transparent p-1 text-xs dark:border-neutral-700"
+                  className="w-full rounded-md border border-neutral-200 bg-transparent p-1 text-xs dark:border-neutral-700"
                 >
                   <option value="all">すべての優先度</option>
                   {([3, 2, 1, 0] as const).map((p) => (
@@ -278,7 +278,7 @@ export function TaskListView({
                       {allTags.map((tag) => (
                         <label
                           key={tag.id}
-                          className="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                          className="flex items-center gap-2 rounded-md px-1 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800"
                         >
                           <input
                             type="checkbox"
@@ -298,7 +298,7 @@ export function TaskListView({
                       <>
                         <button
                           onClick={() => setTagFilter([])}
-                          className="mt-1 rounded px-1 py-1 text-left text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                          className="mt-1 rounded-md px-1 py-1 text-left text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
                         >
                           クリア
                         </button>
@@ -307,7 +307,7 @@ export function TaskListView({
                             value={newViewName}
                             onChange={(e) => setNewViewName(e.target.value)}
                             placeholder="ビュー名を入力して保存"
-                            className="min-w-0 flex-1 rounded border border-neutral-200 bg-transparent px-1 py-0.5 text-xs dark:border-neutral-700"
+                            className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-transparent px-1 py-0.5 text-xs dark:border-neutral-700"
                           />
                           <button
                             onClick={() => {
@@ -319,7 +319,7 @@ export function TaskListView({
                               setShowFilterMenu(false);
                               showToast('カスタムビューを保存しました');
                             }}
-                            className="shrink-0 rounded border border-blue-300 px-1.5 text-xs text-blue-600 dark:border-blue-700 dark:text-blue-300"
+                            className="shrink-0 rounded-md border border-blue-300 px-1.5 text-xs text-blue-600 dark:border-blue-700 dark:text-blue-300"
                           >
                             保存
                           </button>
@@ -341,16 +341,16 @@ export function TaskListView({
                 setShowFilterMenu(false);
               }}
               title="表示方法"
-              className="flex min-h-8 min-w-8 items-center justify-center rounded border border-neutral-200 text-neutral-500 dark:border-neutral-700"
+              className="flex min-h-8 min-w-8 items-center justify-center rounded-md border border-neutral-200 text-neutral-500 dark:border-neutral-700"
             >
               <NestViewIcon size={16} />
             </button>
             {showDisplayMenu && (
               <div
                 onClick={(e) => e.stopPropagation()}
-                className="absolute top-full right-0 z-10 mt-1 flex w-44 flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+                className="absolute top-full right-0 z-10 mt-1 flex w-44 flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
               >
-                <div className="flex rounded border border-neutral-200 dark:border-neutral-700">
+                <div className="flex rounded-md border border-neutral-200 dark:border-neutral-700">
                   {(
                     [
                       { mode: 'list' as const, label: 'リスト', Icon: LayoutList },
@@ -362,7 +362,7 @@ export function TaskListView({
                       key={mode}
                       onClick={() => setDisplayMode(mode)}
                       title={label}
-                      className={`flex min-h-8 flex-1 items-center justify-center px-1.5 first:rounded-l last:rounded-r ${
+                      className={`flex min-h-8 flex-1 items-center justify-center px-1.5 first:rounded-l-lg last:rounded-r-lg ${
                         displayMode === mode
                           ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
                           : 'text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'
@@ -376,7 +376,7 @@ export function TaskListView({
                   <select
                     value={sortMode}
                     onChange={(e) => changeSortMode(e.target.value as ListSortMode)}
-                    className="w-full rounded border border-neutral-200 bg-transparent p-1 text-xs dark:border-neutral-700"
+                    className="w-full rounded-md border border-neutral-200 bg-transparent p-1 text-xs dark:border-neutral-700"
                   >
                     <option value="custom">カスタム</option>
                     <option value="due">期限順</option>
@@ -404,7 +404,7 @@ export function TaskListView({
           placeholder={targetListId ? '+ タスクを追加' : '先にリストを作成してください'}
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-neutral-400"
         />
-        <kbd className="hidden shrink-0 rounded border border-neutral-200 px-1 py-0.5 text-[10px] text-neutral-400 md:inline dark:border-neutral-700">
+        <kbd className="hidden shrink-0 rounded-md border border-neutral-200 px-1 py-0.5 text-[10px] text-neutral-400 md:inline dark:border-neutral-700">
           {keymap.quick_add}
         </kbd>
       </div>

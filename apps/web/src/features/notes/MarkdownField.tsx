@@ -160,7 +160,7 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
               document.execCommand('bold');
             }}
             title="太字（Ctrl/Cmd+B）"
-            className="flex h-6 w-6 items-center justify-center rounded border border-neutral-200 text-neutral-500 dark:border-neutral-700"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-neutral-200 text-neutral-500 dark:border-neutral-700"
           >
             <Bold size={12} />
           </button>
@@ -171,7 +171,7 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
               document.execCommand('italic');
             }}
             title="斜体（Ctrl/Cmd+I）"
-            className="flex h-6 w-6 items-center justify-center rounded border border-neutral-200 text-neutral-500 dark:border-neutral-700"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-neutral-200 text-neutral-500 dark:border-neutral-700"
           >
             <Italic size={12} />
           </button>
@@ -193,7 +193,7 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
           onDrop={handleDrop}
           style={{ minHeight }}
           data-markdown-field="true"
-          className="w-full resize-y overflow-auto rounded border border-neutral-200 bg-transparent p-2 text-sm text-neutral-900 outline-none focus:border-blue-400 dark:border-neutral-700 dark:text-white [&_img]:my-1 [&_img]:max-w-full [&_img]:rounded [&_a]:text-blue-500 [&_a]:underline [&_ul]:ml-4 [&_ul]:list-disc"
+          className="w-full resize-y overflow-auto rounded-md border border-neutral-200 bg-transparent p-2 text-sm text-neutral-900 outline-none focus:border-blue-400 dark:border-neutral-700 dark:text-white [&_img]:my-1 [&_img]:max-w-full [&_img]:rounded-md [&_a]:text-blue-500 [&_a]:underline [&_ul]:ml-4 [&_ul]:list-disc"
         />
       </div>
     </div>

@@ -93,7 +93,7 @@ export function RecurrenceEditor({ task, onChange, onSkipOccurrence }: Recurrenc
           <button
             key={m}
             onClick={() => applyPreset(m)}
-            className={`flex-1 rounded border py-1 text-xs ${
+            className={`flex-1 rounded-md border py-1 text-xs ${
               mode === m ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40' : 'border-neutral-200 dark:border-neutral-700'
             }`}
           >
@@ -108,7 +108,7 @@ export function RecurrenceEditor({ task, onChange, onSkipOccurrence }: Recurrenc
             <button
               key={label}
               onClick={() => toggleWeekday(i)}
-              className={`flex-1 rounded border py-1 text-xs ${
+              className={`flex-1 rounded-md border py-1 text-xs ${
                 weekdays.includes(i)
                   ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40'
                   : 'border-neutral-200 dark:border-neutral-700'
@@ -126,7 +126,7 @@ export function RecurrenceEditor({ task, onChange, onSkipOccurrence }: Recurrenc
           onChange={(e) => setCustomValue(e.target.value)}
           onBlur={applyCustom}
           placeholder="RRULE:FREQ=WEEKLY;BYDAY=TU,TH"
-          className="rounded border border-neutral-200 bg-transparent p-1.5 text-xs dark:border-neutral-700"
+          className="rounded-md border border-neutral-200 bg-transparent p-1.5 text-xs dark:border-neutral-700"
         />
       )}
 
@@ -141,7 +141,7 @@ export function RecurrenceEditor({ task, onChange, onSkipOccurrence }: Recurrenc
         <button
           onClick={onSkipOccurrence}
           title="完了扱いにはせず、次回の予定へ進める"
-          className="self-start rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:text-neutral-700 dark:border-neutral-700 dark:hover:text-neutral-200"
+          className="self-start rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 hover:text-neutral-700 dark:border-neutral-700 dark:hover:text-neutral-200"
         >
           今回だけスキップ
         </button>

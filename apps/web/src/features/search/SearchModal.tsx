@@ -59,7 +59,7 @@ export function SearchModal({ onClose, onSelectTask }: SearchModalProps) {
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
+        className="w-full max-w-lg rounded-xl bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
       >
         <input
           ref={inputRef}
@@ -86,7 +86,7 @@ export function SearchModal({ onClose, onSelectTask }: SearchModalProps) {
                     onSelectTask(t.id, t.list_id);
                     onClose();
                   }}
-                  className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
                 >
                   <span className="min-w-0 flex-1 truncate">{t.title}</span>
                   {listNameById.get(t.list_id) && (

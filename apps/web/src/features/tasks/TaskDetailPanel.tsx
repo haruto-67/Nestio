@@ -186,28 +186,28 @@ export function TaskDetailPanel({
           <button
             onClick={onMoveUp}
             title="上へ移動"
-            className="flex flex-1 items-center justify-center rounded border border-neutral-200 py-1.5 dark:border-neutral-700"
+            className="flex flex-1 items-center justify-center rounded-md border border-neutral-200 py-1.5 dark:border-neutral-700"
           >
             <ArrowUp size={14} />
           </button>
           <button
             onClick={onMoveDown}
             title="下へ移動"
-            className="flex flex-1 items-center justify-center rounded border border-neutral-200 py-1.5 dark:border-neutral-700"
+            className="flex flex-1 items-center justify-center rounded-md border border-neutral-200 py-1.5 dark:border-neutral-700"
           >
             <ArrowDown size={14} />
           </button>
           <button
             onClick={onOutdent}
             title="アウトデント（親から出す）"
-            className="flex flex-1 items-center justify-center rounded border border-neutral-200 py-1.5 dark:border-neutral-700"
+            className="flex flex-1 items-center justify-center rounded-md border border-neutral-200 py-1.5 dark:border-neutral-700"
           >
             <IndentDecrease size={14} />
           </button>
           <button
             onClick={onIndent}
             title="インデント（直前のタスクの子にする）"
-            className="flex flex-1 items-center justify-center rounded border border-neutral-200 py-1.5 dark:border-neutral-700"
+            className="flex flex-1 items-center justify-center rounded-md border border-neutral-200 py-1.5 dark:border-neutral-700"
           >
             <IndentIncrease size={14} />
           </button>
@@ -233,7 +233,7 @@ export function TaskDetailPanel({
         <select
           value={task.list_id}
           onChange={(e) => update({ list_id: e.target.value })}
-          className="rounded border border-neutral-200 bg-transparent p-1.5 text-sm dark:border-neutral-700"
+          className="rounded-md border border-neutral-200 bg-transparent p-1.5 text-sm dark:border-neutral-700"
         >
           {sortedLists.map((l) => (
             <option key={l.id} value={l.id}>
@@ -250,7 +250,7 @@ export function TaskDetailPanel({
             <button
               key={p}
               onClick={() => update({ priority: p })}
-              className={`flex-1 rounded border py-1 text-xs ${
+              className={`flex-1 rounded-md border py-1 text-xs ${
                 task.priority === p
                   ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40'
                   : 'border-neutral-200 dark:border-neutral-700'
@@ -327,7 +327,7 @@ function DueEditor({ task, onChange }: { task: TaskRow; onChange: (fields: TaskW
           <button
             key={m}
             onClick={() => setMode(m)}
-            className={`flex-1 rounded border py-1 text-xs ${
+            className={`flex-1 rounded-md border py-1 text-xs ${
               mode === m ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40' : 'border-neutral-200 dark:border-neutral-700'
             }`}
           >
@@ -340,7 +340,7 @@ function DueEditor({ task, onChange }: { task: TaskRow; onChange: (fields: TaskW
           type="date"
           value={task.due_date ?? ''}
           onChange={(e) => onChange({ due_date: e.target.value, due_at: null })}
-          className="rounded border border-neutral-200 bg-transparent p-1.5 text-sm dark:border-neutral-700"
+          className="rounded-md border border-neutral-200 bg-transparent p-1.5 text-sm dark:border-neutral-700"
         />
       )}
       {mode === 'timed' && (
@@ -350,7 +350,7 @@ function DueEditor({ task, onChange }: { task: TaskRow; onChange: (fields: TaskW
           onChange={(e) =>
             onChange({ due_at: e.target.value ? new Date(e.target.value).getTime() : null, due_date: null })
           }
-          className="rounded border border-neutral-200 bg-transparent p-1.5 text-sm dark:border-neutral-700"
+          className="rounded-md border border-neutral-200 bg-transparent p-1.5 text-sm dark:border-neutral-700"
         />
       )}
     </div>
@@ -376,7 +376,7 @@ function TagCreator({ onCreate }: { onCreate: (name: string) => void }) {
         }
       }}
       placeholder="新しいタグ名を入力してEnter"
-      className="rounded border border-neutral-200 bg-transparent p-1 text-xs dark:border-neutral-700"
+      className="rounded-md border border-neutral-200 bg-transparent p-1 text-xs dark:border-neutral-700"
     />
   );
 }
