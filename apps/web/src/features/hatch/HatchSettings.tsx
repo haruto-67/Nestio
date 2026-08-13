@@ -174,8 +174,8 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
                       }`}
                     >
                       <span
-                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                          t.enabled === 1 ? 'translate-x-4' : 'translate-x-0.5'
+                        className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                          t.enabled === 1 ? 'translate-x-4' : 'translate-x-0'
                         }`}
                       />
                     </button>
