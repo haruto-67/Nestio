@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, forwardRef, useImperativeHandle } from 'react';
 import { uuidv7 } from '@nestio/shared';
 import { Plus, Pin, LayoutGrid, List as ListIcon } from 'lucide-react';
 import { useApp } from '../../state/AppProvider.js';
@@ -11,6 +11,11 @@ import { BackgroundMark } from '../../ui/BackgroundMark.js';
 type ViewMode = 'gallery' | 'list';
 const VIEW_MODE_KEY = 'nestio_notes_view_mode';
 
+export interface NotesScreenHandle {
+  moveCursor: (delta: number) => void;
+  activateCursor: () => void;
+}
+
 /** contentEditableで保存されたHTMLからカード/一覧プレビュー用のプレーンテキストを取り出す */
 function stripHtmlPreview(html: string): string {
   const div = document.createElement('div');
@@ -18,22 +23,38 @@ function stripHtmlPreview(html: string): string {
   return (div.textContent ?? '').trim();
 }
 
-export function NotesScreen({ colorFilter }: { colorFilter: string | null }) {
+export const NotesScreen = forwardRef<NotesScreenHandle, { colorFilter: string | null }>(function NotesScreen(
+  { colorFilter },
+  ref,
+) {
   const { me } = useApp();
   const notes = useNotes();
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(
     () => (localStorage.getItem(VIEW_MODE_KEY) as ViewMode | null) ?? 'gallery',
   );
-
-  if (!me) return null;
-  const userId = me.id;
+  // j/k（move_up/move_down）でメモ一覧をカーソル移動できるようにする（改修10回目）。
+  // 選択中(selectedNoteId、エディタが開いているか)とは別に持ち、エディタを閉じてもカーソル位置を保つ
+  const [cursorIndex, setCursorIndex] = useState(0);
 
   const filtered = colorFilter === null ? notes : notes.filter((n) => n.color === colorFilter);
   const sorted = [...filtered].sort((a, b) => {
     if (a.pinned !== b.pinned) return b.pinned - a.pinned;
     return b.updated_at - a.updated_at;
   });
+
+  useImperativeHandle(ref, () => ({
+    moveCursor: (delta: number) => {
+      setCursorIndex((i) => Math.min(Math.max(i + delta, 0), Math.max(sorted.length - 1, 0)));
+    },
+    activateCursor: () => {
+      const note = sorted[cursorIndex];
+      if (note) setSelectedNoteId(note.id);
+    },
+  }));
+
+  if (!me) return null;
+  const userId = me.id;
 
   const changeViewMode = (mode: ViewMode) => {
     setViewMode(mode);
@@ -84,11 +105,13 @@ export function NotesScreen({ colorFilter }: { colorFilter: string | null }) {
             <p className="mt-10 text-center text-sm text-neutral-400">メモはまだありません</p>
           ) : viewMode === 'gallery' ? (
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-              {sorted.map((note) => (
+              {sorted.map((note, i) => (
                 <button
                   key={note.id}
                   onClick={() => setSelectedNoteId(note.id)}
-                  className="flex h-40 flex-col rounded-lg p-3 text-left shadow-sm"
+                  className={`flex h-40 flex-col rounded-lg p-3 text-left shadow-sm ${
+                    i === cursorIndex ? 'ring-2 ring-inset ring-blue-400' : ''
+                  }`}
                   style={{ backgroundColor: note.color }}
                 >
                   <div className="mb-1 flex items-center justify-between">
@@ -105,11 +128,13 @@ export function NotesScreen({ colorFilter }: { colorFilter: string | null }) {
             // ギャラリー表示のカードをそのまま横長にしたような見た目にする（改修7回目。
             // 以前はタスク一覧のような細い行＋色ドットで、ギャラリー表示との一体感が無かった）
             <div className="flex flex-col gap-2">
-              {sorted.map((note) => (
+              {sorted.map((note, i) => (
                 <button
                   key={note.id}
                   onClick={() => setSelectedNoteId(note.id)}
-                  className="flex flex-col rounded-lg p-4 text-left shadow-sm"
+                  className={`flex flex-col rounded-lg p-4 text-left shadow-sm ${
+                    i === cursorIndex ? 'ring-2 ring-inset ring-blue-400' : ''
+                  }`}
                   style={{ backgroundColor: note.color }}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -127,4 +152,4 @@ export function NotesScreen({ colorFilter }: { colorFilter: string | null }) {
       {selectedNoteId && <NoteEditor noteId={selectedNoteId} onClose={() => setSelectedNoteId(null)} />}
     </div>
   );
-}
+});

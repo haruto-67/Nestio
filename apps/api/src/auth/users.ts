@@ -20,3 +20,11 @@ export function findOrCreateUser(db: Database.Database, googleUser: GoogleUserIn
 export function findUserById(db: Database.Database, id: string): UserRow | undefined {
   return db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
 }
+
+export function findUserByGoogleSub(db: Database.Database, googleSub: string): UserRow | undefined {
+  return db.prepare('SELECT * FROM users WHERE google_sub = ?').get(googleSub) as UserRow | undefined;
+}
+
+export function findUserByEmail(db: Database.Database, email: string): UserRow | undefined {
+  return db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
+}

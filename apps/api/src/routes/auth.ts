@@ -14,9 +14,31 @@ import {
   getSessionIdFromRequest,
   destroySession,
 } from '../auth/session.js';
-import { findOrCreateUser, findUserById } from '../auth/users.js';
+import { findOrCreateUser, findUserById, findUserByGoogleSub, findUserByEmail } from '../auth/users.js';
+import { findAccessRequestBySub, createAccessRequest } from '../auth/access-requests.js';
+import { sendPushToUser } from '../push/sender.js';
+import type { Env } from '../env.js';
+import type Database from 'better-sqlite3';
+import type { Logger } from '../logger.js';
+import type { AccessRequestRow } from '../auth/access-requests.js';
 
 export const authRoute = new Hono<{ Variables: AppVariables }>();
+
+/** 新規申請があったことに管理者が気づけるよう、管理者アカウント宛にPush通知する（改修10回目） */
+async function notifyAdminOfNewAccessRequest(
+  db: Database.Database,
+  env: Env,
+  logger: Logger,
+  req: AccessRequestRow,
+): Promise<void> {
+  if (!env.ADMIN_EMAIL) return;
+  const admin = findUserByEmail(db, env.ADMIN_EMAIL);
+  if (!admin) return;
+  await sendPushToUser(db, env, logger, admin.id, {
+    title: '新しいアカウント申請',
+    body: `${req.display_name} (${req.email}) から申請がありました`,
+  });
+}
 
 authRoute.get('/auth/google', async (c) => {
   const env = c.get('env');
@@ -62,6 +84,29 @@ authRoute.get('/auth/google/callback', async (c) => {
     throw new ApiError('forbidden', 'メールアドレスが未検証のGoogleアカウントです');
   }
 
+  // 既存ユーザーでも管理者(ADMIN_EMAIL)でもない初回ログインは、即usersに登録せず
+  // 管理者の承認を待つ申請制にする（改修10回目。誰でも使えてしまう状態への対応）
+  const existingUser = findUserByGoogleSub(db, googleUser.sub);
+  const isAdmin = env.ADMIN_EMAIL !== '' && googleUser.email === env.ADMIN_EMAIL;
+  if (!existingUser && !isAdmin) {
+    let accessRequest = findAccessRequestBySub(db, googleUser.sub);
+    const isNewRequest = !accessRequest;
+    if (!accessRequest) accessRequest = createAccessRequest(db, googleUser);
+
+    if (accessRequest.status !== 'approved') {
+      if (isNewRequest) {
+        notifyAdminOfNewAccessRequest(db, env, logger, accessRequest).catch((err) =>
+          logger.error({ err }, 'access_request_admin_notify_failed'),
+        );
+      }
+      logger.info(
+        { google_sub: googleUser.sub, status: accessRequest.status },
+        'access_request_login_blocked',
+      );
+      return c.redirect(`${env.APP_ORIGIN}/?login=${accessRequest.status}`);
+    }
+  }
+
   const user = findOrCreateUser(db, googleUser);
   const { sessionId } = createSession(db, user.id, null);
   setSessionCookie(c, sessionId, env.NODE_ENV === 'production');
@@ -73,6 +118,7 @@ authRoute.get('/auth/google/callback', async (c) => {
 
 authRoute.get('/auth/me', requireAuth, (c) => {
   const db = c.get('db');
+  const env = c.get('env');
   const userId = c.get('userId');
   if (!userId) throw new ApiError('unauthenticated', 'セッションが見つかりません');
 
@@ -84,6 +130,7 @@ authRoute.get('/auth/me', requireAuth, (c) => {
     email: user.email,
     display_name: user.display_name,
     avatar_url: user.avatar_url,
+    is_admin: env.ADMIN_EMAIL !== '' && user.email === env.ADMIN_EMAIL,
   });
 });
 

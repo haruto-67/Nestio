@@ -30,13 +30,18 @@ describe('logs routes', () => {
     fs.rmSync(logDir, { recursive: true, force: true });
   });
 
-  function setupApp() {
-    const env = loadEnv({ NODE_ENV: 'test', LOG_LEVEL: 'error', LOG_DIR: logDir } as unknown as NodeJS.ProcessEnv);
+  function setupApp(adminEmail = '') {
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      LOG_LEVEL: 'error',
+      LOG_DIR: logDir,
+      ADMIN_EMAIL: adminEmail,
+    } as unknown as NodeJS.ProcessEnv);
     const logger = createLogger(env);
     return createApp(env, db, logger);
   }
 
-  it('GET /logs/recent は直近ログを新しい順で返す', async () => {
+  it('GET /logs/recent は管理者になら直近ログを新しい順で返す', async () => {
     db = createTestDb();
     const userId = uuidv7();
     insertTestUser(db, userId);
@@ -48,7 +53,7 @@ describe('logs routes', () => {
         JSON.stringify({ level: 50, time: 't', msg: 'second' }),
       ].join('\n') + '\n',
     );
-    const app = setupApp();
+    const app = setupApp(`${userId}@example.com`);
 
     const res = await app.request('/api/v1/logs/recent', { headers: { Cookie: `nestio_session=${sessionId}` } });
     expect(res.status).toBe(200);
@@ -68,7 +73,7 @@ describe('logs routes', () => {
         JSON.stringify({ level: 50, time: 't', msg: 'error' }),
       ].join('\n') + '\n',
     );
-    const app = setupApp();
+    const app = setupApp(`${userId}@example.com`);
 
     const res = await app.request('/api/v1/logs/recent?level=error', {
       headers: { Cookie: `nestio_session=${sessionId}` },
@@ -82,5 +87,16 @@ describe('logs routes', () => {
     const app = setupApp();
     const res = await app.request('/api/v1/logs/recent');
     expect(res.status).toBe(401);
+  });
+
+  it('管理者でないユーザーは403', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp('admin@example.com');
+
+    const res = await app.request('/api/v1/logs/recent', { headers: { Cookie: `nestio_session=${sessionId}` } });
+    expect(res.status).toBe(403);
   });
 });

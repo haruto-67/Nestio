@@ -1,14 +1,15 @@
 import { Hono } from 'hono';
 import type { AppVariables } from '../middleware/request-context.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { ApiError } from '../errors.js';
 import { readRecentLogs } from '../logs/reader.js';
 
 export const logsRoute = new Hono<{ Variables: AppVariables }>();
 
-logsRoute.use('/logs/*', requireAuth);
+// ログファイルはユーザー単位に分かれておらずサーバー全体の内容が見えるため、
+// 申請制導入（改修10回目）に伴い管理者のみ閲覧可能にする
+logsRoute.use('/logs/*', requireAuth, requireAdmin);
 
-/** 自分専用の簡易ログビューア（docs/phases.md Phase 6）。マルチユーザー化はしていないため全ログを見せてよい */
 logsRoute.get('/logs/recent', (c) => {
   const userId = c.get('userId');
   if (!userId) throw new ApiError('unauthenticated', 'セッションが見つかりません');

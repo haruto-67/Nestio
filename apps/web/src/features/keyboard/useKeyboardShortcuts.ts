@@ -16,8 +16,11 @@ export interface ShortcutHandlers {
   onOutdent: () => void;
   onAddSubtask: () => void;
   onAddSiblingSubtask: () => void;
-  onToggleSelectedCollapse: () => void;
+  /** Enter：状況に応じて選択中タスクの折りたたみトグル/サイドバーでの選択/メモの選択を行う（改修10回目で汎用化） */
+  onActivate: () => void;
   onFocusSelectedTitle: () => void;
+  /** 左側エリア（サイドバーのフォルダ/リストツリー）へキーボードフォーカスを移す固定ショートカット（改修10回目） */
+  onFocusSidebar: () => void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -106,7 +109,15 @@ export function useKeyboardShortcuts(keymap: Record<KeymapAction, string>, handl
         // ブラウザがこのキー入力自体を新しくフォーカスされた入力欄へ文字として送ってしまうことがある
         if (e.key === 'Enter') {
           e.preventDefault();
-          h.onToggleSelectedCollapse();
+          h.onActivate();
+          return;
+        }
+        // 左側エリア（サイドバー）へフォーカスを移す固定ショートカット。vimのhと同じ「左」の意味合いで
+        // 割り当てる。j/k（move_up/move_down）は元々タスク一覧の移動用だったが、フォーカスが
+        // サイドバーにある間はそちらの移動に使う（改修10回目）
+        if (e.key === 'h') {
+          e.preventDefault();
+          h.onFocusSidebar();
           return;
         }
         // 選択中タスクの詳細パネルのタイトル欄へフォーカスを移す固定ショートカット。

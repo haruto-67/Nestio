@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { uuidv7 } from '@nestio/shared';
-import { Menu, Timer, Search, Egg, Keyboard, Trash2, Settings } from 'lucide-react';
+import { Menu, Timer, Search, Egg, Keyboard, Trash2, Settings, ShieldCheck } from 'lucide-react';
 import { AppProvider, useApp } from './state/AppProvider.js';
 import { useTasks, useLists } from './db/queries.js';
 import { SMART_LISTS } from './lib/task-views.js';
@@ -10,7 +10,7 @@ import { PushPermissionPrompt } from './ui/PushPermissionPrompt.js';
 import { showToast } from './ui/toast.js';
 import { useResizableWidth } from './lib/useResizableWidth.js';
 import { LoginScreen } from './features/auth/LoginScreen.js';
-import { Sidebar } from './features/tree/Sidebar.js';
+import { Sidebar, type SidebarHandle } from './features/tree/Sidebar.js';
 import { TaskListView } from './features/tasks/TaskListView.js';
 import { TaskDetailArea } from './features/tasks/TaskDetailArea.js';
 import { useTheme } from './state/useTheme.js';
@@ -20,10 +20,11 @@ import { useKeyboardShortcuts } from './features/keyboard/useKeyboardShortcuts.j
 import { ShortcutHelpModal } from './features/keyboard/ShortcutHelpModal.js';
 import { KeymapSettings } from './features/keyboard/KeymapSettings.js';
 import { SearchModal } from './features/search/SearchModal.js';
-import { NotesScreen } from './features/notes/NotesScreen.js';
+import { NotesScreen, type NotesScreenHandle } from './features/notes/NotesScreen.js';
 import { NotesColorFilter } from './features/notes/NotesColorFilter.js';
 import { PomodoroTimer } from './features/pomodoro/PomodoroTimer.js';
 import { HatchSettings } from './features/hatch/HatchSettings.js';
+import { AdminPanel } from './features/admin/AdminPanel.js';
 import { TrashView } from './features/trash/TrashView.js';
 import { upsertTask, deleteTask, completeTask } from './state/actions.js';
 import { nextSortOrder } from './lib/sort-order.js';
@@ -116,6 +117,10 @@ function MainLayout() {
     localStorage.setItem(LAST_VIEW_KEY, JSON.stringify(v));
   };
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  // selectedTaskIdは「カーソル(j/kでの選択位置)」、detailOpenは「詳細パネルが開いているか」を
+  // 別々に持つ。以前はこの2つが同じ状態だったため、詳細を閉じる/Escで抜けるとカーソルも
+  // 消えてしまい、そこからj/kで移動を再開できなかった（改修10回目のフィードバック対応）
+  const [detailOpen, setDetailOpen] = useState(false);
   const [focusTitleTaskId, setFocusTitleTaskId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -123,8 +128,14 @@ function MainLayout() {
   const [showSearch, setShowSearch] = useState(false);
   const [showPomodoro, setShowPomodoro] = useState(false);
   const [showHatchSettings, setShowHatchSettings] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [notesColorFilter, setNotesColorFilter] = useState<string | null>(null);
+  // 左側エリア（サイドバー）へキーボードフォーカスを移す機能（改修10回目）。
+  // trueの間はj/k・Enterがタスク一覧ではなくサイドバーのツリー移動に使われる
+  const [sidebarFocused, setSidebarFocused] = useState(false);
+  const sidebarRef = useRef<SidebarHandle>(null);
+  const notesRef = useRef<NotesScreenHandle>(null);
   const { theme, toggleTheme } = useTheme();
   const { keymap } = useKeymap();
   const sidebarResize = useResizableWidth('nestio_sidebar_width', 256, 160, 900);
@@ -134,6 +145,7 @@ function MainLayout() {
   const selectView = (v: ViewSelection) => {
     setView(v);
     setSelectedTaskId(null);
+    setDetailOpen(false);
     setDrawerOpen(false);
   };
 
@@ -184,9 +196,17 @@ function MainLayout() {
     upsertTask(me.id, selectedTaskId, { parent_id: grandParentId, sort_order: nextSortOrder(siblings) });
   };
 
+  // カーソル移動(selectedTaskId)と詳細パネルの開閉(detailOpen)をまとめて行う通常の「選択」操作。
+  // 一覧の行クリックや詳細パネル内でのタスク切り替えはこちらを使う
+  const selectTask = (id: string | null) => {
+    setSelectedTaskId(id);
+    setDetailOpen(id !== null);
+  };
+
   // 新規作成したタスクは一覧上で選択するだけでなく、詳細パネルのタイトル欄にも自動フォーカスする
   const selectAndFocusTitle = (id: string) => {
     setSelectedTaskId(id);
+    setDetailOpen(true);
     setFocusTitleTaskId(id);
   };
 
@@ -248,14 +268,31 @@ function MainLayout() {
       if (showPomodoro) return setShowPomodoro(false);
       if (showTrash) return setShowTrash(false);
       if (showHatchSettings) return setShowHatchSettings(false);
+      if (showAdminPanel) return setShowAdminPanel(false);
       if (showKeymapSettings) return setShowKeymapSettings(false);
       if (showHelp) return setShowHelp(false);
       if (drawerOpen) return setDrawerOpen(false);
+      if (sidebarFocused) return setSidebarFocused(false);
+      // 詳細パネルを閉じるだけの1段階目ではカーソル(selectedTaskId)は維持し、
+      // そこからj/kで移動を再開できるようにする。完全な選択解除は2段階目のEscで行う
+      if (detailOpen) return setDetailOpen(false);
       if (selectedTaskId) return setSelectedTaskId(null);
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showSearch, showPomodoro, showTrash, showHatchSettings, showKeymapSettings, showHelp, drawerOpen, selectedTaskId]);
+  }, [
+    showSearch,
+    showPomodoro,
+    showTrash,
+    showHatchSettings,
+    showAdminPanel,
+    showKeymapSettings,
+    showHelp,
+    drawerOpen,
+    sidebarFocused,
+    detailOpen,
+    selectedTaskId,
+  ]);
 
   // Ctrl/Cmd+Z(元に戻す)・Ctrl/Cmd+Shift+Z(やり直す)はTab/Escapeと同様固定のショートカット。
   // 入力欄・contentEditable内ではブラウザ標準のテキスト編集undoを優先させ、アプリ側では奪わない
@@ -329,6 +366,7 @@ function MainLayout() {
       if (!selectedTaskId) return;
       deleteTask(selectedTaskId);
       setSelectedTaskId(null);
+      setDetailOpen(false);
       showToast('削除しました');
     },
     onSetPriority: (p) => {
@@ -338,15 +376,35 @@ function MainLayout() {
     onToggleTheme: toggleTheme,
     onShowHelp: () => setShowHelp(true),
     onGotoToday: () => selectView({ type: 'smart', key: 'today' }),
-    onMoveUp: () => moveSelection(-1),
-    onMoveDown: () => moveSelection(1),
+    // フォーカスが左側のサイドバーにある間はj/kでツリーを移動し、メモ画面ではメモ一覧を移動する。
+    // それ以外（通常のタスク一覧）は従来通りタスクのカーソル移動（改修10回目）
+    onMoveUp: () => {
+      if (sidebarFocused) return sidebarRef.current?.moveCursor(-1);
+      if (screen === 'notes') return notesRef.current?.moveCursor(-1);
+      moveSelection(-1);
+    },
+    onMoveDown: () => {
+      if (sidebarFocused) return sidebarRef.current?.moveCursor(1);
+      if (screen === 'notes') return notesRef.current?.moveCursor(1);
+      moveSelection(1);
+    },
     onIndent: indentSelected,
     onOutdent: outdentSelected,
     onAddSubtask: addSubtaskToSelected,
     onAddSiblingSubtask: addSiblingSubtaskToSelected,
-    onToggleSelectedCollapse: toggleSelectedCollapse,
+    onActivate: () => {
+      if (sidebarFocused) return sidebarRef.current?.activateCursor();
+      if (screen === 'notes') return notesRef.current?.activateCursor();
+      toggleSelectedCollapse();
+    },
     onFocusSelectedTitle: () => {
       if (selectedTaskId) setFocusTitleTaskId(selectedTaskId);
+    },
+    // hキー：左側エリア（サイドバー）へフォーカスを移す。メモ画面ではサイドバーが
+    // 表示されない（NotesColorFilterに差し替わる）ため無効（改修10回目）
+    onFocusSidebar: () => {
+      if (screen !== 'tasks') return;
+      setSidebarFocused(true);
     },
   });
 
@@ -390,6 +448,15 @@ function MainLayout() {
           >
             <Keyboard size={18} />
           </button>
+          {me?.is_admin && (
+            <button
+              onClick={() => setShowAdminPanel(true)}
+              title="アカウント申請"
+              className="flex min-h-11 min-w-11 items-center justify-center text-emerald-500"
+            >
+              <ShieldCheck size={18} />
+            </button>
+          )}
           <button
             onClick={() => setShowKeymapSettings(true)}
             title="設定"
@@ -443,6 +510,15 @@ function MainLayout() {
               >
                 <Trash2 size={16} />
               </button>
+              {me?.is_admin && (
+                <button
+                  onClick={() => setShowAdminPanel(true)}
+                  title="アカウント申請"
+                  className="text-emerald-500 hover:text-emerald-600"
+                >
+                  <ShieldCheck size={16} />
+                </button>
+              )}
               <button
                 onClick={() => setShowKeymapSettings(true)}
                 title="設定"
@@ -469,7 +545,15 @@ function MainLayout() {
           <div className="flex justify-center border-b border-neutral-200 py-1 dark:border-neutral-800">
             <SyncStatusIndicator />
           </div>
-          {screen === 'tasks' && <Sidebar view={view} onSelectView={selectView} />}
+          {screen === 'tasks' && (
+            <Sidebar
+              ref={sidebarRef}
+              view={view}
+              onSelectView={selectView}
+              focused={sidebarFocused}
+              onLeaveFocus={() => setSidebarFocused(false)}
+            />
+          )}
           {screen === 'notes' && (
             <NotesColorFilter colorFilter={notesColorFilter} onChangeColorFilter={setNotesColorFilter} />
           )}
@@ -517,7 +601,7 @@ function MainLayout() {
             <TaskListView
               view={view}
               selectedTaskId={selectedTaskId}
-              onSelectTask={setSelectedTaskId}
+              onSelectTask={selectTask}
               onCreateAndSelectTask={selectAndFocusTitle}
               onVisibleTasksChange={handleVisibleTasksChange}
               quickAddInputRef={(el) => {
@@ -525,20 +609,20 @@ function MainLayout() {
               }}
             />
             <TaskDetailArea
-              taskId={selectedTaskId}
-              onClose={() => setSelectedTaskId(null)}
+              taskId={detailOpen ? selectedTaskId : null}
+              onClose={() => setDetailOpen(false)}
               onMoveUp={() => moveSelection(-1)}
               onMoveDown={() => moveSelection(1)}
               onIndent={indentSelected}
               onOutdent={outdentSelected}
-              onSelectTask={setSelectedTaskId}
+              onSelectTask={selectTask}
               onCreateAndSelectTask={selectAndFocusTitle}
               autoFocusTitle={focusTitleTaskId !== null && focusTitleTaskId === selectedTaskId}
               onTitleFocused={() => setFocusTitleTaskId(null)}
             />
           </>
         ) : (
-          <NotesScreen colorFilter={notesColorFilter} />
+          <NotesScreen ref={notesRef} colorFilter={notesColorFilter} />
         )}
       </div>
 
@@ -547,6 +631,7 @@ function MainLayout() {
         <KeymapSettings theme={theme} onToggleTheme={toggleTheme} onClose={() => setShowKeymapSettings(false)} />
       )}
       {showHatchSettings && <HatchSettings onClose={() => setShowHatchSettings(false)} />}
+      {showAdminPanel && me?.is_admin && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
       {showPomodoro && <PomodoroTimer onClose={() => setShowPomodoro(false)} />}
       {showTrash && <TrashView onClose={() => setShowTrash(false)} />}
       {showSearch && (

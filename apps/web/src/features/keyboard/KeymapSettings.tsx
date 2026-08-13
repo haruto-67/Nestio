@@ -236,17 +236,19 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
           </ul>
         </div>
 
-        <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">サーバーログ（自分専用）</span>
-            <button
-              onClick={() => setShowLogViewer(true)}
-              className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-            >
-              開く
-            </button>
+        {me?.is_admin && (
+          <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">サーバーログ（管理者用）</span>
+              <button
+                onClick={() => setShowLogViewer(true)}
+                className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                開く
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <div className="flex items-center justify-between">

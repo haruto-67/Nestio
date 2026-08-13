@@ -21,11 +21,30 @@ describe('auth sessions routes', () => {
     db?.close();
   });
 
-  function setupApp() {
-    const env = loadEnv({ NODE_ENV: 'test' } as unknown as NodeJS.ProcessEnv);
+  function setupApp(adminEmail = '') {
+    const env = loadEnv({ NODE_ENV: 'test', ADMIN_EMAIL: adminEmail } as unknown as NodeJS.ProcessEnv);
     const logger = createLogger(env);
     return createApp(env, db, logger);
   }
+
+  it('GET /auth/me はADMIN_EMAILと一致する場合のみis_admin=trueを返す', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+
+    const nonAdminApp = setupApp('someone-else@example.com');
+    const nonAdminRes = await nonAdminApp.request('/api/v1/auth/me', {
+      headers: { Cookie: `nestio_session=${sessionId}` },
+    });
+    expect((await nonAdminRes.json()) as { is_admin: boolean }).toMatchObject({ is_admin: false });
+
+    const adminApp = setupApp(`${userId}@example.com`);
+    const adminRes = await adminApp.request('/api/v1/auth/me', {
+      headers: { Cookie: `nestio_session=${sessionId}` },
+    });
+    expect((await adminRes.json()) as { is_admin: boolean }).toMatchObject({ is_admin: true });
+  });
 
   it('GET /auth/sessions は自分のセッション一覧を新しい順で返し、現在のセッションにis_currentを付ける', async () => {
     db = createTestDb();

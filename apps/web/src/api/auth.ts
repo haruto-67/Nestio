@@ -5,6 +5,7 @@ export interface Me {
   email: string;
   display_name: string;
   avatar_url: string | null;
+  is_admin: boolean;
 }
 
 export function fetchMe(): Promise<Me> {

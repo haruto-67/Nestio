@@ -18,8 +18,9 @@ const PRIORITY_BORDER_COLOR: Record<number, string> = {
 };
 const PRIORITY_LABEL: Record<number, string> = { 1: '低', 2: '中', 3: '高' };
 
-// 20pxだと親と1階層目の差が分かりにくいという指摘（改修9回目）を受けて28pxに拡大
-const INDENT_PER_DEPTH_PX = 28;
+// 28pxでもまだ「サブタスクのサブタスク」と見分けにくいという指摘（改修10回目）を受けて56pxに拡大。
+// 新しい1階層分(56px)が旧2階層分(28px*2=56px)とほぼ同じ見た目になるようにした
+const INDENT_PER_DEPTH_PX = 56;
 
 interface TaskItemProps {
   node: TaskNode;

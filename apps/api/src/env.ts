@@ -10,6 +10,9 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   GOOGLE_REDIRECT_URI: z.string().url().default('http://localhost:3000/api/v1/auth/google/callback'),
   SESSION_SECRET: z.string().default('dev-insecure-session-secret-change-me'),
+  /** このメールアドレスでログインした人だけが管理者（アカウント申請の承認・サーバーログ閲覧）になる。
+   *  役割テーブルを持つほどの規模ではないため、単一の管理者を環境変数で固定する（改修10回目） */
+  ADMIN_EMAIL: z.string().default(''),
 
   VAPID_PUBLIC_KEY: z.string().default(''),
   VAPID_PRIVATE_KEY: z.string().default(''),

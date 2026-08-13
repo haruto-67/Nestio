@@ -19,6 +19,7 @@ import { hatchRoute } from './routes/hatch.js';
 import { logsRoute } from './routes/logs.js';
 import { exportRoute } from './routes/export.js';
 import { streakRoute } from './routes/streak.js';
+import { adminRoute } from './routes/admin.js';
 import { buildAuthServerMetadata, buildProtectedResourceMetadata } from './mcp/metadata.js';
 
 export function createApp(env: Env, db: Database.Database, logger: Logger) {
@@ -47,6 +48,7 @@ export function createApp(env: Env, db: Database.Database, logger: Logger) {
   app.route('/api/v1', logsRoute);
   app.route('/api/v1', exportRoute);
   app.route('/api/v1', streakRoute);
+  app.route('/api/v1', adminRoute);
 
   // MCP Authorization仕様（RFC 9728 / RFC 8414）のディスカバリー用エンドポイントはドメイン
   // ルート直下に置く必要があり、/api/v1配下のmcpRouteからは生やせない。

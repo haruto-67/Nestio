@@ -12,8 +12,12 @@ import { useKeymap } from '../../state/useKeymap.js';
 const FIXED_SHORTCUTS: { keys: string; label: string }[] = [
   { keys: '1〜4', label: '優先度を変更（なし/低/中/高）' },
   { keys: 'G → T', label: '「今日」ビューへ' },
-  { keys: 'Enter', label: '選択中タスクのサブタスクを折りたたみ/展開' },
+  {
+    keys: 'Enter',
+    label: '選択中タスクのサブタスクを折りたたみ/展開（サイドバー移動中はその項目を開く、メモ画面ではメモを開く）',
+  },
   { keys: 'E', label: '選択中タスクのタイトル欄へフォーカス（メモ欄へはTabで移動）' },
+  { keys: 'H', label: '左側のサイドバーへフォーカスを移す（J/Kで移動、Enterで開いて中央へ戻る、Escで戻る）' },
   { keys: 'Cmd/Ctrl + K', label: '検索（キーマップの割り当てに加えて常に有効）' },
   { keys: 'Cmd/Ctrl + Z', label: '元に戻す' },
   { keys: 'Cmd/Ctrl + Shift + Z', label: 'やり直す' },
