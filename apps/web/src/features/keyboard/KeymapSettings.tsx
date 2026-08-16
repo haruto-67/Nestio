@@ -7,7 +7,6 @@ import { sendTestPush } from '../../api/push.js';
 import { createCalendarFeed, listCalendarFeeds, revokeCalendarFeed, type CalendarFeed } from '../../api/calendar.js';
 import { exportAllData, importAllData } from '../../api/export.js';
 import { listSessions, revokeSession, type SessionInfo } from '../../api/sessions.js';
-import { LogViewer } from '../logs/LogViewer.js';
 import { formatDateTimeJst } from '../../lib/datetime.js';
 
 interface KeymapSettingsProps {
@@ -23,7 +22,6 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
   const [pushState, setPushState] = useState<PushSubscriptionState>({ permission: 'default', subscribed: false });
   const [feeds, setFeeds] = useState<CalendarFeed[]>([]);
   const [calendarStatus, setCalendarStatus] = useState<string | null>(null);
-  const [showLogViewer, setShowLogViewer] = useState(false);
   const [exportImportStatus, setExportImportStatus] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
 
@@ -236,20 +234,6 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
           </ul>
         </div>
 
-        {me?.is_admin && (
-          <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">サーバーログ（管理者用）</span>
-              <button
-                onClick={() => setShowLogViewer(true)}
-                className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-              >
-                開く
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <div className="flex items-center justify-between">
             <span className="text-xs text-neutral-500 dark:text-neutral-400">同期の不具合を報告</span>
@@ -294,7 +278,6 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
           {exportImportStatus && <p className="mt-1 text-xs text-neutral-400">{exportImportStatus}</p>}
         </div>
       </div>
-      {showLogViewer && <LogViewer onClose={() => setShowLogViewer(false)} />}
     </div>
   );
 }

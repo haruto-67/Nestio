@@ -195,7 +195,9 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
   }));
 
   const cursorEntry = focused ? (entries[cursorIndex] ?? null) : null;
-  const cursorRingClass = 'ring-2 ring-inset ring-blue-400';
+  // 以前は青いring(ring-2 ring-inset ring-blue-400)でキーボードカーソル位置を示していたが、
+  // 目立ちすぎるとのフィードバックで廃止した（改修11回目）
+  const cursorRingClass = '';
 
   if (!me) return null;
   const userId = me.id;

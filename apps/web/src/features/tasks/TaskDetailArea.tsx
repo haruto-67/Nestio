@@ -60,15 +60,21 @@ export function TaskDetailArea({ taskId, onClose, ...panelProps }: TaskDetailAre
 
   return (
     <div
-      className={`relative h-full shrink-0 overflow-x-hidden ${visibilityClass}`}
+      // モバイル幅ではPC用の固定パネル幅のまま表示されて画面の左側に寄って見えてしまっていたため
+      // （改修11回目）、モバイルでは画面全体を覆うfixedオーバーレイにし、タスク一覧を裏に
+      // 見せたまま右から出てくるフルスクリーン遷移にする。PC幅は従来通り常設パネル
+      // !important付きのwidth上書きはmax-md（モバイル）限定にする。md:を使うと非importantな
+      // 上書きになり、!importantなクラスは常時（PC幅でも）勝ってしまいstyleのwidthを潰してしまう
+      className={`fixed inset-0 z-40 h-full max-md:!w-full overflow-x-hidden bg-[#FBFAF6] md:relative md:inset-auto md:z-auto md:shrink-0 md:bg-transparent dark:bg-[#1a1a18] md:dark:bg-transparent ${visibilityClass}`}
       style={{ width: panelResize.width }}
     >
       {/* ハンドルは非スクロールの外枠に置く。asideの内側に置くと（改修5回目で判明）
-          absolute配置がaside自身のスクロールに巻き込まれ、スクロール後に見失いやすくなる */}
+          absolute配置がaside自身のスクロールに巻き込まれ、スクロール後に見失いやすくなる。
+          モバイルではフルスクリーン表示なのでリサイズ操作自体が不要（改修11回目） */}
       <div
         onMouseDown={(e) => panelResize.startResize(-1)(e)}
         title="ドラッグして幅を変更"
-        className="group absolute top-0 left-0 z-10 h-full w-3 -translate-x-1/2 cursor-col-resize touch-none"
+        className="group absolute top-0 left-0 z-10 hidden h-full w-3 -translate-x-1/2 cursor-col-resize touch-none md:block"
       >
         <div className="mx-auto h-full w-1 group-hover:bg-blue-400/60" />
       </div>

@@ -135,12 +135,14 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
   };
 
   return (
-    <div className="flex h-full flex-1 overflow-hidden">
+    <div className="flex h-full min-w-0 flex-1 overflow-hidden">
       {/* メモ詳細が開いている間、モバイル幅では一覧を隠して詳細に画面を譲る
           （改修11回目フォローアップ：TaskListView/TaskDetailAreaと同じ不具合がメモにもあった） */}
       <div
         ref={containerRef}
-        className={`relative flex-1 overflow-y-auto p-4 ${selectedNoteId ? 'hidden md:block' : 'block'}`}
+        // min-w-0が無いとflexアイテムは中身（本文プレビュー等）の幅ぶん縮まずに広がってしまい、
+        // リスト表示（横長カード）が画面からはみ出していた（改修11回目フォローアップ）
+        className={`relative min-w-0 flex-1 overflow-y-auto p-4 ${selectedNoteId ? 'hidden md:block' : 'block'}`}
       >
         <BackgroundMark className="pointer-events-none absolute right-6 bottom-6 z-0 h-48 w-48 opacity-40" />
         <div className="relative z-10 mb-4 flex items-center justify-between">
@@ -182,14 +184,16 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
                   key={note.id}
                   data-note-index={i}
                   onClick={() => selectByClick(i, note.id)}
-                  className={`flex h-40 flex-col rounded-xl p-3 text-left shadow-sm ${
+                  className={`flex h-40 min-w-0 flex-col rounded-xl p-3 text-left shadow-sm ${
                     i === cursorIndex ? 'ring-2 ring-inset ring-blue-400' : ''
                   }`}
                   style={{ backgroundColor: note.color }}
                 >
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="truncate text-sm font-medium text-neutral-800">{note.title || '無題'}</span>
-                    {note.pinned === 1 && <Pin size={12} className="text-amber-600" />}
+                  <div className="mb-1 flex min-w-0 items-center justify-between">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-800">
+                      {note.title || '無題'}
+                    </span>
+                    {note.pinned === 1 && <Pin size={12} className="shrink-0 text-amber-600" />}
                   </div>
                   <p className="flex-1 overflow-hidden text-xs whitespace-pre-wrap text-neutral-600">
                     {stripHtmlPreview(note.body)}
@@ -206,13 +210,15 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
                   key={note.id}
                   data-note-index={i}
                   onClick={() => selectByClick(i, note.id)}
-                  className={`flex flex-col rounded-xl p-4 text-left shadow-sm ${
+                  className={`flex min-w-0 flex-col rounded-xl p-4 text-left shadow-sm ${
                     i === cursorIndex ? 'ring-2 ring-inset ring-blue-400' : ''
                   }`}
                   style={{ backgroundColor: note.color }}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-base font-semibold text-neutral-800">{note.title || '無題'}</span>
+                  <div className="flex min-w-0 items-center justify-between gap-2">
+                    <span className="min-w-0 flex-1 truncate text-base font-semibold text-neutral-800">
+                      {note.title || '無題'}
+                    </span>
                     {note.pinned === 1 && <Pin size={14} className="shrink-0 text-amber-600" />}
                   </div>
                   <p className="mt-1 truncate text-sm text-neutral-600">{stripHtmlPreview(note.body)}</p>

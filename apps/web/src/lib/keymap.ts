@@ -35,6 +35,7 @@ export const KEYMAP_ACTIONS = [
   'focus_title',
   'focus_sidebar',
   'activate',
+  'toggle_collapse',
   'goto_first',
   'goto_last',
 ] as const;
@@ -63,6 +64,7 @@ export const DEFAULT_KEYMAP: Record<KeymapAction, string> = {
   focus_title: 'Ctrl+Shift+e',
   focus_sidebar: 'Ctrl+Shift+h',
   activate: 'Enter',
+  toggle_collapse: 'Shift+Enter',
   goto_first: 'Home',
   goto_last: 'End',
 };
@@ -88,7 +90,8 @@ export const KEYMAP_ACTION_LABELS: Record<KeymapAction, string> = {
   priority_high: '優先度を高に変更',
   focus_title: '選択中タスクのタイトル欄へフォーカス',
   focus_sidebar: '左側のサイドバーへフォーカス',
-  activate: '選択中の項目を開く/折りたたみ切替',
+  activate: '選択中の項目を開く',
+  toggle_collapse: '選択中タスクのサブタスク折りたたみ切替',
   goto_first: '先頭の項目へ移動',
   goto_last: '末尾の項目へ移動',
 };

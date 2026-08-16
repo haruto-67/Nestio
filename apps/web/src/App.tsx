@@ -465,9 +465,19 @@ function MainLayout() {
       onOutdent: outdentSelected,
       onAddSubtask: addSubtaskToSelected,
       onAddSiblingSubtask: addSiblingSubtaskToSelected,
+      // タスク画面では以前「折りたたみ切替」だったが、「開く/詳細を見る」という感覚に
+      // 合わないとのフィードバックで「開く」（タイトル欄へフォーカス）に変更し、
+      // 折りたたみはonToggleCollapse（Shift+Enter）へ分離した（改修11回目）
       onActivate: () => {
         if (sidebarFocused) return sidebarRef.current?.activateCursor();
         if (screen === 'notes') return notesRef.current?.activateCursor();
+        // detailOpenがfalse（一覧のみ表示中）だとパネル自体が閉じているため、単に
+        // focusTitleTaskIdをセットするだけでは何も起きない。selectAndFocusTitleで
+        // detailOpenをtrueにしつつタイトル欄へフォーカスする
+        if (selectedTaskId) selectAndFocusTitle(selectedTaskId);
+      },
+      onToggleCollapse: () => {
+        if (sidebarFocused || screen === 'notes') return;
         toggleSelectedCollapse();
       },
       onFocusSelectedTitle: () => {
@@ -547,7 +557,7 @@ function MainLayout() {
           {me?.is_admin && (
             <button
               onClick={() => setShowAdminPanel(true)}
-              title="アカウント申請"
+              title="管理"
               className="flex min-h-11 min-w-11 items-center justify-center text-emerald-500"
             >
               <ShieldCheck size={18} />
@@ -609,7 +619,7 @@ function MainLayout() {
               {me?.is_admin && (
                 <button
                   onClick={() => setShowAdminPanel(true)}
-                  title="アカウント申請"
+                  title="管理"
                   className="text-emerald-500 hover:text-emerald-600"
                 >
                   <ShieldCheck size={16} />
@@ -715,7 +725,7 @@ function MainLayout() {
             効かなくなる不具合が出たためbubbleフェーズのonClickを使う。チェックボックスの
             <label>は独自にstopPropagationしているため、チェックボックスのクリックはここまで
             伝播しない（意図通り。行クリックには影響しない） */}
-        <div className="flex min-h-0 flex-1" onClick={() => setSidebarFocused(false)}>
+        <div className="flex min-h-0 min-w-0 flex-1" onClick={() => setSidebarFocused(false)}>
           {screen === 'tasks' ? (
             <>
               <TaskListView

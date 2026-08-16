@@ -19,8 +19,12 @@ export interface ShortcutHandlers {
   onOutdent: () => void;
   onAddSubtask: () => void;
   onAddSiblingSubtask: () => void;
-  /** Enter：状況に応じて選択中タスクの折りたたみトグル/サイドバーでの選択/メモの選択を行う（改修10回目で汎用化） */
+  /** Enter：状況に応じて選択中タスクを開く（タイトル欄へフォーカス）/サイドバーでの選択/メモの選択を行う
+   * （改修10回目で汎用化。改修11回目：タスク画面での挙動を折りたたみ切替から「開く」へ変更し、
+   * 折りたたみはonToggleCollapse(Shift+Enter)へ分離） */
   onActivate: () => void;
+  /** Shift+Enter：選択中タスクのサブタスク折りたたみ切替（改修11回目） */
+  onToggleCollapse: () => void;
   onFocusSelectedTitle: () => void;
   /** 左側エリア（サイドバーのフォルダ/リストツリー）へキーボードフォーカスを移す（改修10回目） */
   onFocusSidebar: () => void;
@@ -72,6 +76,7 @@ const ACTION_HANDLER_KEYS: Record<KeymapAction, NoArgHandlerKey> = {
   focus_title: 'onFocusSelectedTitle',
   focus_sidebar: 'onFocusSidebar',
   activate: 'onActivate',
+  toggle_collapse: 'onToggleCollapse',
   goto_first: 'onGotoFirst',
   goto_last: 'onGotoLast',
 };

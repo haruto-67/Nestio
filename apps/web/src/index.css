@@ -124,3 +124,28 @@ select option {
 .nestio-panel-slide-out {
   animation: nestio-panel-slide-out 280ms ease-in forwards;
 }
+
+/* モバイル幅ではPC用の微妙な12pxオフセットではなく、画面全体が右から
+   押し出されてくるフルスクリーン遷移に見えるよう距離を広げる（改修11回目） */
+@media (max-width: 767px) {
+  @keyframes nestio-panel-slide-in {
+    from {
+      opacity: 1;
+      transform: translateX(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes nestio-panel-slide-out {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(100%);
+    }
+  }
+}
