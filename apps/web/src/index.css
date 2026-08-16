@@ -106,8 +106,10 @@ select option {
   }
 }
 .nestio-panel-slide-in {
-  /* 改修7回目：180msは速すぎるとのフィードバックで280msへ延長し、閉じる時と揃える */
-  animation: nestio-panel-slide-in 280ms ease-out;
+  /* 改修7回目：180msは速すぎるとのフィードバックで280msへ延長。改修12回目：モバイルの
+     フルスクリーンpush遷移では280msは遅いとのフィードバックで200msへ短縮
+     （JS側のPANEL_TRANSITION_MS = lib/panel-transition.ts と必ず一致させる） */
+  animation: nestio-panel-slide-in 200ms ease-out;
 }
 
 /* タスク詳細パネルが右へ軽くスライドアウトして閉じる（改修6回目。改修5回目は開く時のみだった） */
@@ -122,7 +124,7 @@ select option {
   }
 }
 .nestio-panel-slide-out {
-  animation: nestio-panel-slide-out 280ms ease-in forwards;
+  animation: nestio-panel-slide-out 200ms ease-in forwards;
 }
 
 /* モバイル幅ではPC用の微妙な12pxオフセットではなく、画面全体が右から

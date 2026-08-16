@@ -7,6 +7,7 @@ import { upsertNote } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { NoteEditor } from './NoteEditor.js';
 import { BackgroundMark } from '../../ui/BackgroundMark.js';
+import { usePanelTransition, useDelayedHide } from '../../lib/panel-transition.js';
 
 type ViewMode = 'gallery' | 'list';
 const VIEW_MODE_KEY = 'nestio_notes_view_mode';
@@ -92,6 +93,16 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
 
   const clampIndex = (i: number) => Math.min(Math.max(i, 0), Math.max(sorted.length - 1, 0));
 
+  // NoteEditorの開閉アニメーション管理（改修12回目：TaskDetailAreaと同じ仕組みをメモにも展開）。
+  // 一覧側の非表示化は、開いた瞬間ではなくスライドインが終わってから隠し、
+  // 閉じる時は即座に一覧を戻す
+  const {
+    displayedId: displayedNoteId,
+    closing: noteEditorClosing,
+    generation: noteEditorGeneration,
+  } = usePanelTransition(selectedNoteId);
+  const hideListForEditor = useDelayedHide(selectedNoteId !== null);
+
   useImperativeHandle(ref, () => ({
     moveCursor: (direction: -1 | 1) => {
       const step = viewMode === 'gallery' ? columns : 1;
@@ -142,7 +153,7 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
         ref={containerRef}
         // min-w-0が無いとflexアイテムは中身（本文プレビュー等）の幅ぶん縮まずに広がってしまい、
         // リスト表示（横長カード）が画面からはみ出していた（改修11回目フォローアップ）
-        className={`relative min-w-0 flex-1 overflow-y-auto p-4 ${selectedNoteId ? 'hidden md:block' : 'block'}`}
+        className={`relative min-w-0 flex-1 overflow-y-auto p-4 ${hideListForEditor ? 'hidden md:block' : 'block'}`}
       >
         <BackgroundMark className="pointer-events-none absolute right-6 bottom-6 z-0 h-48 w-48 opacity-40" />
         <div className="relative z-10 mb-4 flex items-center justify-between">
@@ -229,7 +240,14 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
         </div>
       </div>
 
-      {selectedNoteId && <NoteEditor noteId={selectedNoteId} onClose={closeEditor} />}
+      {displayedNoteId && (
+        <NoteEditor
+          key={noteEditorGeneration}
+          noteId={displayedNoteId}
+          onClose={closeEditor}
+          closing={noteEditorClosing}
+        />
+      )}
     </div>
   );
 });

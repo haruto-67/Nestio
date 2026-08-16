@@ -3,6 +3,7 @@ import { uuidv7, type ListSortMode, type TaskRow } from '@nestio/shared';
 import { LayoutList, Kanban, CalendarDays } from 'lucide-react';
 import { FilterIcon, NestViewIcon } from '../../ui/icons.js';
 import { useApp } from '../../state/AppProvider.js';
+import { useDelayedHide } from '../../lib/panel-transition.js';
 import { useLists, useTasks, useTags, useTaskTags } from '../../db/queries.js';
 import type { ViewSelection } from '../../state/view.js';
 import { filterTasksForView } from '../../lib/filter-tasks.js';
@@ -60,6 +61,10 @@ export function TaskListView({
   quickAddInputRef,
   detailOpen = false,
 }: TaskListViewProps) {
+  // 詳細パネルが開いた瞬間ではなく、そのスライドインアニメーションが終わってから一覧を隠す。
+  // 閉じる時は逆に即座に表示へ戻す（改修12回目：以前はdetailOpenを直接使っており、開いた瞬間に
+  // 一覧が消え、閉じてもアニメーションが終わるまで一覧が戻らなかった）
+  const hideForDetail = useDelayedHide(detailOpen);
   const { me } = useApp();
   const lists = useLists();
   const tasks = useTasks();
@@ -233,7 +238,7 @@ export function TaskListView({
   return (
     <div
       className={`h-full flex-1 flex-col overflow-hidden border-t-4 ${headerAccentClass} ${
-        detailOpen ? 'hidden md:flex' : 'flex'
+        hideForDetail ? 'hidden md:flex' : 'flex'
       }`}
       onClick={closeDetailUnlessRowClick}
     >
