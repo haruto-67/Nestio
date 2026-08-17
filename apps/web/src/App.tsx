@@ -516,6 +516,9 @@ function MainLayout() {
 
   return (
     <div className="flex h-screen flex-col bg-[#FBFAF6] text-neutral-900 dark:bg-[#1a1a18] dark:text-white">
+      {/* 管理者バッジ追加後、SyncStatusIndicatorを含めた全ボタンが画面幅に収まらず横スクロールが
+          発生し、右端の設定ボタンがスライドしないと押せなくなっていた（改修12回目）。
+          十分な幅があるドロワー側（下記）に同期状態を移し、ヘッダーはボタン群のみにした */}
       <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800 md:hidden">
         <button
           onClick={() => setDrawerOpen(true)}
@@ -524,7 +527,6 @@ function MainLayout() {
         >
           <Menu size={26} />
         </button>
-        <SyncStatusIndicator />
         <div className="flex gap-1">
           <button
             onClick={() => setShowPomodoro(true)}
@@ -682,6 +684,9 @@ function MainLayout() {
         {drawerOpen && (
           <div className="fixed inset-0 z-50 flex md:hidden">
             <div className="animate-[nestio-fade-scale-in_150ms_ease-out] flex w-72 flex-col bg-white dark:bg-neutral-900">
+              <div className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
+                <SyncStatusIndicator />
+              </div>
               <div className="flex border-b border-neutral-200 text-sm dark:border-neutral-800">
                 <button
                   onClick={() => setScreen('tasks')}

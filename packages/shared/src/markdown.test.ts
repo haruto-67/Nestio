@@ -6,6 +6,14 @@ describe('markdownToSafeHtml', () => {
     expect(markdownToSafeHtml('**太字**と*斜体*と`code`')).toBe('<p><b>太字</b>と<i>斜体</i>と<code>code</code></p>');
   });
 
+  it('コードスパン内のアンダースコアを斜体として誤変換しない', () => {
+    expect(markdownToSafeHtml('`run_daily_script.sh`')).toBe('<p><code>run_daily_script.sh</code></p>');
+  });
+
+  it('コードスパン内のアスタリスクも太字/斜体として誤変換しない', () => {
+    expect(markdownToSafeHtml('`a*b*c`')).toBe('<p><code>a*b*c</code></p>');
+  });
+
   it('箇条書きをulに変換する', () => {
     expect(markdownToSafeHtml('- a\n- b')).toBe('<ul><li>a</li><li>b</li></ul>');
   });

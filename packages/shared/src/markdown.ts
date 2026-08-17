@@ -23,10 +23,23 @@ function renderInline(rawLine: string): string {
     /\[([^[\]]+)\]\((https?:\/\/[^\s()]+|mailto:[^\s()]+)\)/g,
     (_m, text: string, url: string) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`,
   );
-  out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // コードスパンはCommonMark同様、他の記法（太字・斜体等）の解釈対象から除外する。先に
+  // `<code>`へ変換してプレースホルダー（NUL文字で挟んだ連番。通常の入力には出現しない）に
+  // 退避させないと、後続の太字/斜体の正規表現がコードスパンの中身のアンダースコア/
+  // アスタリスクにまでマッチしてしまう（改修12回目：`run_daily_script.sh`のような
+  // スネークケースの識別子が、アンダースコアの間の文字列を斜体として誤変換されるバグの修正）
+  const codeSpans: string[] = [];
+  out = out.replace(/`([^`]+)`/g, (_m, code: string) => {
+    codeSpans.push(`<code>${code}</code>`);
+    return `\0${codeSpans.length - 1}\0`;
+  });
+
   out = out.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
   out = out.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<i>$1</i>');
   out = out.replace(/(?<!_)_([^_]+)_(?!_)/g, '<i>$1</i>');
+
+  out = out.replace(/\0(\d+)\0/g, (_m, idx: string) => codeSpans[Number(idx)] ?? '');
   return out;
 }
 

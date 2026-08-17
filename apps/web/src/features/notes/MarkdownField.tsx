@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
-import { Bold, Italic } from 'lucide-react';
+import { Bold, Italic, Code, List, ListOrdered, Link as LinkIcon } from 'lucide-react';
 import { createAttachment } from '../../state/actions.js';
 import { attachmentUrl } from '../../api/attachments.js';
 import { processImageFile } from '../../lib/image-processing.js';
+import { showToast } from '../../ui/toast.js';
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'BR', 'DIV', 'P', 'IMG', 'A', 'UL', 'OL', 'LI', 'CODE', 'SPAN']);
 const ALLOWED_ATTRS: Record<string, string[]> = {
@@ -139,20 +144,94 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
     handleImageFile(file).catch((err) => console.error(err));
   };
 
+  // コード化・リンク化は選択範囲が無いと対象が決まらないため、未選択時は何もしない
+  // （太字/斜体はブラウザネイティブのトグル挙動で無選択でも「次に打つ文字」に効くが、
+  // <code>/<a>にはそれに相当する標準コマンドが無い）
+  const toggleCode = () => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      showToast('コードにしたい文字列を選択してください');
+      return;
+    }
+    document.execCommand('insertHTML', false, `<code>${escapeHtml(selection.toString())}</code>`);
+    handleInput();
+  };
+
+  const toggleUnorderedList = () => {
+    ref.current?.focus();
+    document.execCommand('insertUnorderedList');
+    handleInput();
+  };
+
+  const toggleOrderedList = () => {
+    ref.current?.focus();
+    document.execCommand('insertOrderedList');
+    handleInput();
+  };
+
+  const insertLink = () => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      showToast('リンクにしたい文字列を選択してください');
+      return;
+    }
+    const url = window.prompt('リンク先URL（https://... または mailto:...）');
+    if (!url) return;
+    if (!/^(https?:|mailto:)/i.test(url)) {
+      showToast('httpsまたはmailtoで始まるURLのみ使えます');
+      return;
+    }
+    document.execCommand('createLink', false, url);
+    // execCommandが生成する<a>にはtarget/relが付かないため、新しいタブで開けるよう補う
+    el.querySelectorAll('a:not([target])').forEach((a) => {
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+    });
+    handleInput();
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    // 箇条書き/番号付きリストはGoogle Docs等でおなじみのCtrl/Cmd+Shift+8/7。数字キーは
+    // キーボードレイアウトによってShift併用時の生成文字（e.key）が変わるため、
+    // レイアウトに依存しない物理キー位置（e.code）で判定する
+    if (e.shiftKey && e.code === 'Digit8') {
+      e.preventDefault();
+      toggleUnorderedList();
+      return;
+    }
+    if (e.shiftKey && e.code === 'Digit7') {
+      e.preventDefault();
+      toggleOrderedList();
+      return;
+    }
+    const key = e.key.toLowerCase();
+    if (key === 'b') {
       e.preventDefault();
       document.execCommand('bold');
-    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') {
+    } else if (key === 'i') {
       e.preventDefault();
       document.execCommand('italic');
+    } else if (key === 'e') {
+      e.preventDefault();
+      toggleCode();
+    } else if (key === 'k') {
+      e.preventDefault();
+      insertLink();
     }
   };
 
   return (
     <div className="flex flex-col gap-1">
       {editing && (
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           <button
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
@@ -175,6 +254,38 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
           >
             <Italic size={12} />
           </button>
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={toggleCode}
+            title="コード（選択してCtrl/Cmd+E）"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-neutral-200 text-neutral-500 dark:border-neutral-700"
+          >
+            <Code size={12} />
+          </button>
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={toggleUnorderedList}
+            title="箇条書き（Ctrl/Cmd+Shift+8）"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-neutral-200 text-neutral-500 dark:border-neutral-700"
+          >
+            <List size={12} />
+          </button>
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={toggleOrderedList}
+            title="番号付きリスト（Ctrl/Cmd+Shift+7）"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-neutral-200 text-neutral-500 dark:border-neutral-700"
+          >
+            <ListOrdered size={12} />
+          </button>
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={insertLink}
+            title="リンク（選択してCtrl/Cmd+K）"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-neutral-200 text-neutral-500 dark:border-neutral-700"
+          >
+            <LinkIcon size={12} />
+          </button>
         </div>
       )}
       <div className="relative">
@@ -193,7 +304,7 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
           onDrop={handleDrop}
           style={{ minHeight }}
           data-markdown-field="true"
-          className="w-full resize-y overflow-auto rounded-md border border-neutral-200 bg-transparent p-2 text-sm text-neutral-900 outline-none focus:border-blue-400 dark:border-neutral-700 dark:text-white [&_img]:my-1 [&_img]:max-w-full [&_img]:rounded-md [&_a]:text-blue-500 [&_a]:underline [&_ul]:ml-4 [&_ul]:list-disc"
+          className="w-full resize-y overflow-auto rounded-md border border-neutral-200 bg-transparent p-2 text-sm text-neutral-900 outline-none focus:border-blue-400 dark:border-neutral-700 dark:text-white [&_a]:text-blue-500 [&_a]:underline [&_code]:rounded [&_code]:bg-neutral-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[13px] dark:[&_code]:bg-neutral-800 [&_img]:my-1 [&_img]:max-w-full [&_img]:rounded-md [&_ol]:ml-4 [&_ol]:list-decimal [&_ul]:ml-4 [&_ul]:list-disc"
         />
       </div>
     </div>
