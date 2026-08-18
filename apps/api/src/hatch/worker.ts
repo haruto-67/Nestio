@@ -62,11 +62,9 @@ export function startHatchWorker(db: Database.Database, env: Env, logger: Logger
   runTick();
 
   periodicTimer = setInterval(() => {
-    try {
-      checkAllPeriodicTriggers(db);
-    } catch (err) {
+    checkAllPeriodicTriggers(db).catch((err: unknown) => {
       logger.error({ err }, 'hatch_periodic_check_failed');
-    }
+    });
   }, PERIODIC_CHECK_INTERVAL_MS);
 
   return () => {

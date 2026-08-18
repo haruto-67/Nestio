@@ -1,8 +1,8 @@
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { uuidv7 } from '@nestio/shared';
 import { createTestDb, insertTestUser, insertTestList } from '../test-utils/db.js';
-import { checkDueSoonTriggers, checkOverdueTriggers, checkScheduleTriggers } from './periodic-events.js';
+import { checkDueSoonTriggers, checkOverdueTriggers, checkScheduleTriggers, checkWeatherTriggers } from './periodic-events.js';
 
 function insertTrigger(
   db: Database.Database,
@@ -39,7 +39,10 @@ describe('hatch periodic-events', () => {
   let userId: string;
   let listId: string;
 
-  afterEach(() => db?.close());
+  afterEach(() => {
+    db?.close();
+    vi.unstubAllGlobals();
+  });
 
   function setup() {
     db = createTestDb();
@@ -144,5 +147,90 @@ describe('hatch periodic-events', () => {
     checkScheduleTriggers(db);
 
     expect(queuedCount(db, triggerId)).toBe(0);
+  });
+
+  function currentJstHourMinute(): { hour: number; minute: number } {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Tokyo',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date());
+    return {
+      hour: Number(parts.find((p) => p.type === 'hour')?.value ?? '0'),
+      minute: Number(parts.find((p) => p.type === 'minute')?.value ?? '0'),
+    };
+  }
+
+  function insertUserWeatherLocation(db: Database.Database, userId: string, lat: number, lon: number): void {
+    db.prepare(
+      `INSERT INTO user_settings (user_id, theme, keymap_json, weather_location_json, updated_at, seq)
+       VALUES (?, 'light', '{}', ?, ?, 1)`,
+    ).run(userId, JSON.stringify({ lat, lon, name: 'テスト地点' }), Date.now());
+  }
+
+  it('checkWeatherTriggers: 時刻が一致し降水確率がしきい値以上なら発火する', async () => {
+    setup();
+    const { hour, minute } = currentJstHourMinute();
+    insertUserWeatherLocation(db, userId, 35.68, 139.76);
+    const triggerId = insertTrigger(
+      db,
+      userId,
+      'weather_rain',
+      JSON.stringify({ hour, minute, min_precipitation_probability: 50 }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ daily: { precipitation_probability_max: [80], weathercode: [61] } }),
+      }),
+    );
+
+    await checkWeatherTriggers(db);
+
+    expect(queuedCount(db, triggerId)).toBe(1);
+  });
+
+  it('checkWeatherTriggers: 降水確率がしきい値未満なら発火しない', async () => {
+    setup();
+    const { hour, minute } = currentJstHourMinute();
+    // 別地点の座標を使い、直前のテストの天気キャッシュ（30分TTL）と衝突しないようにする
+    insertUserWeatherLocation(db, userId, 34.0, 135.0);
+    const triggerId = insertTrigger(
+      db,
+      userId,
+      'weather_rain',
+      JSON.stringify({ hour, minute, min_precipitation_probability: 50 }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ daily: { precipitation_probability_max: [10], weathercode: [1] } }),
+      }),
+    );
+
+    await checkWeatherTriggers(db);
+
+    expect(queuedCount(db, triggerId)).toBe(0);
+  });
+
+  it('checkWeatherTriggers: 地点が未設定のユーザーは発火しない（天気APIも呼ばない）', async () => {
+    setup();
+    const { hour, minute } = currentJstHourMinute();
+    const triggerId = insertTrigger(
+      db,
+      userId,
+      'weather_rain',
+      JSON.stringify({ hour, minute, min_precipitation_probability: 50 }),
+    );
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await checkWeatherTriggers(db);
+
+    expect(queuedCount(db, triggerId)).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,36 @@
 /* prefers-color-scheme ではなく .dark クラスでダーク/ライトを切り替える */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ダークモード配色のCSS変数化（改修13回目：技術的負債の解消）。個々のコンポーネントに
+   `dark:bg-neutral-900`のようなバリアントを都度書く方式のままだと、新機能を追加する
+   たびに書き忘れて配色が崩れるリスクがある。頻出する3パターン（パネル背景・境界線・
+   補助テキスト）をセマンティックなCSS変数にし、Tailwind v4の@themeで
+   bg-surface/border-surface-border/text-mutedユーティリティとして使えるようにする。
+   .dark側で変数の値を差し替えるだけで済むため、利用側にdark:を書く必要が無くなる
+   （全箇所を移行済みではなく、まずは代表的な使用箇所から適用している） */
+@theme {
+  --color-surface: #ffffff;
+  --color-surface-border: var(--color-neutral-200);
+  --color-muted: var(--color-neutral-500);
+}
+.dark {
+  --color-surface: var(--color-neutral-900);
+  --color-surface-border: var(--color-neutral-700);
+  --color-muted: var(--color-neutral-400);
+}
+
+/* アニメーション速度の単一情報源（改修13回目：技術的負債の解消）。
+   「280ms→200ms」のような速度調整依頼が改修7回目・改修12回目と複数回発生しており、
+   その都度CSSとJS（apps/web/src/lib/motion.ts）の両方を個別に書き換えていた。
+   ここを変えるだけでCSS側は全て追従する。JS側はmotion.tsがgetComputedStyleで
+   この値を読み取って追従するため、二重管理にならない */
+:root {
+  --nestio-duration-instant: 100ms; /* ボタン押下フィードバック */
+  --nestio-duration-fast: 150ms; /* モーダル/オーバーレイのフェード */
+  --nestio-duration-base: 200ms; /* パネルの開閉・行の出現・スワイプの戻り */
+  --nestio-duration-pop: 320ms; /* 完了チェックのポップ演出 */
+}
+
 /* Windows版Chrome/Edgeはselectのbackground-colorがtransparentだと、ネイティブの
    ドロップダウンポップアップがOS既定色（白）で描画され、ダークモードの文字色と衝突して
    読めなくなる（オプション一覧の下に不自然な白い余白も出る）。selectとoptionには
@@ -22,6 +52,16 @@ select option {
 .dark select option {
   background-color: #171717;
   color: white;
+}
+
+/* ボタンを押した瞬間に軽く縮む触覚的なフィードバック（改修13回目：「まだ硬いボタンを
+   叩いてるみたいな感覚がある」というフィードバックへの対応）。個別のコンポーネントを
+   触らず全ボタン共通で効かせる。disabled時は反応させない */
+button:not(:disabled) {
+  transition: transform var(--nestio-duration-instant) ease-out;
+}
+button:not(:disabled):active {
+  transform: scale(0.96);
 }
 
 /* iOS SafariはフォーカスしたinputのfontーSizeが16px未満だと自動でズームする。
@@ -47,7 +87,7 @@ select option {
 }
 
 .nestio-modal-panel {
-  animation: nestio-fade-scale-in 150ms ease-out;
+  animation: nestio-fade-scale-in var(--nestio-duration-fast) ease-out;
 }
 
 @keyframes nestio-fade-in {
@@ -60,7 +100,7 @@ select option {
 }
 
 .nestio-overlay {
-  animation: nestio-fade-in 150ms ease-out;
+  animation: nestio-fade-in var(--nestio-duration-fast) ease-out;
 }
 
 /* タスク行が新しく表示された時のふわっとした登場（改修4回目 UI改善案3） */
@@ -75,7 +115,7 @@ select option {
   }
 }
 .nestio-row-fade-in {
-  animation: nestio-row-fade-in 200ms ease-out;
+  animation: nestio-row-fade-in var(--nestio-duration-base) ease-out;
 }
 
 /* チェックボックスを完了にした瞬間の軽いポップ演出（改修4回目 UI改善案2） */
@@ -91,7 +131,7 @@ select option {
   }
 }
 .nestio-complete-pop {
-  animation: nestio-complete-pop 320ms ease-out;
+  animation: nestio-complete-pop var(--nestio-duration-pop) ease-out;
 }
 
 /* タスク詳細パネルが右から軽くスライドインして開く（改修5回目） */
@@ -107,9 +147,10 @@ select option {
 }
 .nestio-panel-slide-in {
   /* 改修7回目：180msは速すぎるとのフィードバックで280msへ延長。改修12回目：モバイルの
-     フルスクリーンpush遷移では280msは遅いとのフィードバックで200msへ短縮
-     （JS側のPANEL_TRANSITION_MS = lib/panel-transition.ts と必ず一致させる） */
-  animation: nestio-panel-slide-in 200ms ease-out;
+     フルスクリーンpush遷移では280msは遅いとのフィードバックで200msへ短縮。
+     速度は:rootの--nestio-duration-baseが単一情報源（改修13回目）。JS側は
+     apps/web/src/lib/motion.tsがこの変数を読み取って追従する */
+  animation: nestio-panel-slide-in var(--nestio-duration-base) ease-out;
 }
 
 /* タスク詳細パネルが右へ軽くスライドアウトして閉じる（改修6回目。改修5回目は開く時のみだった） */
@@ -124,7 +165,7 @@ select option {
   }
 }
 .nestio-panel-slide-out {
-  animation: nestio-panel-slide-out 200ms ease-in forwards;
+  animation: nestio-panel-slide-out var(--nestio-duration-base) ease-in forwards;
 }
 
 /* モバイル幅ではPC用の微妙な12pxオフセットではなく、画面全体が右から

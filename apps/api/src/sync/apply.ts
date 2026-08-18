@@ -420,8 +420,15 @@ function applyUserSettingsOp(db: Database.Database, userId: string, op: SyncOp):
   if (!existing) {
     const seq = bumpSeq(db, userId);
     db.prepare(
-      'INSERT INTO user_settings (user_id, theme, keymap_json, updated_at, seq) VALUES (?, ?, ?, ?, ?)',
-    ).run(userId, (fields.theme as string | undefined) ?? 'light', (fields.keymap_json as string | undefined) ?? '{}', op.updated_at, seq);
+      'INSERT INTO user_settings (user_id, theme, keymap_json, weather_location_json, updated_at, seq) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
+      userId,
+      (fields.theme as string | undefined) ?? 'light',
+      (fields.keymap_json as string | undefined) ?? '{}',
+      (fields.weather_location_json as string | undefined) ?? '{}',
+      op.updated_at,
+      seq,
+    );
     return { ok: true };
   }
 
@@ -429,7 +436,7 @@ function applyUserSettingsOp(db: Database.Database, userId: string, op: SyncOp):
   const seq = bumpSeq(db, userId);
 
   if (shouldApplyFields) {
-    const presentCols = ['theme', 'keymap_json'].filter((c) => fields[c] !== undefined);
+    const presentCols = ['theme', 'keymap_json', 'weather_location_json'].filter((c) => fields[c] !== undefined);
     if (presentCols.length > 0) {
       const setClauses = [...presentCols.map((c) => `${c} = ?`), 'updated_at = ?', 'seq = ?'];
       const values: unknown[] = [...presentCols.map((c) => fields[c]), op.updated_at, seq];

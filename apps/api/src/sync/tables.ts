@@ -38,6 +38,7 @@ export const SYNC_TABLES = {
       'rrule',
       'completed_at',
       'sort_order',
+      'blocked_by_task_id',
     ],
     requiredOnInsert: ['list_id', 'title', 'sort_order'],
     writableSchema: taskWritableFields,

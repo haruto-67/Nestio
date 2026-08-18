@@ -46,7 +46,7 @@ export function NotesColorFilter({ colorFilter, onChangeColorFilter }: NotesColo
               className="h-3.5 w-3.5 shrink-0 rounded-full border border-black/10 dark:border-white/10"
               style={{ backgroundColor: color }}
             />
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">
+            <span className="text-xs text-muted">
               {notes.filter((n) => n.color === color).length}件
             </span>
           </button>

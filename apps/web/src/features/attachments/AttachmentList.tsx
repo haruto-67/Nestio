@@ -6,6 +6,7 @@ import { useAttachmentsFor, usePendingAttachmentBlob } from '../../db/queries.js
 import { createAttachment, deleteAttachment, THUMBNAIL_FILENAME_PREFIX } from '../../state/actions.js';
 import { processImageFile } from '../../lib/image-processing.js';
 import { attachmentUrl } from '../../api/attachments.js';
+import { CollapsibleSection } from '../../ui/CollapsibleSection.js';
 
 interface AttachmentListProps {
   ownerType: 'task' | 'note';
@@ -43,35 +44,38 @@ export function AttachmentList({ ownerType, ownerId }: AttachmentListProps) {
   };
 
   return (
-    <div className="flex flex-col gap-1.5 text-xs text-neutral-500">
-      <div className="flex items-center justify-between">
-        <span>添付画像</span>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-0.5 text-blue-500"
-          disabled={processing}
-        >
-          {processing ? (
-            '処理中…'
-          ) : (
-            <>
-              <Plus size={12} />
-              追加
-            </>
-          )}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={(e) => {
-            handleFiles(e.target.files).catch((err) => console.error(err));
-          }}
-        />
-      </div>
-
+    <CollapsibleSection
+      title="添付画像"
+      defaultOpen={attachments.length > 0}
+      action={
+        <>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-0.5 text-blue-500"
+            disabled={processing}
+          >
+            {processing ? (
+              '処理中…'
+            ) : (
+              <>
+                <Plus size={12} />
+                追加
+              </>
+            )}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              handleFiles(e.target.files).catch((err) => console.error(err));
+            }}
+          />
+        </>
+      }
+    >
       {attachments.length > 0 && (
         <div className="grid grid-cols-3 gap-1.5">
           {attachments.map((a) => (
@@ -86,7 +90,7 @@ export function AttachmentList({ ownerType, ownerId }: AttachmentListProps) {
           ))}
         </div>
       )}
-    </div>
+    </CollapsibleSection>
   );
 }
 

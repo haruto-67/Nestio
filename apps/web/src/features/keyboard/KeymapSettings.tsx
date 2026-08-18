@@ -126,7 +126,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-96 rounded-xl bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel">
+      <div onClick={(e) => e.stopPropagation()} className="w-96 rounded-xl bg-surface p-4 shadow-lg nestio-modal-panel">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">設定</h2>
           <button onClick={onClose} className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
@@ -135,7 +135,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
         </div>
 
         <div className="mb-3 flex items-center justify-between border-b border-neutral-200 pb-3 dark:border-neutral-800">
-          <span className="text-xs text-neutral-500 dark:text-neutral-400">外観（テーマ）</span>
+          <span className="text-xs text-muted">外観（テーマ）</span>
           <button
             onClick={onToggleTheme}
             className="flex items-center gap-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
@@ -151,7 +151,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
 
         <div className="border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">
+            <span className="text-xs text-muted">
               通知（期限リマインダー・ポモドーロ終了・Hatch）
             </span>
             {pushState.subscribed ? (
@@ -189,7 +189,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">カレンダー購読（ICS）</span>
+            <span className="text-xs text-muted">カレンダー購読（ICS）</span>
             <button
               onClick={handleCreateFeed}
               className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
@@ -213,11 +213,11 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
         </div>
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-          <span className="text-xs text-neutral-500 dark:text-neutral-400">ログイン中のセッション</span>
+          <span className="text-xs text-muted">ログイン中のセッション</span>
           <ul className="mt-2 flex flex-col gap-1.5">
             {sessions.map((s) => (
               <li key={s.id} className="flex items-center justify-between text-xs">
-                <div className="min-w-0 flex-1 truncate text-neutral-500 dark:text-neutral-400">
+                <div className="min-w-0 flex-1 truncate text-muted">
                   {s.device_label ?? 'ブラウザ'}
                   {s.is_current && <span className="ml-1 text-emerald-500">（このデバイス）</span>}
                   <div className="text-[10px] text-neutral-400">{formatDateTimeJst(s.created_at)}〜</div>
@@ -236,7 +236,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">同期の不具合を報告</span>
+            <span className="text-xs text-muted">同期の不具合を報告</span>
             <button
               onClick={handleSendLogs}
               className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
@@ -249,7 +249,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">データのエクスポート/インポート</span>
+            <span className="text-xs text-muted">データのエクスポート/インポート</span>
             <div className="flex gap-1">
               <button
                 onClick={handleExport}

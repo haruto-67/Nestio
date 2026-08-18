@@ -398,6 +398,41 @@ describe('applySyncOps', () => {
     });
   });
 
+  // 先行タスク（軽量な依存関係、改修13回目）
+  describe('blocked_by_task_id', () => {
+    it('先行タスクIDを設定・取得できる', () => {
+      setup();
+      const predecessorId = uuidv7();
+      const taskId = uuidv7();
+      applySyncOps(db, userId, [makeTaskOp(listId, predecessorId, Date.now(), { title: '先行タスク' })]);
+      applySyncOps(db, userId, [
+        makeTaskOp(listId, taskId, Date.now(), { title: '後続タスク', blocked_by_task_id: predecessorId }),
+      ]);
+
+      const row = db.prepare('SELECT blocked_by_task_id FROM tasks WHERE id = ?').get(taskId) as {
+        blocked_by_task_id: string | null;
+      };
+      expect(row.blocked_by_task_id).toBe(predecessorId);
+    });
+
+    it('先行タスクが物理削除されるとblocked_by_task_idはNULLになる（ON DELETE SET NULL）', () => {
+      setup();
+      const predecessorId = uuidv7();
+      const taskId = uuidv7();
+      applySyncOps(db, userId, [makeTaskOp(listId, predecessorId, Date.now(), { title: '先行タスク' })]);
+      applySyncOps(db, userId, [
+        makeTaskOp(listId, taskId, Date.now(), { title: '後続タスク', blocked_by_task_id: predecessorId }),
+      ]);
+
+      db.prepare('DELETE FROM tasks WHERE id = ?').run(predecessorId);
+
+      const row = db.prepare('SELECT blocked_by_task_id FROM tasks WHERE id = ?').get(taskId) as {
+        blocked_by_task_id: string | null;
+      };
+      expect(row.blocked_by_task_id).toBeNull();
+    });
+  });
+
   // 改修5回目「習慣トラッキング」用の完了ログ記録
   describe('task_completionsへの記録', () => {
     it('通常タスクの完了でtask_completionsに1件記録される', () => {

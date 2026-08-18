@@ -61,6 +61,8 @@ export const taskRowSchema = z
     rrule: z.string().nullable(),
     completed_at: epochMsSchema.nullable(),
     sort_order: sortOrderSchema,
+    /** 先行タスク（軽量な依存関係、改修13回目）。このタスクIDが未完了の間はUI上でグレーアウトする */
+    blocked_by_task_id: idSchema.nullable(),
     ...syncable,
   })
   .refine((row) => row.due_at === null || row.due_date === null, {
@@ -80,6 +82,7 @@ const taskWritableShape = {
   rrule: z.string().nullable(),
   completed_at: epochMsSchema.nullable(),
   sort_order: sortOrderSchema,
+  blocked_by_task_id: idSchema.nullable(),
 };
 export const taskWritableFields = z.object(taskWritableShape).partial();
 export type TaskWritableFields = z.infer<typeof taskWritableFields>;

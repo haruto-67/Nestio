@@ -62,7 +62,7 @@ export function KanbanBoard({
               dragOverPriority === col.priority ? 'ring-2 ring-blue-300' : ''
             }`}
           >
-            <div className="flex items-center justify-between px-3 py-2 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+            <div className="flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted">
               <span>{col.label}</span>
               <span>{columnTasks.length}</span>
             </div>

@@ -9,6 +9,7 @@ export const triggerEventSchema = z.enum([
   'task_created',
   'recurrence_spawned',
   'schedule',
+  'weather_rain',
 ]);
 export type TriggerEvent = z.infer<typeof triggerEventSchema>;
 
@@ -39,7 +40,9 @@ export const triggerRowSchema = z.object({
   user_id: idSchema,
   name: z.string().min(1),
   event: triggerEventSchema,
-  /** list_id / tag_id / priority / offset_minutes / cron などをJSON文字列で保持 */
+  /** list_id / tag_id / priority / offset_minutes / cron などをJSON文字列で保持。
+   * weather_rainは { hour, minute, min_precipitation_probability }（改修13回目：
+   * user_settings.weather_location_jsonに設定した地点の指定時刻の降水確率を毎日チェックする） */
   condition_json: z.string(),
   action_key: hatchActionKeySchema,
   params_json: z.string(),
@@ -89,5 +92,26 @@ export const hatchActionParamsSchemas = {
   run_registered_script: z.object({ script_key: z.string().min(1) }),
 } as const satisfies Record<HatchActionKey, z.ZodTypeAny>;
 
-/** {{task.title}} {{task.note}} {{list.name}} {{task.due}} のみ展開する。任意の式評価は実装しない */
-export const HATCH_TEMPLATE_VARS = ['task.title', 'task.note', 'list.name', 'task.due'] as const;
+/**
+ * {{task.title}} {{task.note}} {{list.name}} {{task.due}} {{today.completed_tasks}}
+ * {{today.due_tasks}} {{weather.today_summary}} のみ展開する。任意の式評価は実装しない。
+ * task系/list系の変数はイベント発火の対象タスクがある時のみ（scheduleイベント等、対象タスクが
+ * 無いトリガーでは空文字になる）。today.completed_tasksは対象タスクの有無によらず、
+ * その日（JST）にユーザーが完了したタスクの一覧を箇条書きテキストで展開する
+ * （改修13回目：Hatchの「今日の振り返り」自動生成用。scheduleイベント+claude_promptの
+ * 組み合わせで、既存の仕組みのまま日記機能を実現できる）。
+ * today.due_tasksは今日期限の未完了タスクの一覧、weather.today_summaryは
+ * user_settings.weather_location_jsonに設定した地点の今日の天気概要（改修13回目：
+ * Hatchの発火条件を生活寄りに拡張。「屋外タスクの期限を自動でずらす」ではなく、
+ * 天気と今日のタスクをClaudeに渡して見直しを提案してもらう形にする——自動変更は
+ * ユーザーの意図しない書き換えリスクがあるため避ける）
+ */
+export const HATCH_TEMPLATE_VARS = [
+  'task.title',
+  'task.note',
+  'list.name',
+  'task.due',
+  'today.completed_tasks',
+  'today.due_tasks',
+  'weather.today_summary',
+] as const;

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { TriggerRow, TriggerRunRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
-import { useTriggers } from '../../db/queries.js';
-import { upsertTrigger, deleteTrigger, uuidv7 } from '../../state/actions.js';
+import { useTriggers, useUserSettings } from '../../db/queries.js';
+import { upsertTrigger, deleteTrigger, upsertUserSettings, uuidv7 } from '../../state/actions.js';
 import { listHatchActions, listHatchRuns, testHatchTrigger, type HatchActionMetadata } from '../../api/hatch.js';
 import { requestPushPermissionPrompt } from '../../lib/push-prompt.js';
 import { formatDateTimeJst } from '../../lib/datetime.js';
@@ -69,6 +69,94 @@ function TriggerRunHistory({ triggerId, refreshSignal }: { triggerId: string; re
   );
 }
 
+interface WeatherLocation {
+  lat: number;
+  lon: number;
+  name: string;
+}
+
+/** 「雨予報の時」トリガーが天気を取得する地点の設定（改修13回目：Hatchの発火条件を
+ * 生活寄りに拡張）。地名からの検索（ジオコーディング）は外部API依存が増えるため、
+ * 端末のGeolocation APIで取得した座標をそのまま使う形にする */
+function WeatherLocationSettings({ userId }: { userId: string }) {
+  const settings = useUserSettings();
+  const [locating, setLocating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  let location: WeatherLocation | null = null;
+  try {
+    const parsed = JSON.parse(settings?.weather_location_json ?? '{}') as Partial<WeatherLocation>;
+    if (typeof parsed.lat === 'number' && typeof parsed.lon === 'number') {
+      location = { lat: parsed.lat, lon: parsed.lon, name: parsed.name ?? '' };
+    }
+  } catch {
+    location = null;
+  }
+
+  const useCurrentLocation = () => {
+    setError(null);
+    if (!navigator.geolocation) {
+      setError('この端末では位置情報を取得できません');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        upsertUserSettings(userId, {
+          weather_location_json: JSON.stringify({
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude,
+            name: location?.name ?? '',
+          }),
+        });
+      },
+      () => {
+        setLocating(false);
+        setError('位置情報を取得できませんでした（許可設定を確認してください）');
+      },
+      { timeout: 10_000 },
+    );
+  };
+
+  const setName = (name: string) => {
+    upsertUserSettings(userId, {
+      weather_location_json: JSON.stringify({ lat: location?.lat ?? 0, lon: location?.lon ?? 0, name }),
+    });
+  };
+
+  return (
+    <div className="mb-3 rounded-md border border-neutral-200 p-2 text-xs dark:border-neutral-700">
+      <p className="mb-1 font-medium">天気連携の地点（「雨予報の時」トリガーで使用）</p>
+      {location ? (
+        <p className="text-neutral-500">
+          設定済み: {location.name || '（名前未設定）'}（{location.lat.toFixed(2)}, {location.lon.toFixed(2)}）
+        </p>
+      ) : (
+        <p className="text-neutral-400">未設定です</p>
+      )}
+      <div className="mt-1 flex items-center gap-2">
+        <input
+          className="flex-1 rounded-md border border-neutral-300 bg-white px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+          placeholder="地点の名前（任意・例: 自宅）"
+          value={location?.name ?? ''}
+          onChange={(e) => setName(e.target.value)}
+          disabled={!location}
+        />
+        <button
+          type="button"
+          onClick={useCurrentLocation}
+          disabled={locating}
+          className="shrink-0 rounded-md border border-neutral-300 px-2 py-1 hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+        >
+          {locating ? '取得中…' : '現在地を使う'}
+        </button>
+      </div>
+      {error && <p className="mt-1 text-red-500">{error}</p>}
+    </div>
+  );
+}
+
 export function HatchSettings({ onClose }: { onClose: () => void }) {
   const { me } = useApp();
   const triggers = useTriggers();
@@ -131,7 +219,7 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-[32rem] flex-col rounded-xl bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
+        className="flex max-h-[85vh] w-[32rem] flex-col rounded-xl bg-surface p-4 shadow-lg nestio-modal-panel"
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Hatch トリガー設定</h2>
@@ -141,6 +229,7 @@ export function HatchSettings({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="flex-1 overflow-y-auto">
+          <WeatherLocationSettings userId={me.id} />
           {editingId !== null ? (
             <TriggerForm
               trigger={editingTrigger}

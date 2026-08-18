@@ -7,7 +7,17 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { uuidv7 } from '@nestio/shared';
-import { FolderPlus, Plus, X, ChevronDown, ChevronRight, Pencil, Tag as TagIcon, GripVertical } from 'lucide-react';
+import {
+  FolderPlus,
+  Plus,
+  X,
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+  Tag as TagIcon,
+  GripVertical,
+  ClipboardCheck,
+} from 'lucide-react';
 import type { ListRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
 import { useFolders, useLists, useTags } from '../../db/queries.js';
@@ -18,6 +28,7 @@ import { showToast } from '../../ui/toast.js';
 import { SMART_LISTS, SMART_LIST_DOT_CLASS } from '../../lib/task-views.js';
 import { loadCustomViews, deleteCustomView, subscribeCustomViews } from '../../lib/custom-views.js';
 import { isCoarsePointerDevice } from '../../lib/pointer.js';
+import { useOutsideClick } from '../../lib/useOutsideClick.js';
 import { EditableLabel, type EditableLabelHandle } from './EditableLabel.js';
 import type { ViewSelection } from '../../state/view.js';
 
@@ -33,6 +44,8 @@ interface SidebarProps {
   /** マウスでサイドバーの項目をクリックした時に呼ばれる。クリックでもカーソルが
    * その場所へ追従するようにする（改修11回目） */
   onEnterFocus?: () => void;
+  /** 「今週の巣」週次レビューを開く（改修13回目） */
+  onOpenWeeklyReview: () => void;
 }
 
 export interface SidebarHandle {
@@ -58,7 +71,7 @@ type NavEntry =
   | { type: 'folder'; id: string; label: string };
 
 export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
-  { view, onSelectView, focused = false, onLeaveFocus, onEnterFocus },
+  { view, onSelectView, focused = false, onLeaveFocus, onEnterFocus, onOpenWeeklyReview },
   ref,
 ) {
   const { me } = useApp();
@@ -310,6 +323,15 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             {sl.label}
           </button>
         ))}
+        {/* 「今週の巣」週次レビュー（改修13回目）。通常のスマートリスト（タスク一覧）とは
+            表示形式が異なる集計ビューのため、あえてリストに混ぜず独立ボタンにする */}
+        <button
+          onClick={onOpenWeeklyReview}
+          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-neutral-500 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-800"
+        >
+          <ClipboardCheck size={13} className="shrink-0 text-violet-400" />
+          今週の巣
+        </button>
         {customViews.map((cv) => (
           <div
             key={cv.id}
@@ -522,7 +544,9 @@ function ListRow({
 }) {
   const labelRef = useRef<EditableLabelHandle | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
+  const colorPickerRef = useRef<HTMLDivElement | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  useOutsideClick(colorPickerRef, () => setShowColorPicker(false), showColorPicker);
   const [taskDragOver, setTaskDragOver] = useState(false);
   // リスト並び替え時、ドロップ先の上半分/下半分どちらに離したかで挿入位置（前/後）を示す線
   // （改修9回目：行全体をハイライトするだけでは挿入位置が分かりにくいという指摘への対応）
@@ -607,36 +631,41 @@ function ListRow({
       >
         <GripVertical size={13} />
       </span>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setShowColorPicker((v) => !v);
-        }}
-        title="色を変更"
-        className="flex min-h-8 min-w-8 shrink-0 items-center justify-center"
-      >
-        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-      </button>
-      {showColorPicker && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute top-full left-0 z-10 mt-1 flex w-44 flex-wrap gap-1 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+      {/* ボタンとポップオーバーを同じref内に置く。ボタンをuseOutsideClickの対象外に
+          してしまうと、開いた状態でボタンを再クリックした瞬間にpointerdownで一旦閉じ、
+          直後のclickのトグルでまた開いてしまう（改修13回目：外側クリックで閉じない不具合の修正） */}
+      <div ref={colorPickerRef} className="relative inline-flex">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowColorPicker((v) => !v);
+          }}
+          title="色を変更"
+          className="flex min-h-8 min-w-8 shrink-0 items-center justify-center"
         >
-          {LIST_COLORS.map((c) => (
-            <button
-              key={c}
-              onClick={() => {
-                onChangeColor(c);
-                setShowColorPicker(false);
-              }}
-              className={`h-6 w-6 rounded-full border-2 ${
-                color === c ? 'border-blue-400' : 'border-transparent'
-              }`}
-              style={{ backgroundColor: c }}
-            />
-          ))}
-        </div>
-      )}
+          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+        </button>
+        {showColorPicker && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-full left-0 z-10 mt-1 flex w-44 flex-wrap gap-1 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+          >
+            {LIST_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => {
+                  onChangeColor(c);
+                  setShowColorPicker(false);
+                }}
+                className={`h-6 w-6 rounded-full border-2 ${
+                  color === c ? 'border-blue-400' : 'border-transparent'
+                }`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
       <EditableLabel ref={labelRef} value={name} className="flex-1 truncate px-1" onCommit={onRename} />
       <button
         onClick={(e) => {

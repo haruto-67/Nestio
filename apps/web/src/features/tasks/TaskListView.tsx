@@ -1,7 +1,5 @@
 import { useEffect, useState, type MouseEvent, type DragEvent } from 'react';
-import { uuidv7, type ListSortMode, type TaskRow } from '@nestio/shared';
-import { LayoutList, Kanban, CalendarDays } from 'lucide-react';
-import { FilterIcon, NestViewIcon } from '../../ui/icons.js';
+import { uuidv7, type ListSortMode } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
 import { useDelayedHide } from '../../lib/panel-transition.js';
 import { useLists, useTasks, useTags, useTaskTags } from '../../db/queries.js';
@@ -11,20 +9,20 @@ import { buildTaskTree, flattenTaskTreeWithDepth, type FlattenedTaskEntry } from
 import { sortTasks } from '../../lib/task-sort.js';
 import { taskDueDateStringJst, SMART_LISTS, SMART_LIST_HEADER_ACCENT_CLASS } from '../../lib/task-views.js';
 import { todayJstDateString } from '../../lib/datetime.js';
-import { upsertTask, upsertList, completeTask } from '../../state/actions.js';
+import { upsertTask, upsertList, completeTask, deleteTask } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
 import { showToast } from '../../ui/toast.js';
+import { undo } from '../../state/undoManager.js';
 import { setTaskCollapsed, isTaskCollapsed, subscribeAnyTaskCollapsed } from '../../lib/collapsed-tasks.js';
-import { loadCustomViews, createCustomView, subscribeCustomViews } from '../../lib/custom-views.js';
+import { loadCustomViews, subscribeCustomViews } from '../../lib/custom-views.js';
 import { useKeymap } from '../../state/useKeymap.js';
-import { TaskItem } from './TaskItem.js';
 import { EmptyState } from './EmptyState.js';
 import { KanbanBoard } from './KanbanBoard.js';
 import { CalendarBoard } from './CalendarBoard.js';
+import { TaskListFilterMenu } from './TaskListFilterMenu.js';
+import { TaskListDisplayMenu, type TaskDisplayMode } from './TaskListDisplayMenu.js';
+import { TaskTreeOrFlat, TodayViewSections } from './TaskListRows.js';
 
-const PRIORITY_FILTER_LABELS: Record<number, string> = { 0: 'なし', 1: '低', 2: '中', 3: '高' };
-
-type TaskDisplayMode = 'list' | 'kanban' | 'calendar';
 const DISPLAY_MODE_KEY = 'nestio_task_display_mode';
 
 function loadInitialDisplayMode(): TaskDisplayMode {
@@ -73,11 +71,10 @@ export function TaskListView({
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<number | 'all'>('all');
   const [tagFilter, setTagFilter] = useState<string[]>([]);
-  // ヘッダーを「絞り込み」「表示方法」の2アイコンに集約（改修9回目）。
-  // タグの絞り込みメニュー自体は「絞り込み」ポップオーバーの中に入れ子で開く
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [showDisplayMenu, setShowDisplayMenu] = useState(false);
-  const [newViewName, setNewViewName] = useState('');
+  // ヘッダーを「絞り込み」「表示方法」の2アイコンに集約（改修9回目）。開いているメニューを
+  // 1つのstateで管理し、片方を開いたらもう片方は自動的に閉じる（改修13回目：
+  // TaskListFilterMenu/TaskListDisplayMenuへの切り出しに伴い、開閉状態のみ親で持つ形にした）
+  const [activeMenu, setActiveMenu] = useState<'filter' | 'display' | null>(null);
   const [customViews, setCustomViewsState] = useState(() => loadCustomViews());
   useEffect(() => subscribeCustomViews(() => setCustomViewsState(loadCustomViews())), []);
   const [displayMode, setDisplayModeState] = useState<TaskDisplayMode>(loadInitialDisplayMode);
@@ -98,6 +95,21 @@ export function TaskListView({
         : (SMART_LISTS.find((s) => s.key === view.key)?.label ?? '');
   const sortMode: ListSortMode = list?.sort_mode ?? 'due';
   const headerAccentClass = view.type === 'smart' ? SMART_LIST_HEADER_ACCENT_CLASS[view.key] : 'border-t-transparent';
+
+  // 「今日」ビューだけの達成率表示（改修13回目：他のスマートビューと見た目が同じで
+  // 「今日」の特別感が無いという指摘への対応）。filterTasksForViewの'today'は未完了のみを
+  // 返すため、完了数は別途「期限が今日以前」の全タスクから集計する
+  const todayCompletionStats =
+    view.type === 'smart' && view.key === 'today'
+      ? (() => {
+          const today = todayJstDateString();
+          const relevant = tasks.filter((t) => {
+            const d = taskDueDateStringJst(t);
+            return d !== null && d <= today;
+          });
+          return { completed: relevant.filter((t) => t.completed_at !== null).length, total: relevant.length };
+        })()
+      : null;
 
   const tagIdsByTaskId = new Map<string, string[]>();
   for (const tt of taskTags) {
@@ -144,10 +156,31 @@ export function TaskListView({
     return true;
   };
 
+  // 先行タスク（軽量な依存関係、改修13回目）：先行タスクがまだ未完了なら、その
+  // タイトルを返す（一覧でグレーアウトする材料にする）。tasksは既に論理削除済みを
+  // 除外しているため、削除された先行タスクは見つからず自動的にブロック扱いから外れる
+  const predecessorTitle = (taskId: string): string | null => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task || task.blocked_by_task_id === null) return null;
+    const predecessor = tasks.find((t) => t.id === task.blocked_by_task_id);
+    if (!predecessor || predecessor.completed_at !== null) return null;
+    return predecessor.title;
+  };
+
   const toggleComplete = (taskId: string, completing: boolean) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
     completeTask(userId, task, completing);
+  };
+
+  const setPriority = (taskId: string, priority: 0 | 1 | 2 | 3) => {
+    upsertTask(userId, taskId, { priority });
+  };
+
+  // モバイルのスワイプ削除（改修13回目）：誤操作時の安心感のため「元に戻す」ボタン付きトーストを出す
+  const handleSwipeDelete = (taskId: string) => {
+    deleteTask(taskId);
+    showToast('削除しました', { onUndo: undo });
   };
 
   const addSubtask = (parentTaskId: string) => {
@@ -243,163 +276,35 @@ export function TaskListView({
       onClick={closeDetailUnlessRowClick}
     >
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800 md:px-6 md:py-4">
-        <h1 className="min-w-0 flex-1 truncate text-lg font-semibold md:text-xl">{title}</h1>
+        <h1 className="flex min-w-0 flex-1 items-baseline gap-2 truncate text-lg font-semibold md:text-xl">
+          {title}
+          {todayCompletionStats && todayCompletionStats.total > 0 && (
+            <span className="shrink-0 text-sm font-normal text-amber-500">
+              {todayCompletionStats.completed}/{todayCompletionStats.total} 完了
+            </span>
+          )}
+        </h1>
         <div className="flex items-center gap-2">
-          {/* 絞り込み（優先度・タグ）をまとめたポップオーバー。以前は優先度セレクト・タグボタンが
-              並んでいてリスト名を圧迫していたため1アイコンに集約した（改修9回目） */}
-          <div className="relative">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowFilterMenu((v) => !v);
-                setShowDisplayMenu(false);
-              }}
-              title="絞り込み"
-              className={`relative flex min-h-8 min-w-8 items-center justify-center rounded-md border ${
-                priorityFilter !== 'all' || tagFilter.length > 0
-                  ? 'border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-300'
-                  : 'border-neutral-200 text-neutral-500 dark:border-neutral-700'
-              }`}
-            >
-              <FilterIcon size={16} />
-              {(priorityFilter !== 'all' || tagFilter.length > 0) && (
-                <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-blue-500" />
-              )}
-            </button>
-            {showFilterMenu && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="absolute top-full right-0 z-10 mt-1 flex w-52 flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
-              >
-                <select
-                  value={priorityFilter}
-                  onChange={(e) => setPriorityFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                  title="優先度で絞り込み"
-                  className="w-full rounded-md border border-neutral-200 bg-transparent p-1 text-xs dark:border-neutral-700"
-                >
-                  <option value="all">すべての優先度</option>
-                  {([3, 2, 1, 0] as const).map((p) => (
-                    <option key={p} value={p}>
-                      優先度: {PRIORITY_FILTER_LABELS[p]}
-                    </option>
-                  ))}
-                </select>
-                {allTags.length > 0 && (
-                  <div className="flex flex-col gap-0.5 border-t border-neutral-100 pt-2 dark:border-neutral-800">
-                    <span className="px-1 text-[10px] font-medium text-neutral-400">タグで絞り込み</span>
-                    <div className="flex max-h-40 flex-col gap-0.5 overflow-y-auto">
-                      {allTags.map((tag) => (
-                        <label
-                          key={tag.id}
-                          className="flex items-center gap-2 rounded-md px-1 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={tagFilter.includes(tag.id)}
-                            onChange={(e) => {
-                              setTagFilter((prev) =>
-                                e.target.checked ? [...prev, tag.id] : prev.filter((id) => id !== tag.id),
-                              );
-                            }}
-                          />
-                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
-                          <span className="truncate">{tag.name}</span>
-                        </label>
-                      ))}
-                    </div>
-                    {tagFilter.length > 0 && (
-                      <>
-                        <button
-                          onClick={() => setTagFilter([])}
-                          className="mt-1 rounded-md px-1 py-1 text-left text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
-                        >
-                          クリア
-                        </button>
-                        <div className="mt-1 flex gap-1 border-t border-neutral-100 pt-1 dark:border-neutral-800">
-                          <input
-                            value={newViewName}
-                            onChange={(e) => setNewViewName(e.target.value)}
-                            placeholder="ビュー名を入力して保存"
-                            className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-transparent px-1 py-0.5 text-xs dark:border-neutral-700"
-                          />
-                          <button
-                            onClick={() => {
-                              const trimmed = newViewName.trim();
-                              if (!trimmed) return;
-                              createCustomView(trimmed, tagFilter);
-                              setNewViewName('');
-                              setTagFilter([]);
-                              setShowFilterMenu(false);
-                              showToast('カスタムビューを保存しました');
-                            }}
-                            className="shrink-0 rounded-md border border-blue-300 px-1.5 text-xs text-blue-600 dark:border-blue-700 dark:text-blue-300"
-                          >
-                            保存
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 表示方法（リスト/カンバン/カレンダー切替・並び替え）をまとめたポップオーバー（改修9回目） */}
-          <div className="relative">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowDisplayMenu((v) => !v);
-                setShowFilterMenu(false);
-              }}
-              title="表示方法"
-              className="flex min-h-8 min-w-8 items-center justify-center rounded-md border border-neutral-200 text-neutral-500 dark:border-neutral-700"
-            >
-              <NestViewIcon size={16} />
-            </button>
-            {showDisplayMenu && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="absolute top-full right-0 z-10 mt-1 flex w-44 flex-col gap-2 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
-              >
-                <div className="flex rounded-md border border-neutral-200 dark:border-neutral-700">
-                  {(
-                    [
-                      { mode: 'list' as const, label: 'リスト', Icon: LayoutList },
-                      { mode: 'kanban' as const, label: 'カンバン', Icon: Kanban },
-                      { mode: 'calendar' as const, label: 'カレンダー', Icon: CalendarDays },
-                    ]
-                  ).map(({ mode, label, Icon }) => (
-                    <button
-                      key={mode}
-                      onClick={() => setDisplayMode(mode)}
-                      title={label}
-                      className={`flex min-h-8 flex-1 items-center justify-center px-1.5 first:rounded-l-lg last:rounded-r-lg ${
-                        displayMode === mode
-                          ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-                          : 'text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'
-                      }`}
-                    >
-                      <Icon size={14} />
-                    </button>
-                  ))}
-                </div>
-                {view.type === 'list' && (
-                  <select
-                    value={sortMode}
-                    onChange={(e) => changeSortMode(e.target.value as ListSortMode)}
-                    className="w-full rounded-md border border-neutral-200 bg-transparent p-1 text-xs dark:border-neutral-700"
-                  >
-                    <option value="custom">カスタム</option>
-                    <option value="due">期限順</option>
-                    <option value="priority">優先度順</option>
-                    <option value="name">名前順</option>
-                  </select>
-                )}
-              </div>
-            )}
-          </div>
+          <TaskListFilterMenu
+            open={activeMenu === 'filter'}
+            onToggle={() => setActiveMenu((m) => (m === 'filter' ? null : 'filter'))}
+            onClose={() => setActiveMenu((m) => (m === 'filter' ? null : m))}
+            priorityFilter={priorityFilter}
+            onPriorityFilterChange={setPriorityFilter}
+            allTags={allTags}
+            tagFilter={tagFilter}
+            onTagFilterChange={setTagFilter}
+          />
+          <TaskListDisplayMenu
+            open={activeMenu === 'display'}
+            onToggle={() => setActiveMenu((m) => (m === 'display' ? null : 'display'))}
+            onClose={() => setActiveMenu((m) => (m === 'display' ? null : m))}
+            displayMode={displayMode}
+            onChangeDisplayMode={setDisplayMode}
+            showSortMode={view.type === 'list'}
+            sortMode={sortMode}
+            onChangeSortMode={changeSortMode}
+          />
         </div>
       </header>
 
@@ -457,11 +362,14 @@ export function TaskListView({
               tasks={tasksInView}
               sortMode={sortMode}
               canComplete={canComplete}
+              predecessorTitle={predecessorTitle}
               onToggleComplete={toggleComplete}
               onSelect={onSelectTask}
               selectedTaskId={selectedTaskId}
               onAddSubtask={addSubtask}
               onDropOntoTask={dropOntoTask}
+              onDelete={handleSwipeDelete}
+              onSetPriority={setPriority}
             />
           ) : (
             <TaskTreeOrFlat
@@ -469,15 +377,19 @@ export function TaskListView({
               tasks={tasksInView}
               sortMode={sortMode}
               canComplete={canComplete}
+              predecessorTitle={predecessorTitle}
               onToggleComplete={toggleComplete}
               onSelect={onSelectTask}
               selectedTaskId={selectedTaskId}
               onAddSubtask={addSubtask}
               onDropOntoTask={dropOntoTask}
+              onDelete={handleSwipeDelete}
+              onSetPriority={setPriority}
             />
           )}
           {tasksInView.length === 0 && (
             <EmptyState
+              view={view}
               message={
                 priorityFilter !== 'all'
                   ? 'この優先度のタスクはありません'
@@ -490,123 +402,5 @@ export function TaskListView({
         </div>
       )}
     </div>
-  );
-}
-
-interface SharedListProps {
-  sortMode: ListSortMode;
-  canComplete: (taskId: string) => boolean;
-  onToggleComplete: (taskId: string, completing: boolean) => void;
-  onSelect: (taskId: string) => void;
-  selectedTaskId: string | null;
-  onAddSubtask: (taskId: string) => void;
-  onDropOntoTask: (draggedTaskId: string, targetTaskId: string) => void;
-}
-
-function TaskTreeOrFlat({
-  view,
-  tasks,
-  sortMode,
-  canComplete,
-  onToggleComplete,
-  onSelect,
-  selectedTaskId,
-  onAddSubtask,
-  onDropOntoTask,
-}: SharedListProps & { view: ViewSelection; tasks: TaskRow[] }) {
-  if (view.type === 'list') {
-    const tree = buildTaskTree(tasks, sortMode);
-    return (
-      <>
-        {tree.map((node) => (
-          <TaskItem
-            key={node.task.id}
-            node={node}
-            depth={0}
-            canComplete={canComplete}
-            onToggleComplete={onToggleComplete}
-            onSelect={onSelect}
-            onAddSubtask={onAddSubtask}
-            onDropOntoTask={onDropOntoTask}
-            selectedTaskId={selectedTaskId}
-          />
-        ))}
-      </>
-    );
-  }
-
-  const sorted = sortTasks(tasks, sortMode);
-  return (
-    <>
-      {sorted.map((task) => (
-        <TaskItem
-          key={task.id}
-          node={{ task, children: [] }}
-          depth={0}
-          canComplete={canComplete}
-          onToggleComplete={onToggleComplete}
-          onSelect={onSelect}
-          onAddSubtask={onAddSubtask}
-          onDropOntoTask={onDropOntoTask}
-          selectedTaskId={selectedTaskId}
-        />
-      ))}
-    </>
-  );
-}
-
-function TodayViewSections({ tasks, sortMode, canComplete, onToggleComplete, onSelect, selectedTaskId, onAddSubtask, onDropOntoTask }: SharedListProps & { tasks: TaskRow[] }) {
-  const today = todayJstDateString();
-  const overdue = sortTasks(
-    tasks.filter((t) => {
-      const d = taskDueDateStringJst(t);
-      return d !== null && d < today;
-    }),
-    sortMode,
-  );
-  const dueToday = sortTasks(
-    tasks.filter((t) => taskDueDateStringJst(t) === today),
-    sortMode,
-  );
-
-  return (
-    <>
-      {overdue.length > 0 && (
-        <div className="mb-2">
-          <h2 className="px-2 py-1 text-xs font-semibold text-red-500">期限切れ</h2>
-          {overdue.map((task) => (
-            <TaskItem
-              key={task.id}
-              node={{ task, children: [] }}
-              depth={0}
-              canComplete={canComplete}
-              onToggleComplete={onToggleComplete}
-              onSelect={onSelect}
-              onAddSubtask={onAddSubtask}
-              onDropOntoTask={onDropOntoTask}
-              selectedTaskId={selectedTaskId}
-            />
-          ))}
-        </div>
-      )}
-      {dueToday.length > 0 && (
-        <div>
-          <h2 className="px-2 py-1 text-xs font-semibold text-neutral-400">今日</h2>
-          {dueToday.map((task) => (
-            <TaskItem
-              key={task.id}
-              node={{ task, children: [] }}
-              depth={0}
-              canComplete={canComplete}
-              onToggleComplete={onToggleComplete}
-              onSelect={onSelect}
-              onAddSubtask={onAddSubtask}
-              onDropOntoTask={onDropOntoTask}
-              selectedTaskId={selectedTaskId}
-            />
-          ))}
-        </div>
-      )}
-    </>
   );
 }

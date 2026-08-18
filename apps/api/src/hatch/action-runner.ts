@@ -42,7 +42,7 @@ export async function runHatchAction(
       return 'moved';
     }
     case 'create_task': {
-      const id = internalActions.runCreateTask(
+      const id = await internalActions.runCreateTask(
         db,
         userId,
         subjectId,
@@ -51,7 +51,7 @@ export async function runHatchAction(
       return `created task ${id}`;
     }
     case 'create_note': {
-      const id = internalActions.runCreateNote(
+      const id = await internalActions.runCreateNote(
         db,
         userId,
         subjectId,
@@ -69,6 +69,7 @@ export async function runHatchAction(
         env,
         subjectId,
         params as { webhook_key: string; message_template: string },
+        userId,
       );
       return 'discord sent';
     case 'run_registered_script':

@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { enqueueTriggerRun } from './queue.js';
+import { fetchWeatherForecast, getUserWeatherLocation } from './weather.js';
 
 interface TriggerRow {
   id: string;
@@ -140,8 +141,58 @@ export function checkScheduleTriggers(db: Database.Database): void {
   }
 }
 
-export function checkAllPeriodicTriggers(db: Database.Database): void {
+/** 「指定時刻の降水確率がしきい値以上」。condition_jsonは
+ * { hour, minute, min_precipitation_probability }（改修13回目：Hatchの発火条件を生活寄りに拡張）。
+ * user_settings.weather_location_jsonに地点が未設定のユーザーは黙ってスキップする
+ * （通知系アクションと違い、地点未設定は設定ミスというより「まだ使わない」選択として扱う） */
+export async function checkWeatherTriggers(db: Database.Database): Promise<void> {
+  const triggers = db
+    .prepare(
+      `SELECT id, user_id, condition_json FROM triggers WHERE event = 'weather_rain' AND enabled = 1 AND deleted_at IS NULL`,
+    )
+    .all() as TriggerRow[];
+  if (triggers.length === 0) return;
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tokyo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  const now = Date.now();
+
+  for (const trigger of triggers) {
+    let condition: { hour?: number; minute?: number; min_precipitation_probability?: number };
+    try {
+      condition = JSON.parse(trigger.condition_json || '{}') as {
+        hour?: number;
+        minute?: number;
+        min_precipitation_probability?: number;
+      };
+    } catch {
+      continue;
+    }
+    if (condition.hour === undefined || condition.minute === undefined) continue;
+    if (condition.hour !== hour || condition.minute !== minute) continue;
+    if (wasRecentlyRun(db, trigger.id, null, now - 60_000)) continue;
+
+    const location = getUserWeatherLocation(db, trigger.user_id);
+    if (!location) continue;
+
+    const forecast = await fetchWeatherForecast(location.lat, location.lon);
+    if (!forecast) continue;
+    const threshold = condition.min_precipitation_probability ?? 50;
+    if (forecast.precipitationProbability < threshold) continue;
+
+    enqueueTriggerRun(db, trigger.user_id, trigger.id, null);
+  }
+}
+
+export async function checkAllPeriodicTriggers(db: Database.Database): Promise<void> {
   checkDueSoonTriggers(db);
   checkOverdueTriggers(db);
   checkScheduleTriggers(db);
+  await checkWeatherTriggers(db);
 }

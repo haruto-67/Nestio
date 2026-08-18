@@ -18,7 +18,9 @@ import { naturalCollator, todayJstDateString } from '../../lib/datetime.js';
 import { RecurrenceEditor } from './RecurrenceEditor.js';
 import { AttachmentList } from '../attachments/AttachmentList.js';
 import { showToast } from '../../ui/toast.js';
+import { undo } from '../../state/undoManager.js';
 import { requestPushPermissionPrompt } from '../../lib/push-prompt.js';
+import { CollapsibleSection } from '../../ui/CollapsibleSection.js';
 
 const PRIORITY_LABELS = ['なし', '低', '中', '高'] as const;
 
@@ -102,11 +104,12 @@ export function TaskDetailPanel({
 
   const sortedLists = [...lists].sort((a, b) => naturalCollator.compare(a.name, b.name));
   const taskTagByTagId = new Map(taskTags.filter((tt) => tt.task_id === taskId).map((tt) => [tt.tag_id, tt]));
+  const subtaskCount = tasks.filter((t) => t.parent_id === taskId).length;
 
   const removeTask = () => {
     deleteTask(taskId);
     onClose();
-    showToast('削除しました');
+    showToast('削除しました', { onUndo: undo });
   };
 
   const addSubtask = () => {
@@ -180,8 +183,7 @@ export function TaskDetailPanel({
         className="w-full border-b border-transparent bg-transparent text-lg font-medium outline-none focus:border-blue-400"
       />
 
-      <div className="flex flex-col gap-1 text-xs text-neutral-500">
-        並び替え・階層
+      <CollapsibleSection title="並び替え・階層">
         <div className="flex gap-1">
           <button
             onClick={onMoveUp}
@@ -212,7 +214,7 @@ export function TaskDetailPanel({
             <IndentIncrease size={14} />
           </button>
         </div>
-      </div>
+      </CollapsibleSection>
 
       <div className="flex flex-col gap-1 text-xs text-neutral-500">
         メモ
@@ -228,8 +230,7 @@ export function TaskDetailPanel({
         />
       </div>
 
-      <label className="flex flex-col gap-1 text-xs text-neutral-500">
-        リスト
+      <CollapsibleSection title="リスト" defaultOpen>
         <select
           value={task.list_id}
           onChange={(e) => update({ list_id: e.target.value })}
@@ -241,7 +242,7 @@ export function TaskDetailPanel({
             </option>
           ))}
         </select>
-      </label>
+      </CollapsibleSection>
 
       <div className="flex flex-col gap-1 text-xs text-neutral-500">
         優先度
@@ -253,7 +254,7 @@ export function TaskDetailPanel({
               className={`flex-1 rounded-md border py-1 text-xs ${
                 task.priority === p
                   ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40'
-                  : 'border-neutral-200 dark:border-neutral-700'
+                  : 'border-surface-border'
               }`}
             >
               {PRIORITY_LABELS[p]}
@@ -264,10 +265,31 @@ export function TaskDetailPanel({
 
       <DueEditor task={task} onChange={update} />
 
-      <RecurrenceEditor task={task} onChange={update} onSkipOccurrence={() => skipTaskOccurrence(userId, task)} />
+      <CollapsibleSection title="繰り返し" defaultOpen={task.rrule !== null}>
+        <RecurrenceEditor task={task} onChange={update} onSkipOccurrence={() => skipTaskOccurrence(userId, task)} />
+      </CollapsibleSection>
 
-      <div className="flex flex-col gap-1 text-xs text-neutral-500">
-        タグ
+      <CollapsibleSection title="先行タスク" defaultOpen={task.blocked_by_task_id !== null}>
+        {/* 軽量な依存関係（改修13回目・改修9回目ブレインストーム）：「AはBが終わってから着手する」
+            という一方向の依存のみ表現する。ガントチャートのような重い機能は入れず、単一の
+            先行タスクを指定できるだけに留める。先行タスク未完了の間は一覧上でグレーアウトする */}
+        <select
+          value={task.blocked_by_task_id ?? ''}
+          onChange={(e) => update({ blocked_by_task_id: e.target.value || null })}
+          className="w-full rounded-md border border-neutral-200 bg-transparent p-1.5 text-sm dark:border-neutral-700"
+        >
+          <option value="">なし</option>
+          {tasks
+            .filter((t) => t.id !== task.id && t.deleted_at === null)
+            .map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.title}
+              </option>
+            ))}
+        </select>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="タグ" defaultOpen={taskTagByTagId.size > 0}>
         <div className="flex flex-wrap gap-1">
           {allTags.map((t) => {
             const active = taskTagByTagId.has(t.id);
@@ -286,18 +308,20 @@ export function TaskDetailPanel({
           })}
         </div>
         <TagCreator onCreate={createAndAttachTag} />
-      </div>
+      </CollapsibleSection>
 
-      <div className="flex flex-col gap-1 text-xs text-neutral-500">
-        <div className="flex items-center justify-between">
-          <span>サブタスク</span>
+      <CollapsibleSection
+        title="サブタスク"
+        defaultOpen={subtaskCount > 0}
+        action={
           <button onClick={addSubtask} className="flex items-center gap-0.5 text-blue-500">
             <Plus size={12} />
             追加
           </button>
-        </div>
+        }
+      >
         <SubtaskList parentId={taskId} />
-      </div>
+      </CollapsibleSection>
 
       <AttachmentList ownerType="task" ownerId={taskId} />
       </aside>
@@ -328,7 +352,7 @@ function DueEditor({ task, onChange }: { task: TaskRow; onChange: (fields: TaskW
             key={m}
             onClick={() => setMode(m)}
             className={`flex-1 rounded-md border py-1 text-xs ${
-              mode === m ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40' : 'border-neutral-200 dark:border-neutral-700'
+              mode === m ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40' : 'border-surface-border'
             }`}
           >
             {m === 'none' ? 'なし' : m === 'all_day' ? '終日' : '時刻指定'}

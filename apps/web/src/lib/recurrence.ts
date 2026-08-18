@@ -60,6 +60,27 @@ export function computeNextOccurrence(
   return isAllDay ? { dueAt: null, dueDate: utcDateToDateOnly(next) } : { dueAt: next.getTime(), dueDate: null };
 }
 
+/**
+ * 指定した期限（dueAt/dueDate）より後の次のoccurrenceを計算する（改修13回目：カレンダーの
+ * 「孵化予報」用。computeNextOccurrenceは常に「現在時刻」を基準にするため、
+ * 「今の期限の、その次」を知りたい場合には使えない。基準を明示的に渡せるようにする）
+ */
+export function computeOccurrenceAfter(
+  rruleString: string,
+  isAllDay: boolean,
+  afterDueAt: number | null,
+  afterDueDate: string | null,
+): { dueAt: number | null; dueDate: string | null } | null {
+  const rule = rrulestr(rruleString);
+  const after = isAllDay
+    ? dateOnlyToUtcDate(afterDueDate ?? todayJstDateString())
+    : new Date(afterDueAt ?? Date.now());
+  const next = rule.after(after, false);
+  if (!next) return null;
+
+  return isAllDay ? { dueAt: null, dueDate: utcDateToDateOnly(next) } : { dueAt: next.getTime(), dueDate: null };
+}
+
 /** UI表示用に人が読める形へ簡略化する（カスタムRRULEはそのまま返す） */
 export function describeRrule(rruleString: string): string {
   try {

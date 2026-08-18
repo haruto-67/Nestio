@@ -75,13 +75,13 @@ function todayPlusDays(offsetDays: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function runCreateTask(
+export async function runCreateTask(
   db: Database.Database,
   userId: string,
   subjectTaskId: string | null,
   params: { list_id: string; title_template: string; due_offset_days?: number },
-): string {
-  const title = expandTemplate(db, params.title_template, subjectTaskId);
+): Promise<string> {
+  const title = await expandTemplate(db, params.title_template, subjectTaskId, userId);
   const id = uuidv7();
   const fields: Record<string, unknown> = {
     list_id: params.list_id,
@@ -103,14 +103,14 @@ export function runCreateTask(
   return id;
 }
 
-export function runCreateNote(
+export async function runCreateNote(
   db: Database.Database,
   userId: string,
   subjectTaskId: string | null,
   params: { title_template: string; body_template: string },
-): string {
-  const title = expandTemplate(db, params.title_template, subjectTaskId);
-  const body = expandTemplate(db, params.body_template, subjectTaskId);
+): Promise<string> {
+  const title = await expandTemplate(db, params.title_template, subjectTaskId, userId);
+  const body = await expandTemplate(db, params.body_template, subjectTaskId, userId);
   const id = uuidv7();
 
   applyOrThrow(db, userId, {

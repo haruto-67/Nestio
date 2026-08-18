@@ -96,6 +96,46 @@ export const KEYMAP_ACTION_LABELS: Record<KeymapAction, string> = {
   goto_last: '末尾の項目へ移動',
 };
 
+/**
+ * Shift併用時にe.keyがキーボードレイアウト依存の記号へ変わる物理キー
+ * （例: US配列でShift+1は"!"、Shift+/は"?"）。normalizeKeyComboではe.keyの代わりに
+ * e.code（物理キー位置）から導いたレイアウト非依存の文字を使う（改修12回目：
+ * MarkdownFieldの箇条書き/番号付きリストショートカットで先行対応した問題と同じ。
+ * 改修13回目：DEFAULT_KEYMAPのCtrl+Shift+1〜4（優先度）・Ctrl+Shift+/（ヘルプ）が
+ * 実際には一致せず発火しなかったことが判明したため、キーマップ全体へ展開した）
+ */
+const CODE_TO_BASE_KEY: Record<string, string> = {
+  Digit0: '0',
+  Digit1: '1',
+  Digit2: '2',
+  Digit3: '3',
+  Digit4: '4',
+  Digit5: '5',
+  Digit6: '6',
+  Digit7: '7',
+  Digit8: '8',
+  Digit9: '9',
+  Slash: '/',
+  Backslash: '\\',
+  Comma: ',',
+  Period: '.',
+  Semicolon: ';',
+  Quote: "'",
+  BracketLeft: '[',
+  BracketRight: ']',
+  Minus: '-',
+  Equal: '=',
+  Backquote: '`',
+};
+
+/** ショートカット判定に使う「基準キー文字」を求める。数字・記号キーはe.code（物理位置）を
+ * 優先し、それ以外（アルファベット等）は従来通りe.keyを使う */
+function baseKeyFor(e: Pick<KeyboardEvent, 'key' | 'code'>): string {
+  const mapped = CODE_TO_BASE_KEY[e.code];
+  if (mapped !== undefined) return mapped;
+  return e.key.length === 1 ? e.key.toLowerCase() : e.key;
+}
+
 /** キー入力が「タイプアヘッド候補」になり得るか（=修飾キー無しの1文字入力か）を判定する */
 export function isBareCharCombo(e: Pick<KeyboardEvent, 'ctrlKey' | 'metaKey' | 'altKey' | 'key'>): boolean {
   return !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1 && e.key !== ' ';
@@ -147,9 +187,7 @@ export function normalizeKeyCombo(e: KeyboardEvent): string {
   if (e.metaKey) parts.push('Cmd');
   if (e.shiftKey) parts.push('Shift');
   if (e.altKey) parts.push('Alt');
-  let key = e.key;
-  if (key === ' ') key = 'Space';
-  else if (key.length === 1) key = key.toLowerCase();
+  const key = e.key === ' ' ? 'Space' : baseKeyFor(e);
   parts.push(key);
   return parts.join('+');
 }
@@ -162,9 +200,7 @@ export function normalizeKeyComboUnified(e: KeyboardEvent): string {
   if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
   if (e.shiftKey) parts.push('Shift');
   if (e.altKey) parts.push('Alt');
-  let key = e.key;
-  if (key === ' ') key = 'Space';
-  else if (key.length === 1) key = key.toLowerCase();
+  const key = e.key === ' ' ? 'Space' : baseKeyFor(e);
   parts.push(key);
   return parts.join('+');
 }

@@ -66,6 +66,7 @@ describe('sync engine', () => {
         due_date: null,
         rrule: null,
         completed_at: null,
+        blocked_by_task_id: null,
         sort_order: 1,
         created_at: 1,
         updated_at: 1,

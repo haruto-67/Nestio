@@ -100,3 +100,33 @@ test('カンバン/カレンダー表示に切り替えられる', async ({ page
   await page.locator('button[title="カレンダー"]').click();
   await expect(page.locator('text=今月')).toBeVisible();
 });
+
+// 改修13回目（Claude所感）：モバイル幅の詳細パネル開閉・一覧の表示/非表示切替はよく確認する
+// 操作だが、改修前はPlaywrightスクリプトを都度書いて手動検証していた。改修12回目で実際に
+// 発生した「開いた瞬間に裏の一覧が消える／閉じてもアニメーションが終わるまで一覧が戻らない」
+// という回帰をCIで自動検出できるよう、最終状態（開いたら隠れる・閉じたら戻る）だけでも
+// スモークテストに加えておく
+test.describe('モバイル幅でのタスク詳細パネル開閉', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('詳細を開くと一覧が隠れ、閉じると一覧が再表示される', async ({ page }) => {
+    await page.goto('/');
+    // モバイル幅ではサイドバー（リスト一覧）がドロワーに格納されているため、
+    // 先にハンバーガーメニューで開く。PC用サイドバーはモバイル幅でも(非表示のまま)DOMに
+    // 残っているため、開いたドロワー（nav要素）内のリストに絞って選択する
+    await page.locator('button[title="メニュー"]').click();
+    await page.getByRole('navigation').getByText('E2Eスモークテスト用リスト', { exact: true }).click();
+
+    // クイック追加は作成直後にそのタスクを自動選択する（onSelectTask）ため、
+    // Enter直後から既に詳細パネルが開き一覧が隠れた状態になる
+    const quickAdd = page.locator('input[placeholder="+ タスクを追加"]');
+    await quickAdd.fill('モバイル表示テスト');
+    await quickAdd.press('Enter');
+
+    const row = page.locator('[data-task-row]').filter({ hasText: 'モバイル表示テスト' });
+    await expect(row).toBeHidden();
+
+    await page.locator('button', { hasText: '閉じる' }).first().click();
+    await expect(row).toBeVisible();
+  });
+});

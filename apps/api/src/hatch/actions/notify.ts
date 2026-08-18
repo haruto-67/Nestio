@@ -32,12 +32,13 @@ export async function runDiscordNotify(
   env: Env,
   subjectTaskId: string | null,
   params: { webhook_key: string; message_template: string },
+  userId?: string,
 ): Promise<void> {
   const webhooks = parseKeyedEnvList(env.DISCORD_WEBHOOKS);
   const url = webhooks[params.webhook_key];
   if (!url) throw new Error(`discord webhook not registered: ${params.webhook_key}`);
 
-  const message = expandTemplate(db, params.message_template, subjectTaskId);
+  const message = await expandTemplate(db, params.message_template, subjectTaskId, userId);
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

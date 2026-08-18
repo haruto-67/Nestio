@@ -51,10 +51,10 @@ describe('hatch internal actions', () => {
     expect(row.list_id).toBe(otherListId);
   });
 
-  it('runCreateTask: テンプレートを展開してタスクを作成する', () => {
+  it('runCreateTask: テンプレートを展開してタスクを作成する', async () => {
     setup();
     const subjectTaskId = insertTestTask(db, userId, listId, '元タスク');
-    const newId = runCreateTask(db, userId, subjectTaskId, {
+    const newId = await runCreateTask(db, userId, subjectTaskId, {
       list_id: listId,
       title_template: '{{task.title}}のフォローアップ',
     });
@@ -63,17 +63,21 @@ describe('hatch internal actions', () => {
     expect(row.title).toBe('元タスクのフォローアップ');
   });
 
-  it('runCreateTask: due_offset_daysを指定すると終日期限が設定される', () => {
+  it('runCreateTask: due_offset_daysを指定すると終日期限が設定される', async () => {
     setup();
-    const newId = runCreateTask(db, userId, null, { list_id: listId, title_template: '明日のタスク', due_offset_days: 1 });
+    const newId = await runCreateTask(db, userId, null, {
+      list_id: listId,
+      title_template: '明日のタスク',
+      due_offset_days: 1,
+    });
     const row = db.prepare('SELECT due_date FROM tasks WHERE id = ?').get(newId) as { due_date: string | null };
     expect(row.due_date).not.toBeNull();
   });
 
-  it('runCreateNote: テンプレートを展開してメモを作成する', () => {
+  it('runCreateNote: テンプレートを展開してメモを作成する', async () => {
     setup();
     const subjectTaskId = insertTestTask(db, userId, listId, '対象タスク');
-    const noteId = runCreateNote(db, userId, subjectTaskId, {
+    const noteId = await runCreateNote(db, userId, subjectTaskId, {
       title_template: '{{task.title}}の記録',
       body_template: '完了: {{task.title}}',
     });

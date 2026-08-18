@@ -57,3 +57,17 @@ export const SMART_LIST_HEADER_ACCENT_CLASS: Record<SmartListKey, string> = {
   all: 'border-t-transparent',
   completed: 'border-t-emerald-400',
 };
+
+/**
+ * 空状態（EmptyState）のマーク色。SMART_LIST_DOT_CLASS/HEADER_ACCENT_CLASSと同じ配色を
+ * 淡い色調（既存のEgg=text-amber-300/500と同じ濃度）で揃える（改修13回目：空状態が
+ * 全ビュー共通で単色だったのを、ビューごとに色分けする要望への対応）
+ */
+export const SMART_LIST_EMPTY_ICON_CLASS: Record<SmartListKey, string> = {
+  today: 'text-amber-300 dark:text-amber-500',
+  tomorrow: 'text-sky-300 dark:text-sky-500',
+  week: 'text-violet-300 dark:text-violet-500',
+  no_due: 'text-neutral-300 dark:text-neutral-500',
+  all: 'text-neutral-300 dark:text-neutral-500',
+  completed: 'text-emerald-300 dark:text-emerald-500',
+};

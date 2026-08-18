@@ -24,7 +24,7 @@ export async function runClaudePromptAction(
 ): Promise<string> {
   requireClaudeConfigured(env);
 
-  const prompt = expandTemplate(db, params.template, subjectTaskId);
+  const prompt = await expandTemplate(db, params.template, subjectTaskId, userId);
   const result = await runClaudePrompt(prompt, {
     bin: env.CLAUDE_BIN,
     workdir: env.CLAUDE_WORKDIR,
@@ -32,7 +32,7 @@ export async function runClaudePromptAction(
   });
 
   if (params.output === 'note') {
-    runCreateNote(db, userId, subjectTaskId, { title_template: 'Claudeの応答', body_template: result.stdout });
+    await runCreateNote(db, userId, subjectTaskId, { title_template: 'Claudeの応答', body_template: result.stdout });
   } else {
     await sendPushToUser(db, env, logger, userId, { title: 'Claudeからの応答', body: result.stdout.slice(0, 200) });
   }

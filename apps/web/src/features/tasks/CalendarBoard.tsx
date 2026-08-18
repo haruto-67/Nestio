@@ -1,9 +1,10 @@
 import { useState, type DragEvent } from 'react';
 import type { TaskRow } from '@nestio/shared';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { addDaysToDateString, todayJstDateString } from '../../lib/datetime.js';
+import { ChevronLeft, ChevronRight, Egg } from 'lucide-react';
+import { addDaysToDateString, epochMsToJstDateString, todayJstDateString } from '../../lib/datetime.js';
 import { taskDueDateStringJst } from '../../lib/task-views.js';
 import { isCoarsePointerDevice } from '../../lib/pointer.js';
+import { computeOccurrenceAfter } from '../../lib/recurrence.js';
 
 const WEEKDAY_LABELS = ['月', '火', '水', '木', '金', '土', '日'];
 
@@ -60,6 +61,21 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
     const bucket = tasksByDate.get(d);
     if (bucket) bucket.push(t);
     else tasksByDate.set(d, [t]);
+  }
+
+  // 繰り返しタスクの「孵化予報」（改修13回目、改修9回目ブレインストーム）：
+  // 次回のoccurrenceをカレンダー上にうっすら先読み表示する
+  const forecastByDate = new Map<string, TaskRow[]>();
+  for (const t of tasks) {
+    if (!t.rrule || t.completed_at !== null) continue;
+    const isAllDay = t.due_date !== null;
+    const next = computeOccurrenceAfter(t.rrule, isAllDay, t.due_at, t.due_date);
+    if (!next) continue;
+    const d = next.dueDate ?? (next.dueAt !== null ? epochMsToJstDateString(next.dueAt) : null);
+    if (!d) continue;
+    const bucket = forecastByDate.get(d);
+    if (bucket) bucket.push(t);
+    else forecastByDate.set(d, [t]);
   }
 
   const grid = buildMonthGrid(monthStart);
@@ -142,7 +158,7 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
                   isToday
                     ? 'bg-amber-400 font-semibold text-white'
                     : inMonth
-                      ? 'text-neutral-500 dark:text-neutral-400'
+                      ? 'text-muted'
                       : 'text-neutral-300 dark:text-neutral-700'
                 }`}
               >
@@ -167,6 +183,19 @@ export function CalendarBoard({ tasks, onToggleComplete, onSelect, selectedTaskI
                   <span className={`truncate ${t.completed_at !== null ? 'text-neutral-400 line-through' : ''}`}>
                     {t.title}
                   </span>
+                </div>
+              ))}
+              {/* 孵化予報：卵アイコン+うっすらした表示で「次はここ」を示す。クリック等の
+                  操作は対象外（あくまで先読みの目安。今のタスク自体は元のoccurrenceの
+                  日付セルに通常表示されている） */}
+              {(forecastByDate.get(dateStr) ?? []).map((t) => (
+                <div
+                  key={`forecast-${t.id}`}
+                  title={`孵化予報: ${t.title}`}
+                  className="flex items-center gap-1 truncate rounded-md px-1 py-0.5 text-neutral-300 opacity-70 dark:text-neutral-600"
+                >
+                  <Egg size={10} className="shrink-0" />
+                  <span className="truncate">{t.title}</span>
                 </div>
               ))}
             </div>

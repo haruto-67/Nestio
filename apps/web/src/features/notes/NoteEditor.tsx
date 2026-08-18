@@ -107,7 +107,7 @@ export function NoteEditor({ noteId, onClose, closing = false }: NoteEditorProps
             <button
               key={c}
               onClick={() => update({ color: c })}
-              className={`h-6 w-6 rounded-full border-2 ${note.color === c ? 'border-blue-400' : 'border-neutral-200 dark:border-neutral-700'}`}
+              className={`h-6 w-6 rounded-full border-2 ${note.color === c ? 'border-blue-400' : 'border-surface-border'}`}
               style={{ backgroundColor: c }}
             />
           ))}

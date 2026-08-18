@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { uuidv7 } from '@nestio/shared';
-import { Menu, Timer, Search, Egg, Keyboard, Trash2, Settings, ShieldCheck } from 'lucide-react';
+import { Menu, Search, Egg, Keyboard, Trash2, Settings, ShieldCheck } from 'lucide-react';
 import { AppProvider, useApp } from './state/AppProvider.js';
 import { useTasks, useLists } from './db/queries.js';
 import { SMART_LISTS } from './lib/task-views.js';
@@ -23,9 +23,11 @@ import { SearchModal } from './features/search/SearchModal.js';
 import { NotesScreen, type NotesScreenHandle } from './features/notes/NotesScreen.js';
 import { NotesColorFilter } from './features/notes/NotesColorFilter.js';
 import { PomodoroTimer } from './features/pomodoro/PomodoroTimer.js';
+import { PomodoroHeaderButton } from './features/pomodoro/PomodoroHeaderButton.js';
 import { HatchSettings } from './features/hatch/HatchSettings.js';
 import { AdminPanel } from './features/admin/AdminPanel.js';
 import { TrashView } from './features/trash/TrashView.js';
+import { WeeklyReview } from './features/tasks/WeeklyReview.js';
 import { upsertTask, deleteTask, completeTask } from './state/actions.js';
 import { nextSortOrder } from './lib/sort-order.js';
 import { undo, redo } from './state/undoManager.js';
@@ -132,6 +134,7 @@ function MainLayout() {
   const [showHatchSettings, setShowHatchSettings] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
+  const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   const [notesColorFilter, setNotesColorFilter] = useState<string | null>(null);
   // 左側エリア（サイドバー）へキーボードフォーカスを移す機能（改修10回目）。
   // trueの間はj/k・Enterがタスク一覧ではなくサイドバーのツリー移動に使われる
@@ -152,6 +155,33 @@ function MainLayout() {
     setSelectedTaskId(null);
     setDetailOpen(false);
     setDrawerOpen(false);
+  };
+
+  // モバイルで画面左端から右へスワイプするとドロワーを開く（改修13回目：左上のメニュー
+  // タップだけだと操作しづらいという要望）。タスク行のスワイプ完了/削除（TaskItem.tsx）とは
+  // 開始位置が画面端24px以内かどうかで区別するため競合しない
+  const edgeSwipeStartXRef = useRef<number | null>(null);
+  const EDGE_SWIPE_ZONE_PX = 24;
+  const EDGE_SWIPE_OPEN_THRESHOLD_PX = 60;
+  const handleEdgeSwipeStart = (e: ReactTouchEvent) => {
+    const touch = e.touches[0];
+    if (!touch || drawerOpen || touch.clientX > EDGE_SWIPE_ZONE_PX) {
+      edgeSwipeStartXRef.current = null;
+      return;
+    }
+    edgeSwipeStartXRef.current = touch.clientX;
+  };
+  const handleEdgeSwipeMove = (e: ReactTouchEvent) => {
+    if (edgeSwipeStartXRef.current === null) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    if (touch.clientX - edgeSwipeStartXRef.current > EDGE_SWIPE_OPEN_THRESHOLD_PX) {
+      setDrawerOpen(true);
+      edgeSwipeStartXRef.current = null;
+    }
+  };
+  const handleEdgeSwipeEnd = () => {
+    edgeSwipeStartXRef.current = null;
   };
 
   const handleVisibleTasksChange = useCallback((entries: FlattenedTaskEntry[]) => {
@@ -301,6 +331,7 @@ function MainLayout() {
       if (showSearch) return setShowSearch(false);
       if (showPomodoro) return setShowPomodoro(false);
       if (showTrash) return setShowTrash(false);
+      if (showWeeklyReview) return setShowWeeklyReview(false);
       if (showHatchSettings) return setShowHatchSettings(false);
       if (showAdminPanel) return setShowAdminPanel(false);
       if (showKeymapSettings) return setShowKeymapSettings(false);
@@ -327,6 +358,7 @@ function MainLayout() {
     showSearch,
     showPomodoro,
     showTrash,
+    showWeeklyReview,
     showHatchSettings,
     showAdminPanel,
     showKeymapSettings,
@@ -384,7 +416,9 @@ function MainLayout() {
         const label = HATCH_RUN_STATUS_LABEL[latest.status];
         if (label && !notifiedHatchRunIdsRef.current.has(latest.id)) {
           notifiedHatchRunIdsRef.current.add(latest.id);
-          showToast(`Hatchが発火しました: ${label}`);
+          // 卵のアイコンをポップさせ、世界観（孵化）のモチーフでHatchの存在感を出す
+          // （改修13回目：普段使いの導線から見えず存在に気付きにくいという指摘への対応）
+          showToast(`Hatchが発火しました: ${label}`, { icon: <Egg size={14} className="text-amber-400" /> });
         }
       } catch {
         // ポーリング失敗時は次回に任せる
@@ -406,6 +440,7 @@ function MainLayout() {
     showSearch ||
     showPomodoro ||
     showTrash ||
+    showWeeklyReview ||
     showHatchSettings ||
     showAdminPanel ||
     showKeymapSettings ||
@@ -528,13 +563,11 @@ function MainLayout() {
           <Menu size={26} />
         </button>
         <div className="flex gap-1">
-          <button
+          <PomodoroHeaderButton
             onClick={() => setShowPomodoro(true)}
-            title="ポモドーロ"
-            className="flex min-h-11 min-w-11 items-center justify-center text-red-500"
-          >
-            <Timer size={18} />
-          </button>
+            size={18}
+            className="min-h-11 min-w-11 justify-center text-red-500"
+          />
           <button
             onClick={() => setShowSearch(true)}
             title={`検索 (${keymap.search})`}
@@ -583,13 +616,11 @@ function MainLayout() {
           <div className="flex items-center justify-between border-b border-neutral-200 p-3 dark:border-neutral-800">
             <span className="text-sm font-semibold">Nestio</span>
             <div className="flex gap-2">
-              <button
+              <PomodoroHeaderButton
                 onClick={() => setShowPomodoro(true)}
-                title="ポモドーロ"
+                size={16}
                 className="text-red-500 hover:text-red-600"
-              >
-                <Timer size={16} />
-              </button>
+              />
               <button
                 onClick={() => setShowSearch(true)}
                 title={`検索 (${keymap.search})`}
@@ -667,6 +698,7 @@ function MainLayout() {
                 gotoFirstTask();
               }}
               onEnterFocus={() => setSidebarFocused(true)}
+              onOpenWeeklyReview={() => setShowWeeklyReview(true)}
             />
           )}
           {screen === 'notes' && (
@@ -708,7 +740,16 @@ function MainLayout() {
                   <Trash2 size={16} />
                 </button>
               </div>
-              {screen === 'tasks' && <Sidebar view={view} onSelectView={selectView} />}
+              {screen === 'tasks' && (
+                <Sidebar
+                  view={view}
+                  onSelectView={selectView}
+                  onOpenWeeklyReview={() => {
+                    setDrawerOpen(false);
+                    setShowWeeklyReview(true);
+                  }}
+                />
+              )}
               {screen === 'notes' && (
                 <NotesColorFilter
                   colorFilter={notesColorFilter}
@@ -730,7 +771,13 @@ function MainLayout() {
             効かなくなる不具合が出たためbubbleフェーズのonClickを使う。チェックボックスの
             <label>は独自にstopPropagationしているため、チェックボックスのクリックはここまで
             伝播しない（意図通り。行クリックには影響しない） */}
-        <div className="flex min-h-0 min-w-0 flex-1" onClick={() => setSidebarFocused(false)}>
+        <div
+          className="flex min-h-0 min-w-0 flex-1"
+          onClick={() => setSidebarFocused(false)}
+          onTouchStart={handleEdgeSwipeStart}
+          onTouchMove={handleEdgeSwipeMove}
+          onTouchEnd={handleEdgeSwipeEnd}
+        >
           {screen === 'tasks' ? (
             <>
               <TaskListView
@@ -779,6 +826,7 @@ function MainLayout() {
       {showAdminPanel && me?.is_admin && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
       {showPomodoro && <PomodoroTimer onClose={() => setShowPomodoro(false)} />}
       {showTrash && <TrashView onClose={() => setShowTrash(false)} />}
+      {showWeeklyReview && <WeeklyReview onClose={() => setShowWeeklyReview(false)} />}
       {showSearch && (
         <SearchModal
           onClose={() => setShowSearch(false)}

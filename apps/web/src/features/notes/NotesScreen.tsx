@@ -159,7 +159,7 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
         <div className="relative z-10 mb-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold">メモ</h1>
           <div className="flex items-center gap-2">
-            <div className="flex rounded-md border border-neutral-200 dark:border-neutral-700">
+            <div className="flex rounded-md border border-surface-border">
               <button
                 onClick={() => changeViewMode('gallery')}
                 title="ギャラリー表示"
@@ -206,8 +206,8 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
                     </span>
                     {note.pinned === 1 && <Pin size={12} className="shrink-0 text-amber-600" />}
                   </div>
-                  <p className="flex-1 overflow-hidden text-xs whitespace-pre-wrap text-neutral-600">
-                    {stripHtmlPreview(note.body)}
+                  <p className="line-clamp-5 flex-1 text-xs whitespace-pre-wrap text-neutral-600">
+                    {stripHtmlPreview(note.body) || <span className="text-neutral-400">本文なし</span>}
                   </p>
                 </button>
               ))}
@@ -232,7 +232,9 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
                     </span>
                     {note.pinned === 1 && <Pin size={14} className="shrink-0 text-amber-600" />}
                   </div>
-                  <p className="mt-1 truncate text-sm text-neutral-600">{stripHtmlPreview(note.body)}</p>
+                  <p className="mt-1 line-clamp-2 text-sm whitespace-pre-wrap text-neutral-600">
+                    {stripHtmlPreview(note.body) || <span className="text-neutral-400">本文なし</span>}
+                  </p>
                 </button>
               ))}
             </div>

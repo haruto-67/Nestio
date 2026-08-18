@@ -59,7 +59,7 @@ export function SearchModal({ onClose, onSelectTask }: SearchModalProps) {
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-xl bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
+        className="w-full max-w-lg rounded-xl bg-surface p-4 shadow-lg nestio-modal-panel"
       >
         <input
           ref={inputRef}
@@ -103,7 +103,7 @@ export function SearchModal({ onClose, onSelectTask }: SearchModalProps) {
             <div>
               <h3 className="px-1 py-1 text-xs font-semibold text-neutral-400">メモ</h3>
               {results.notes.map((n) => (
-                <div key={n.id} className="truncate px-2 py-1.5 text-sm text-neutral-500 dark:text-neutral-400">
+                <div key={n.id} className="truncate px-2 py-1.5 text-sm text-muted">
                   {n.title}
                 </div>
               ))}

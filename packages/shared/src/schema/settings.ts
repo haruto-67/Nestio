@@ -12,6 +12,8 @@ export const userSettingsRowSchema = z.object({
   user_id: idSchema,
   theme: themeSchema,
   keymap_json: z.string(),
+  /** Hatchの天気連動（改修13回目）で使う地点。JSON文字列 { lat, lon, name } */
+  weather_location_json: z.string(),
   updated_at: epochMsSchema,
   seq: seqSchema,
 });

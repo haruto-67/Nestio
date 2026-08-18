@@ -8,6 +8,7 @@ export const HATCH_EVENTS: Exclude<TriggerEvent, 'recurrence_spawned'>[] = [
   'due_soon',
   'overdue',
   'schedule',
+  'weather_rain',
 ];
 
 export const HATCH_EVENT_LABELS: Record<TriggerEvent, string> = {
@@ -17,6 +18,7 @@ export const HATCH_EVENT_LABELS: Record<TriggerEvent, string> = {
   due_soon: '期限が近づいたら',
   overdue: '期限超過',
   schedule: '定時実行',
+  weather_rain: '雨予報の時',
   recurrence_spawned: '繰り返しの次回発生時（未実装）',
 };
 

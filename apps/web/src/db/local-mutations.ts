@@ -166,7 +166,15 @@ export async function upsertUserSettingsLocal(userId: string, fields: Row): Prom
   const existing = await db.user_settings.get(userId);
   const row: UserSettingsRow = existing
     ? ({ ...existing, ...fields, updated_at: updatedAt } as UserSettingsRow)
-    : ({ user_id: userId, theme: 'light', keymap_json: '{}', ...fields, updated_at: updatedAt, seq: 0 } as UserSettingsRow);
+    : ({
+        user_id: userId,
+        theme: 'light',
+        keymap_json: '{}',
+        weather_location_json: '{}',
+        ...fields,
+        updated_at: updatedAt,
+        seq: 0,
+      } as UserSettingsRow);
 
   await db.user_settings.put(row);
 

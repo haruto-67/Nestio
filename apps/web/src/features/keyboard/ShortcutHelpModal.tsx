@@ -40,7 +40,7 @@ export function ShortcutHelpModal({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-[40rem] max-w-[95vw] flex-col rounded-xl bg-white p-4 shadow-lg dark:bg-neutral-900 nestio-modal-panel"
+        className="flex max-h-[85vh] w-[40rem] max-w-[95vw] flex-col rounded-xl bg-surface p-4 shadow-lg nestio-modal-panel"
       >
         <div className="mb-3 flex shrink-0 items-center justify-between">
           <h2 className="text-sm font-semibold">キーボードショートカット</h2>
@@ -61,7 +61,7 @@ export function ShortcutHelpModal({ onClose }: { onClose: () => void }) {
               <li key={action} className="flex items-center justify-between gap-2">
                 <span
                   className={`min-w-0 truncate ${
-                    conflictActions.has(action) ? 'text-red-500' : 'text-neutral-500 dark:text-neutral-400'
+                    conflictActions.has(action) ? 'text-red-500' : 'text-muted'
                   }`}
                   title={KEYMAP_ACTION_LABELS[action]}
                 >
@@ -88,7 +88,7 @@ export function ShortcutHelpModal({ onClose }: { onClose: () => void }) {
             <ul className="grid grid-cols-1 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-2">
               {FIXED_SHORTCUTS.map((s) => (
                 <li key={s.keys} className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-neutral-500 dark:text-neutral-400">{s.label}</span>
+                  <span className="min-w-0 truncate text-muted">{s.label}</span>
                   <kbd className="shrink-0 rounded-md border border-neutral-300 bg-neutral-50 px-1.5 py-0.5 text-xs whitespace-nowrap dark:border-neutral-700 dark:bg-neutral-800">
                     {s.keys}
                   </kbd>

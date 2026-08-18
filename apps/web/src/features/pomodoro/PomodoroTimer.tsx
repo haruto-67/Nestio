@@ -49,7 +49,7 @@ export function PomodoroTimer({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-72 rounded-xl bg-white p-5 text-center shadow-lg dark:bg-neutral-900 nestio-modal-panel"
+        className="w-72 rounded-xl bg-surface p-5 text-center shadow-lg nestio-modal-panel"
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">ポモドーロ</h2>
@@ -72,7 +72,7 @@ export function PomodoroTimer({ onClose }: { onClose: () => void }) {
                   className={`rounded-md border px-3 py-1 text-xs ${
                     durationSec === p.sec
                       ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40'
-                      : 'border-neutral-200 dark:border-neutral-700'
+                      : 'border-surface-border'
                   }`}
                 >
                   {p.label}

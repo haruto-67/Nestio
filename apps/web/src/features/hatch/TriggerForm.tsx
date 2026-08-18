@@ -18,7 +18,7 @@ const WEEKDAY_LABELS: Record<string, string> = {
 
 const fieldClass =
   'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900';
-const labelClass = 'mb-1 block text-xs text-neutral-500 dark:text-neutral-400';
+const labelClass = 'mb-1 block text-xs text-muted';
 
 export interface TriggerDraft {
   name: string;
@@ -196,6 +196,51 @@ function ConditionFields({
               </option>
             ))}
           </select>
+        </div>
+      </div>
+    );
+  }
+
+  if (event === 'weather_rain') {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="text-[11px] text-neutral-400">
+          天気を取得する地点はHatch設定画面の「天気連携の地点」で設定してください。
+        </p>
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className={labelClass}>時（0〜23・日本時間）</label>
+            <input
+              type="number"
+              min={0}
+              max={23}
+              className={fieldClass}
+              value={(condition.hour as number) ?? 7}
+              onChange={(e) => set('hour', Number(e.target.value))}
+            />
+          </div>
+          <div className="flex-1">
+            <label className={labelClass}>分（0〜59）</label>
+            <input
+              type="number"
+              min={0}
+              max={59}
+              className={fieldClass}
+              value={(condition.minute as number) ?? 0}
+              onChange={(e) => set('minute', Number(e.target.value))}
+            />
+          </div>
+        </div>
+        <div>
+          <label className={labelClass}>降水確率がこの値（%）以上なら発火</label>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            className={fieldClass}
+            value={(condition.min_precipitation_probability as number) ?? 50}
+            onChange={(e) => set('min_precipitation_probability', Number(e.target.value))}
+          />
         </div>
       </div>
     );
@@ -473,7 +518,15 @@ export function TriggerForm({
         <select
           className={fieldClass}
           value={draft.event}
-          onChange={(e) => setDraft({ ...draft, event: e.target.value as TriggerEvent, condition: {} })}
+          onChange={(e) => {
+            const event = e.target.value as TriggerEvent;
+            // weather_rainは条件（時刻・しきい値）を入力欄に触れないまま保存すると
+            // condition_jsonが{}のままになり検知されない（数値入力の表示上のデフォルト値
+            // ??7 等はonChangeが発火しない限りstateへ反映されないため）。
+            // イベント選択直後に実際の値としてstateへ入れておく
+            const condition = event === 'weather_rain' ? { hour: 7, minute: 0, min_precipitation_probability: 50 } : {};
+            setDraft({ ...draft, event, condition });
+          }}
         >
           {HATCH_EVENTS.map((ev) => (
             <option key={ev} value={ev}>
@@ -508,7 +561,7 @@ export function TriggerForm({
         onChange={(params) => setDraft({ ...draft, params })}
       />
 
-      <label className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+      <label className="flex items-center gap-2 text-xs text-muted">
         <input
           type="checkbox"
           checked={draft.enabled}

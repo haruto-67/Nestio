@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { TaskRow, TaskWritableFields } from '@nestio/shared';
-import { Flame } from 'lucide-react';
 import { buildRruleString, describeRrule, WEEKDAY_LABELS, type RecurrenceFreq } from '../../lib/recurrence.js';
 import { getTaskStreak } from '../../api/streak.js';
+import { StreakEgg } from '../../ui/StreakEgg.js';
 
 type Mode = 'none' | 'daily' | 'weekly' | 'monthly' | 'custom';
 
@@ -86,7 +86,6 @@ export function RecurrenceEditor({ task, onChange, onSkipOccurrence }: Recurrenc
 
   return (
     <div className="flex flex-col gap-1 text-xs text-neutral-500">
-      繰り返し
       {!hasDue && mode !== 'none' && <p className="text-amber-500">期限を設定すると繰り返しの起点になります</p>}
       <div className="flex gap-1">
         {(['none', 'daily', 'weekly', 'monthly', 'custom'] as const).map((m) => (
@@ -94,7 +93,7 @@ export function RecurrenceEditor({ task, onChange, onSkipOccurrence }: Recurrenc
             key={m}
             onClick={() => applyPreset(m)}
             className={`flex-1 rounded-md border py-1 text-xs ${
-              mode === m ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40' : 'border-neutral-200 dark:border-neutral-700'
+              mode === m ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40' : 'border-surface-border'
             }`}
           >
             {MODE_LABELS[m]}
@@ -111,7 +110,7 @@ export function RecurrenceEditor({ task, onChange, onSkipOccurrence }: Recurrenc
               className={`flex-1 rounded-md border py-1 text-xs ${
                 weekdays.includes(i)
                   ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40'
-                  : 'border-neutral-200 dark:border-neutral-700'
+                  : 'border-surface-border'
               }`}
             >
               {label}
@@ -133,7 +132,7 @@ export function RecurrenceEditor({ task, onChange, onSkipOccurrence }: Recurrenc
       {task.rrule && <p className="text-neutral-400">{describeRrule(task.rrule)}</p>}
       {task.rrule && streak !== null && streak > 0 && (
         <p className="flex items-center gap-1 text-amber-500">
-          <Flame size={12} />
+          <StreakEgg streak={streak} size={14} />
           {streak}回連続達成中
         </p>
       )}
