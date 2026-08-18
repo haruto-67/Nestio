@@ -1,5 +1,6 @@
 import { useEffect, useState, type MouseEvent, type DragEvent } from 'react';
 import { uuidv7, type ListSortMode } from '@nestio/shared';
+import { Plus } from 'lucide-react';
 import { useApp } from '../../state/AppProvider.js';
 import { useDelayedHide } from '../../lib/panel-transition.js';
 import { useLists, useTasks, useTags, useTaskTags } from '../../db/queries.js';
@@ -325,6 +326,21 @@ export function TaskListView({
         <kbd className="hidden shrink-0 rounded-md border border-neutral-200 px-1 py-0.5 text-[10px] text-neutral-400 md:inline dark:border-neutral-700">
           {keymap.quick_add}
         </kbd>
+        {/* PCではEnterでの作成が分かりやすいが、スマホではEnter確定が直感的でないという
+            指摘（改修14回目）を受け、明示的な追加ボタンを常設した。stopPropagationが無いと
+            クリックが外側divのcloseDetailUnlessRowClickへバブリングし、createTask直後に
+            選択したタスクの詳細パネルが即座に閉じてしまう */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            createTask();
+          }}
+          disabled={!targetListId || newTaskTitle.trim() === ''}
+          title="タスクを追加"
+          className="flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md text-neutral-400 disabled:opacity-30 hover:text-neutral-700 dark:hover:text-neutral-200"
+        >
+          <Plus size={18} />
+        </button>
       </div>
 
       {displayMode === 'kanban' ? (

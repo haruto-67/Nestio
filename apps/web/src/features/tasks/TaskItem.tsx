@@ -85,12 +85,14 @@ export function TaskItem({
   const blockingPredecessor = task.completed_at === null ? predecessorTitle(task.id) : null;
   const disabled = task.completed_at === null && (!canComplete(task.id) || blockingPredecessor !== null);
 
+  // setStateのアップデーター関数の中で副作用（setTaskCollapsedのdispatchEvent）を呼ぶと、
+  // そのイベントを購読している他コンポーネント（TaskListViewのsubscribeAnyTaskCollapsed）の
+  // setStateが「別コンポーネントのレンダー中」に呼ばれる形になりReactの警告と実際の更新漏れを
+  // 引き起こす（改修14回目で発覚）。値を先に計算してから順にsetStateを呼ぶ形に直す
   const toggleExpanded = () => {
-    setExpanded((v) => {
-      const next = !v;
-      setTaskCollapsed(task.id, !next);
-      return next;
-    });
+    const next = !expanded;
+    setExpanded(next);
+    setTaskCollapsed(task.id, !next);
   };
 
   // モバイルのタスク行スワイプ（改修13回目）：右スワイプ=完了、左スワイプ=削除。

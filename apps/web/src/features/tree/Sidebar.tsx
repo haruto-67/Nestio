@@ -397,7 +397,6 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             name={l.name}
             color={l.color}
             active={view.type === 'list' && view.listId === l.id}
-            cursorHighlighted={cursorEntry?.type === 'list' && cursorEntry.id === l.id}
             onSelect={() => selectEntryByClick({ type: 'list', listId: l.id })}
             onRename={(name) => renameList(l.id, name)}
             onDelete={() => removeList(l.id)}
@@ -466,8 +465,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                     name={l.name}
                     color={l.color}
                     active={view.type === 'list' && view.listId === l.id}
-                    cursorHighlighted={cursorEntry?.type === 'list' && cursorEntry.id === l.id}
-                    onSelect={() => selectEntryByClick({ type: 'list', listId: l.id })}
+                            onSelect={() => selectEntryByClick({ type: 'list', listId: l.id })}
                     onRename={(name) => renameList(l.id, name)}
                     onDelete={() => removeList(l.id)}
                     onChangeColor={(color) => changeListColor(l.id, color)}
@@ -512,7 +510,6 @@ function ListRow({
   name,
   color,
   active,
-  cursorHighlighted = false,
   onSelect,
   onRename,
   onDelete,
@@ -529,7 +526,6 @@ function ListRow({
   name: string;
   color: string;
   active: boolean;
-  cursorHighlighted?: boolean;
   onSelect: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
@@ -589,7 +585,7 @@ function ListRow({
       }}
       className={`relative flex cursor-pointer items-center gap-1 rounded-md px-1 py-1 select-none [-webkit-touch-callout:none] ${
         isBeingTouchDragged ? 'opacity-40' : ''
-      } ${cursorHighlighted ? 'ring-2 ring-inset ring-blue-400' : ''} ${
+      } ${
         taskDragOver
           ? 'bg-blue-100 dark:bg-blue-900/40'
           : active

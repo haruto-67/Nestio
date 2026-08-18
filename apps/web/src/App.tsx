@@ -9,6 +9,7 @@ import { ToastContainer } from './ui/ToastContainer.js';
 import { PushPermissionPrompt } from './ui/PushPermissionPrompt.js';
 import { showToast } from './ui/toast.js';
 import { useResizableWidth } from './lib/useResizableWidth.js';
+import { EDGE_SWIPE_ZONE_PX } from './lib/edge-swipe.js';
 import { LoginScreen } from './features/auth/LoginScreen.js';
 import { Sidebar, type SidebarHandle } from './features/tree/Sidebar.js';
 import { TaskListView } from './features/tasks/TaskListView.js';
@@ -161,7 +162,6 @@ function MainLayout() {
   // タップだけだと操作しづらいという要望）。タスク行のスワイプ完了/削除（TaskItem.tsx）とは
   // 開始位置が画面端24px以内かどうかで区別するため競合しない
   const edgeSwipeStartXRef = useRef<number | null>(null);
-  const EDGE_SWIPE_ZONE_PX = 24;
   const EDGE_SWIPE_OPEN_THRESHOLD_PX = 60;
   const handleEdgeSwipeStart = (e: ReactTouchEvent) => {
     const touch = e.touches[0];

@@ -1,4 +1,5 @@
 import { useRef, useState, type TouchEvent } from 'react';
+import { EDGE_SWIPE_ZONE_PX } from './edge-swipe.js';
 
 interface UseSwipeActionOptions {
   onSwipeRight?: () => void;
@@ -9,8 +10,10 @@ interface UseSwipeActionOptions {
 /**
  * タスク行のスワイプで完了/削除を行うためのタッチジェスチャー（改修13回目）。
  * 右スワイプ=完了、左スワイプ=削除という一般的なTodoアプリの慣習に合わせる。
- * 画面左端からのエッジスワイプ（ドロワーを開く操作、App.tsx側で別途処理）とは、
- * 行の内部でのみ発動するため競合しない。
+ * 画面左端からのエッジスワイプ（ドロワーを開く操作、App.tsx側で別途処理）とは、React合成
+ * イベントがバブリングするため、開始位置が画面端EDGE_SWIPE_ZONE_PX以内の場合はこちらの
+ * ジェスチャー自体を無視する（改修14回目：以前は「行の内部でのみ発動するため競合しない」と
+ * していたが、実際には端付近の行をスワイプすると完了/削除とドロワー表示が同時に起きていた）。
  * 縦スクロールと横スワイプの判定は最初の移動量（8px）で一度だけ確定し、縦方向と判定したら
  * その後は何もしない（要素にtouch-pan-yを付けブラウザの縦スクロールを妨げない前提）
  */
@@ -19,11 +22,15 @@ export function useSwipeAction({ onSwipeRight, onSwipeLeft, threshold = 80 }: Us
   const [swiping, setSwiping] = useState(false);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
-  const directionRef = useRef<'horizontal' | 'vertical' | null>(null);
+  const directionRef = useRef<'horizontal' | 'vertical' | 'edge' | null>(null);
 
   const onTouchStart = (e: TouchEvent) => {
     const touch = e.touches[0];
     if (!touch) return;
+    if (touch.clientX <= EDGE_SWIPE_ZONE_PX) {
+      directionRef.current = 'edge';
+      return;
+    }
     startXRef.current = touch.clientX;
     startYRef.current = touch.clientY;
     directionRef.current = null;
@@ -31,6 +38,7 @@ export function useSwipeAction({ onSwipeRight, onSwipeLeft, threshold = 80 }: Us
   };
 
   const onTouchMove = (e: TouchEvent) => {
+    if (directionRef.current === 'edge') return;
     const touch = e.touches[0];
     if (!touch) return;
     const dx = touch.clientX - startXRef.current;

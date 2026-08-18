@@ -8,6 +8,7 @@ import { createCalendarFeed, listCalendarFeeds, revokeCalendarFeed, type Calenda
 import { exportAllData, importAllData } from '../../api/export.js';
 import { listSessions, revokeSession, type SessionInfo } from '../../api/sessions.js';
 import { formatDateTimeJst } from '../../lib/datetime.js';
+import { CollapsibleSection } from '../../ui/CollapsibleSection.js';
 
 interface KeymapSettingsProps {
   onClose: () => void;
@@ -213,25 +214,28 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
         </div>
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-          <span className="text-xs text-muted">ログイン中のセッション</span>
-          <ul className="mt-2 flex flex-col gap-1.5">
-            {sessions.map((s) => (
-              <li key={s.id} className="flex items-center justify-between text-xs">
-                <div className="min-w-0 flex-1 truncate text-muted">
-                  {s.device_label ?? 'ブラウザ'}
-                  {s.is_current && <span className="ml-1 text-emerald-500">（このデバイス）</span>}
-                  <div className="text-[10px] text-neutral-400">{formatDateTimeJst(s.created_at)}〜</div>
-                </div>
-                <button
-                  onClick={() => handleRevokeSession(s.id)}
-                  className="ml-2 shrink-0 text-red-500 hover:text-red-600"
-                >
-                  ログアウト
-                </button>
-              </li>
-            ))}
-            {sessions.length === 0 && <li className="text-xs text-neutral-400">読み込み中…</li>}
-          </ul>
+          {/* 端末が増えると一覧が長くなり見づらいという指摘（改修14回目）を受け、
+              折りたたみ可能にした。件数はタイトル横に出して開かなくても把握できるようにする */}
+          <CollapsibleSection title={`ログイン中のセッション（${sessions.length}件）`}>
+            <ul className="mt-2 flex flex-col gap-1.5">
+              {sessions.map((s) => (
+                <li key={s.id} className="flex items-center justify-between text-xs">
+                  <div className="min-w-0 flex-1 truncate text-muted">
+                    {s.device_label ?? 'ブラウザ'}
+                    {s.is_current && <span className="ml-1 text-emerald-500">（このデバイス）</span>}
+                    <div className="text-[10px] text-neutral-400">{formatDateTimeJst(s.created_at)}〜</div>
+                  </div>
+                  <button
+                    onClick={() => handleRevokeSession(s.id)}
+                    className="ml-2 shrink-0 text-red-500 hover:text-red-600"
+                  >
+                    ログアウト
+                  </button>
+                </li>
+              ))}
+              {sessions.length === 0 && <li className="text-xs text-neutral-400">読み込み中…</li>}
+            </ul>
+          </CollapsibleSection>
         </div>
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">

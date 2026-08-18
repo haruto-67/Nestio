@@ -1,4 +1,7 @@
-const STORAGE_KEY = 'nestio_collapsed_tasks';
+// 「展開済み」のタスクIDを保存する（改修14回目：デフォルトは折りたたみにしたいという
+// 要望を受け、以前の「折りたたみ済みIDを保存」から反転させた。一度でも開閉を操作した
+// タスクはその状態を保持し、未操作のタスクはデフォルトで折りたたみ状態になる）
+const STORAGE_KEY = 'nestio_expanded_tasks';
 const EVENT_NAME = 'nestio:task-collapsed-changed';
 
 function readAll(): string[] {
@@ -11,7 +14,7 @@ function readAll(): string[] {
 }
 
 export function isTaskCollapsed(taskId: string): boolean {
-  return readAll().includes(taskId);
+  return !readAll().includes(taskId);
 }
 
 /**
@@ -21,7 +24,7 @@ export function isTaskCollapsed(taskId: string): boolean {
  */
 export function setTaskCollapsed(taskId: string, collapsed: boolean): void {
   const all = readAll();
-  const next = collapsed ? [...new Set([...all, taskId])] : all.filter((id) => id !== taskId);
+  const next = collapsed ? all.filter((id) => id !== taskId) : [...new Set([...all, taskId])];
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   window.dispatchEvent(new CustomEvent<{ taskId: string; collapsed: boolean }>(EVENT_NAME, { detail: { taskId, collapsed } }));
 }
