@@ -4,12 +4,16 @@ export interface CalendarFeed {
   id: string;
   token: string;
   list_id: string | null;
+  name: string;
   created_at: number;
   revoked_at: number | null;
 }
 
-export function createCalendarFeed(listId?: string): Promise<{ token: string; url: string }> {
-  return apiClient.post('/calendar/feeds', listId ? { list_id: listId } : {});
+export function createCalendarFeed(listId?: string, name?: string): Promise<{ token: string; url: string }> {
+  return apiClient.post('/calendar/feeds', {
+    ...(listId ? { list_id: listId } : {}),
+    ...(name ? { name } : {}),
+  });
 }
 
 export function listCalendarFeeds(): Promise<CalendarFeed[]> {

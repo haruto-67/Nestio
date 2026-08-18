@@ -64,6 +64,22 @@ describe('auth sessions routes', () => {
     expect(body[1]?.is_current).toBe(false);
   });
 
+  it('GET /auth/sessions は現在のセッションが古い場合でも常に先頭に来る（改修15回目）', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const currentSessionId = insertSession(db, userId, Date.now() - 10_000);
+    const newerSessionId = insertSession(db, userId, Date.now());
+
+    const app = setupApp();
+    const res = await app.request('/api/v1/auth/sessions', {
+      headers: { Cookie: `nestio_session=${currentSessionId}` },
+    });
+    const body = (await res.json()) as { id: string; is_current: boolean }[];
+    expect(body.map((s) => s.id)).toEqual([currentSessionId, newerSessionId]);
+    expect(body[0]?.is_current).toBe(true);
+  });
+
   it('DELETE /auth/sessions/:id で他デバイスのセッションを失効できる', async () => {
     db = createTestDb();
     const userId = uuidv7();

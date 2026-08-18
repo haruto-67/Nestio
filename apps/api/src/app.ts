@@ -25,6 +25,19 @@ import { buildAuthServerMetadata, buildProtectedResourceMetadata } from './mcp/m
 export function createApp(env: Env, db: Database.Database, logger: Logger) {
   const app = new Hono<{ Variables: AppVariables }>();
 
+  // Honoのc.json()はContent-Typeに"application/json"のみを付け、charsetを付けない。
+  // レート制限エラー等をブラウザがトップレベルナビゲーションでそのまま表示した場合
+  // （リンク直接遷移時にエラーJSONがそのまま返る等）、charset省略だとブラウザが
+  // 文字コード自動検出でShift_JIS等に誤判定し日本語メッセージが文字化けすることがある。
+  // 全レスポンスに明示的にcharsetを付与して防ぐ（改修14回目フォローアップ）
+  app.use('*', async (c, next) => {
+    await next();
+    const contentType = c.res.headers.get('Content-Type');
+    if (contentType?.startsWith('application/json') && !contentType.includes('charset')) {
+      c.res.headers.set('Content-Type', 'application/json; charset=UTF-8');
+    }
+  });
+
   app.use('*', requestContext(logger, env, db));
   app.onError(handleError);
 

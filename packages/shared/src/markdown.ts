@@ -19,6 +19,17 @@ function escapeHtml(s: string): string {
 
 function renderInline(rawLine: string): string {
   let out = escapeHtml(rawLine);
+
+  // 画像 ![alt](url)（改修15回目：MCP経由でスクリーンショット等を貼れるようにする要望への
+  // 対応。リンクの[text](url)記法とは先頭の!だけが違うため、リンクより先に処理しないと
+  // 画像記法がリンクとして誤変換されてしまう。urlはhttps/data:image(base64)のみ許可し、
+  // javascript:等は正規表現の候補自体がhttps?:/data:image始まりに限定されているため
+  // 構造的にマッチしない
+  out = out.replace(
+    /!\[([^[\]]*)\]\((https?:\/\/[^\s()]+|data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)\)/g,
+    (_m, alt: string, url: string) => `<img src="${url}" alt="${alt}">`,
+  );
+
   out = out.replace(
     /\[([^[\]]+)\]\((https?:\/\/[^\s()]+|mailto:[^\s()]+)\)/g,
     (_m, text: string, url: string) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`,

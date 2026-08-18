@@ -42,6 +42,36 @@ describe('markdownToSafeHtml', () => {
     expect(out).not.toContain('href=');
   });
 
+  // 改修15回目：MCP経由でスクリーンショット等を貼れるようにする要望への対応
+  it('httpsの画像記法をimgに変換する', () => {
+    expect(markdownToSafeHtml('![説明](https://example.com/a.png)')).toBe(
+      '<p><img src="https://example.com/a.png" alt="説明"></p>',
+    );
+  });
+
+  it('data:image(base64)の画像記法をimgに変換する', () => {
+    const dataUri = 'data:image/png;base64,iVBORw0KGgo=';
+    expect(markdownToSafeHtml(`![スクショ](${dataUri})`)).toBe(`<p><img src="${dataUri}" alt="スクショ"></p>`);
+  });
+
+  it('画像記法はリンク記法として誤変換されない（!が先に処理される）', () => {
+    const out = markdownToSafeHtml('![説明](https://example.com/a.png)');
+    expect(out).not.toContain('<a');
+    expect(out).toContain('<img');
+  });
+
+  it('javascript:スキームの画像記法はimgタグへ変換されない（src属性を持たない）', () => {
+    const out = markdownToSafeHtml('![x](javascript:alert(1))');
+    expect(out).not.toContain('<img');
+    expect(out).not.toContain('src=');
+  });
+
+  it('data:text/htmlのような画像以外のdata URIはimgタグへ変換されない', () => {
+    const out = markdownToSafeHtml('![x](data:text/html,<script>alert(1)</script>)');
+    expect(out).not.toContain('<img');
+    expect(out).not.toContain('src=');
+  });
+
   it('生のHTMLタグはエスケープされ実行可能なマークアップにならない', () => {
     const out = markdownToSafeHtml('<script>alert(1)</script>');
     expect(out).toBe('<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>');

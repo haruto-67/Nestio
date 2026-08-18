@@ -35,7 +35,7 @@ describe('calendar routes', () => {
     const createRes = await app.request('/api/v1/calendar/feeds', {
       method: 'POST',
       headers: { Cookie: `nestio_session=${sessionId}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ name: 'iPhoneカレンダー' }),
     });
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as { token: string; url: string };
@@ -45,8 +45,10 @@ describe('calendar routes', () => {
     const listRes = await app.request('/api/v1/calendar/feeds', {
       headers: { Cookie: `nestio_session=${sessionId}` },
     });
-    const feeds = (await listRes.json()) as { id: string; token: string }[];
+    const feeds = (await listRes.json()) as { id: string; token: string; name: string }[];
     expect(feeds).toHaveLength(1);
+    // 改修15回目：どのカレンダーに使ったURLか分かるよう名前を付けられるようにした
+    expect(feeds[0]?.name).toBe('iPhoneカレンダー');
 
     const deleteRes = await app.request(`/api/v1/calendar/feeds/${feeds[0]?.id}`, {
       method: 'DELETE',

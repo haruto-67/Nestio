@@ -7,6 +7,7 @@ export interface CalendarFeedRow {
   user_id: string;
   token: string;
   list_id: string | null;
+  name: string;
   created_at: number;
   revoked_at: number | null;
 }
@@ -15,12 +16,13 @@ export function createCalendarFeed(
   db: Database.Database,
   userId: string,
   listId: string | null,
+  name: string,
 ): { id: string; token: string } {
   const id = uuidv7();
   const token = crypto.randomBytes(32).toString('base64url');
   db.prepare(
-    'INSERT INTO calendar_feeds (id, user_id, token, list_id, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, NULL)',
-  ).run(id, userId, token, listId, Date.now());
+    'INSERT INTO calendar_feeds (id, user_id, token, list_id, name, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, NULL)',
+  ).run(id, userId, token, listId, name, Date.now());
   return { id, token };
 }
 

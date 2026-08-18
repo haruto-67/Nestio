@@ -24,7 +24,7 @@ calendarRoute.post('/calendar/feeds', async (c) => {
 
   const raw = await c.req.json().catch(() => ({}));
   const body = calendarFeedCreateRequestSchema.parse(raw);
-  const { token } = createCalendarFeed(db, userId, body.list_id ?? null);
+  const { token } = createCalendarFeed(db, userId, body.list_id ?? null, body.name ?? '');
 
   const origin = new URL(env.APP_ORIGIN).origin;
   return c.json({ token, url: `${origin}/api/v1/calendar/${token}.ics` }, 201);

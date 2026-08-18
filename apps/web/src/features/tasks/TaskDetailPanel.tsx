@@ -14,7 +14,7 @@ import {
   skipTaskOccurrence,
 } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
-import { naturalCollator, todayJstDateString } from '../../lib/datetime.js';
+import { naturalCollator, todayJstDateString, formatDateTimeJst } from '../../lib/datetime.js';
 import { RecurrenceEditor } from './RecurrenceEditor.js';
 import { AttachmentList } from '../attachments/AttachmentList.js';
 import { showToast } from '../../ui/toast.js';
@@ -170,6 +170,13 @@ export function TaskDetailPanel({
           ))}
         </div>
       )}
+
+      {/* 作成日・更新日（改修15回目：これまで表示していなかった情報を追加。サブタスクの
+          パンくずリストと対になる位置に置く） */}
+      <div className="-mt-2 flex flex-wrap items-center gap-x-3 text-xs text-neutral-400">
+        <span>作成: {formatDateTimeJst(task.created_at)}</span>
+        <span>更新: {formatDateTimeJst(task.updated_at)}</span>
+      </div>
 
       <input
         ref={titleInputRef}

@@ -23,8 +23,17 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
   const [pushState, setPushState] = useState<PushSubscriptionState>({ permission: 'default', subscribed: false });
   const [feeds, setFeeds] = useState<CalendarFeed[]>([]);
   const [calendarStatus, setCalendarStatus] = useState<string | null>(null);
+  const [showFeedNameInput, setShowFeedNameInput] = useState(false);
+  const [newFeedName, setNewFeedName] = useState('');
   const [exportImportStatus, setExportImportStatus] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [sessionStatus, setSessionStatus] = useState<string | null>(null);
+  // 失効/ログアウト処理中のidを覚えておき、ボタンを一時的に無効化する（改修15回目調査：
+  // クリックしても見た目が変わらないと誤解してユーザーが連打し、同じセッションIDに対して
+  // DELETEが13回近く連続で送られてrate_limitedを引き起こしていたことが本番ログから判明した。
+  // 楽観的更新で見た目の反応自体は直したが、連打そのものを防ぐ二重の保険として追加する）
+  const [revokingSessionIds, setRevokingSessionIds] = useState<Set<string>>(new Set());
+  const [revokingFeedIds, setRevokingFeedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     getPushSubscriptionState()
@@ -35,12 +44,27 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
   }, []);
 
   const handleRevokeSession = async (id: string) => {
+    if (revokingSessionIds.has(id)) return;
+    setRevokingSessionIds((prev) => new Set(prev).add(id));
+    const isCurrent = sessions.find((s) => s.id === id)?.is_current ?? false;
     try {
       await revokeSession(id);
-      setSessions(await listSessions());
-      if (sessions.find((s) => s.id === id)?.is_current) window.location.reload();
+      // listSessions()で再取得して上書きすると、複数件を連続で失効させた時に
+      // 後から発行したリクエストの応答が先に返り、先に発行した方の古い応答が
+      // 後から届いて上書きしてしまうことがあった（改修14回目フォローアップ：
+      // 「行が消えるときと消えないときがある」という報告の原因）。
+      // 成功したidをその場でローカルのリストから取り除く楽観的更新にする
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      if (isCurrent) window.location.reload();
     } catch (err) {
       console.error(err);
+      setSessionStatus('ログアウトに失敗しました');
+    } finally {
+      setRevokingSessionIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -79,13 +103,15 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
 
   const handleCreateFeed = async () => {
     try {
-      const { url } = await createCalendarFeed();
+      const { url } = await createCalendarFeed(undefined, newFeedName.trim() || undefined);
       try {
         await navigator.clipboard.writeText(url);
         setCalendarStatus('URLをコピーしました');
       } catch {
         setCalendarStatus(url);
       }
+      setNewFeedName('');
+      setShowFeedNameInput(false);
       setFeeds(await listCalendarFeeds());
     } catch (err) {
       setCalendarStatus('作成に失敗しました');
@@ -117,11 +143,22 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
   };
 
   const handleRevokeFeed = async (id: string) => {
+    if (revokingFeedIds.has(id)) return;
+    setRevokingFeedIds((prev) => new Set(prev).add(id));
     try {
       await revokeCalendarFeed(id);
-      setFeeds(await listCalendarFeeds());
+      // handleRevokeSessionと同じ理由（複数件連続失効時のレースコンディション回避）で
+      // 楽観的更新にする（改修14回目フォローアップ）
+      setFeeds((prev) => prev.filter((f) => f.id !== id));
     } catch (err) {
       console.error(err);
+      setCalendarStatus('失効に失敗しました');
+    } finally {
+      setRevokingFeedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -189,28 +226,61 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
         </div>
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted">カレンダー購読（ICS）</span>
-            <button
-              onClick={handleCreateFeed}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-            >
-              + URLを作成
-            </button>
-          </div>
-          {feeds.length > 0 && (
-            <ul className="mt-2 flex flex-col gap-1">
-              {feeds.map((f) => (
-                <li key={f.id} className="flex items-center justify-between text-xs text-neutral-400">
-                  <span className="truncate">{f.token.slice(0, 16)}…</span>
-                  <button onClick={() => handleRevokeFeed(f.id)} title="このURLを無効化する" className="text-red-500">
-                    失効させる
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {calendarStatus && <p className="mt-1 break-all text-xs text-neutral-400">{calendarStatus}</p>}
+          {/* ログイン端末と同様、購読URLが増えると見づらくなるという指摘（改修15回目）を受け、
+              折りたたみ可能にした */}
+          <CollapsibleSection
+            title={`カレンダー購読（ICS）${feeds.length > 0 ? `（${feeds.length}件）` : ''}`}
+            action={
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowFeedNameInput(true);
+                }}
+                className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                + URLを作成
+              </button>
+            }
+          >
+            {showFeedNameInput && (
+              <div className="mt-2 flex gap-1">
+                <input
+                  autoFocus
+                  value={newFeedName}
+                  onChange={(e) => setNewFeedName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleCreateFeed()}
+                  placeholder="名前（任意・例: iPhoneカレンダー）"
+                  className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-xs dark:border-neutral-700"
+                />
+                <button
+                  onClick={handleCreateFeed}
+                  className="shrink-0 rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-600 dark:border-blue-700 dark:text-blue-300"
+                >
+                  作成
+                </button>
+              </div>
+            )}
+            {feeds.length > 0 && (
+              <ul className="mt-2 flex flex-col gap-1">
+                {feeds.map((f) => (
+                  <li key={f.id} className="flex items-center justify-between text-xs text-neutral-400">
+                    <span className="min-w-0 flex-1 truncate">
+                      {f.name || `${f.token.slice(0, 16)}…`}
+                    </span>
+                    <button
+                      onClick={() => handleRevokeFeed(f.id)}
+                      disabled={revokingFeedIds.has(f.id)}
+                      title="このURLを無効化する"
+                      className="ml-2 shrink-0 text-red-500 disabled:opacity-40"
+                    >
+                      {revokingFeedIds.has(f.id) ? '処理中…' : '失効させる'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {calendarStatus && <p className="mt-1 break-all text-xs text-neutral-400">{calendarStatus}</p>}
+          </CollapsibleSection>
         </div>
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
@@ -227,14 +297,16 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
                   </div>
                   <button
                     onClick={() => handleRevokeSession(s.id)}
-                    className="ml-2 shrink-0 text-red-500 hover:text-red-600"
+                    disabled={revokingSessionIds.has(s.id)}
+                    className="ml-2 shrink-0 text-red-500 hover:text-red-600 disabled:opacity-40"
                   >
-                    ログアウト
+                    {revokingSessionIds.has(s.id) ? '処理中…' : 'ログアウト'}
                   </button>
                 </li>
               ))}
               {sessions.length === 0 && <li className="text-xs text-neutral-400">読み込み中…</li>}
             </ul>
+            {sessionStatus && <p className="mt-1 text-xs text-red-500">{sessionStatus}</p>}
           </CollapsibleSection>
         </div>
 

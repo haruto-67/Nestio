@@ -149,14 +149,16 @@ authRoute.get('/auth/sessions', requireAuth, (c) => {
   if (!userId) throw new ApiError('unauthenticated', 'セッションが見つかりません');
   const currentSessionId = getSessionIdFromRequest(c);
 
+  // 今ログイン中のこのデバイスを一番上に固定表示したいという要望（改修15回目）に対応するため、
+  // is_current相当（s.id = currentSessionId）を第一キーにする
   const rows = db
     .prepare(
       `SELECT s.id, s.created_at, s.expires_at, d.label AS device_label, d.last_seen AS device_last_seen
        FROM sessions s LEFT JOIN devices d ON d.id = s.device_id
        WHERE s.user_id = ? AND s.expires_at > ?
-       ORDER BY s.created_at DESC`,
+       ORDER BY (s.id = ?) DESC, s.created_at DESC`,
     )
-    .all(userId, Date.now()) as {
+    .all(userId, Date.now(), currentSessionId ?? '') as {
     id: string;
     created_at: number;
     expires_at: number;
