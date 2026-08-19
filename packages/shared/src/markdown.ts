@@ -22,11 +22,14 @@ function renderInline(rawLine: string): string {
 
   // 画像 ![alt](url)（改修15回目：MCP経由でスクリーンショット等を貼れるようにする要望への
   // 対応。リンクの[text](url)記法とは先頭の!だけが違うため、リンクより先に処理しないと
-  // 画像記法がリンクとして誤変換されてしまう。urlはhttps/data:image(base64)のみ許可し、
-  // javascript:等は正規表現の候補自体がhttps?:/data:image始まりに限定されているため
-  // 構造的にマッチしない
+  // 画像記法がリンクとして誤変換されてしまう。urlはhttps/data:image(base64)/添付URL
+  // （/api/v1/attachments/<sha256>）のみ許可し、javascript:等は正規表現の候補自体が
+  // 構造的にマッチしないため受け付けない。/api/v1/attachments/形式は改修16回目：
+  // upload_attachmentツールでアップロードした画像を参照する用途（data URIを直接
+  // 書き込む方式は、長大なbase64をツール呼び出し引数として生成する過程でごく低い確率で
+  // 文字化けし画像が壊れることが判明したため、こちらを推奨経路にした）
   out = out.replace(
-    /!\[([^[\]]*)\]\((https?:\/\/[^\s()]+|data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)\)/g,
+    /!\[([^[\]]*)\]\((https?:\/\/[^\s()]+|data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+|\/api\/v1\/attachments\/[0-9a-f]{64})\)/g,
     (_m, alt: string, url: string) => `<img src="${url}" alt="${alt}">`,
   );
 

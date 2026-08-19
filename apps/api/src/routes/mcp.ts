@@ -164,6 +164,6 @@ mcpRoute.post('/mcp', async (c) => {
   if (!verified) throw new ApiError('unauthenticated', 'トークンが無効です');
 
   const body = jsonRpcRequestSchema.parse(await c.req.json());
-  const response = await handleMcpRequest(db, verified, body as JsonRpcRequest);
+  const response = await handleMcpRequest(db, c.get('env'), verified, body as JsonRpcRequest);
   return c.json(response);
 });

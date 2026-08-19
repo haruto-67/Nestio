@@ -62,9 +62,19 @@ export function useSwipeAction({ onSwipeRight, onSwipeLeft, threshold = 80 }: Us
     directionRef.current = null;
   };
 
+  // iOSでアプリをバックグラウンドに送る（ホームへスワイプ等）と、進行中のタッチジェスチャーは
+  // touchendではなくtouchcancelで終わる（改修16回目：スワイプ操作を意図的にしていないのに
+  // ホーム画面から戻ってきたら行に完了/削除の緑/赤背景が残ったまま固まるという報告への対応）。
+  // onTouchEndと違い、キャンセルなのでonSwipeRight/onSwipeLeftは呼ばずstateだけリセットする
+  const onTouchCancel = () => {
+    setSwiping(false);
+    setTranslateX(0);
+    directionRef.current = null;
+  };
+
   return {
     translateX,
     swiping,
-    handlers: { onTouchStart, onTouchMove, onTouchEnd },
+    handlers: { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel },
   };
 }

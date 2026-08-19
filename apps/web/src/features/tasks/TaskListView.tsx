@@ -15,6 +15,7 @@ import { nextSortOrder } from '../../lib/sort-order.js';
 import { showToast } from '../../ui/toast.js';
 import { undo } from '../../state/undoManager.js';
 import { setTaskCollapsed, isTaskCollapsed, subscribeAnyTaskCollapsed } from '../../lib/collapsed-tasks.js';
+import { isCoarsePointerDevice } from '../../lib/pointer.js';
 import { loadCustomViews, subscribeCustomViews } from '../../lib/custom-views.js';
 import { useKeymap } from '../../state/useKeymap.js';
 import { EmptyState } from './EmptyState.js';
@@ -64,6 +65,11 @@ export function TaskListView({
   // 閉じる時は逆に即座に表示へ戻す（改修12回目：以前はdetailOpenを直接使っており、開いた瞬間に
   // 一覧が消え、閉じてもアニメーションが終わるまで一覧が戻らなかった）
   const hideForDetail = useDelayedHide(detailOpen);
+  // selectedTaskIdはPC向けのj/kカーソル位置を兼ねるため、詳細パネルを閉じても保持され続ける
+  // （キーボードナビゲーションの基準点として必要）。しかしタッチ端末ではカーソル移動の概念が
+  // 無く、タスク詳細を閉じた後もタップした行にだけ青いハイライトが残り続けているように
+  // 見えてしまう（改修16回目）。タッチ端末では詳細パネルが実際に開いている間だけハイライトする
+  const highlightedTaskId = detailOpen || !isCoarsePointerDevice() ? selectedTaskId : null;
   const { me } = useApp();
   const lists = useLists();
   const tasks = useTasks();
@@ -349,7 +355,7 @@ export function TaskListView({
             tasks={tasksInView}
             onToggleComplete={toggleComplete}
             onSelect={onSelectTask}
-            selectedTaskId={selectedTaskId}
+            selectedTaskId={highlightedTaskId}
             onChangePriority={changeTaskPriority}
             listNameById={listNameById}
             showListName={view.type !== 'list'}
@@ -361,7 +367,7 @@ export function TaskListView({
             tasks={tasksInView}
             onToggleComplete={toggleComplete}
             onSelect={onSelectTask}
-            selectedTaskId={selectedTaskId}
+            selectedTaskId={highlightedTaskId}
             onChangeDueDate={changeTaskDueDate}
           />
         </div>
@@ -381,7 +387,7 @@ export function TaskListView({
               predecessorTitle={predecessorTitle}
               onToggleComplete={toggleComplete}
               onSelect={onSelectTask}
-              selectedTaskId={selectedTaskId}
+              selectedTaskId={highlightedTaskId}
               onAddSubtask={addSubtask}
               onDropOntoTask={dropOntoTask}
               onDelete={handleSwipeDelete}
@@ -396,7 +402,7 @@ export function TaskListView({
               predecessorTitle={predecessorTitle}
               onToggleComplete={toggleComplete}
               onSelect={onSelectTask}
-              selectedTaskId={selectedTaskId}
+              selectedTaskId={highlightedTaskId}
               onAddSubtask={addSubtask}
               onDropOntoTask={dropOntoTask}
               onDelete={handleSwipeDelete}

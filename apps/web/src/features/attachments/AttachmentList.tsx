@@ -7,6 +7,7 @@ import { createAttachment, deleteAttachment, THUMBNAIL_FILENAME_PREFIX } from '.
 import { processImageFile } from '../../lib/image-processing.js';
 import { attachmentUrl } from '../../api/attachments.js';
 import { CollapsibleSection } from '../../ui/CollapsibleSection.js';
+import { ImageLightbox } from '../../ui/ImageLightbox.js';
 
 interface AttachmentListProps {
   ownerType: 'task' | 'note';
@@ -107,7 +108,12 @@ function AttachmentThumbnail({
   // ローカルに残っているBlobがあればそちらをプレビューに使う。表示用には縮小版（あれば）を優先する
   const displaySha256 = thumbnail?.sha256 ?? attachment.sha256;
   const pendingBlob = usePendingAttachmentBlob(displaySha256);
+  // クリックして拡大表示する時（改修16回目）は縮小版ではなく本体を見せたいため、
+  // 表示用とは別に本体のsha256でも保留中Blobを引いておく
+  const fullPendingBlob = usePendingAttachmentBlob(attachment.sha256);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [fullObjectUrl, setFullObjectUrl] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   useEffect(() => {
     if (!pendingBlob) {
@@ -119,14 +125,26 @@ function AttachmentThumbnail({
     return () => URL.revokeObjectURL(url);
   }, [pendingBlob]);
 
+  useEffect(() => {
+    if (!fullPendingBlob) {
+      setFullObjectUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(fullPendingBlob);
+    setFullObjectUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [fullPendingBlob]);
+
   const src = objectUrl ?? attachmentUrl(displaySha256);
+  const fullSrc = fullObjectUrl ?? attachmentUrl(attachment.sha256);
 
   return (
     <div className="group relative">
       <img
         src={src}
         alt={attachment.filename}
-        className="h-16 w-full rounded-md bg-neutral-100 object-cover dark:bg-neutral-800"
+        onClick={() => setLightboxOpen(true)}
+        className="h-16 w-full cursor-zoom-in rounded-md bg-neutral-100 object-cover dark:bg-neutral-800"
         onError={(e) => {
           e.currentTarget.style.opacity = '0.3';
         }}
@@ -137,6 +155,9 @@ function AttachmentThumbnail({
       >
         <X size={11} />
       </button>
+      {lightboxOpen && (
+        <ImageLightbox src={fullSrc} alt={attachment.filename} onClose={() => setLightboxOpen(false)} />
+      )}
     </div>
   );
 }

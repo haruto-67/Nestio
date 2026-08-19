@@ -526,6 +526,123 @@ describe('MCP OAuth + tools', () => {
     expect(noteRow.body).toBe('<p><code>code</code></p>');
   });
 
+  // 1x1の黒PNG。改修16回目：upload_attachment/get_attachmentのテスト用固定データ
+  const TINY_PNG_BASE64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+  it('upload_attachmentで画像をアップロードし、get_task/list_notesのattachmentsに反映される', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+    const task = await callTool(app, accessToken, 'create_task', { list_id: listId, title: '画像付きタスク' });
+
+    const uploaded = await callTool(app, accessToken, 'upload_attachment', {
+      owner_type: 'task',
+      owner_id: task.id,
+      filename: 'test.png',
+      data_base64: TINY_PNG_BASE64,
+    });
+    expect(uploaded.url as string).toMatch(/^\/api\/v1\/attachments\/[0-9a-f]{64}$/);
+    expect(uploaded.mime).toBe('image/png');
+
+    const fetchedTask = await callTool(app, accessToken, 'get_task', { id: task.id });
+    const taskAttachments = fetchedTask.attachments as { filename: string; url: string }[];
+    expect(taskAttachments).toHaveLength(1);
+    expect(taskAttachments[0]?.filename).toBe('test.png');
+    expect(taskAttachments[0]?.url).toBe(uploaded.url);
+
+    const note = await callTool(app, accessToken, 'create_note', { title: 'ノート' });
+    await callTool(app, accessToken, 'upload_attachment', {
+      owner_type: 'note',
+      owner_id: note.id,
+      filename: 'note.png',
+      data_base64: TINY_PNG_BASE64,
+    });
+    const listed = (await callTool(app, accessToken, 'list_notes', {})) as unknown as {
+      notes: { id: string; attachments: { filename: string }[] }[];
+    };
+    const foundNote = listed.notes.find((n) => n.id === note.id);
+    expect(foundNote?.attachments.map((a) => a.filename)).toEqual(['note.png']);
+  });
+
+  it('upload_attachmentは壊れたPNGデータ（CRC不一致）を拒否する', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+    const task = await callTool(app, accessToken, 'create_task', { list_id: listId, title: 'タスク' });
+
+    const buf = Buffer.from(TINY_PNG_BASE64, 'base64');
+    buf[30] = (buf[30] ?? 0) ^ 0xff; // IDATチャンクの1バイトを反転させて破損させる（LLMが長大なbase64を生成する過程で起きる文字化けを模す）
+    const brokenBase64 = buf.toString('base64');
+
+    await expect(
+      callTool(app, accessToken, 'upload_attachment', {
+        owner_type: 'task',
+        owner_id: task.id,
+        filename: 'broken.png',
+        data_base64: brokenBase64,
+      }),
+    ).rejects.toThrow(/壊れています/);
+  });
+
+  it('get_attachmentで画像本体をimage content blockとして取得できる', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+    const task = await callTool(app, accessToken, 'create_task', { list_id: listId, title: 'タスク' });
+    const uploaded = await callTool(app, accessToken, 'upload_attachment', {
+      owner_type: 'task',
+      owner_id: task.id,
+      filename: 'test.png',
+      data_base64: TINY_PNG_BASE64,
+    });
+    const sha256 = (uploaded.url as string).split('/').pop() as string;
+
+    const res = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 9,
+        method: 'tools/call',
+        params: { name: 'get_attachment', arguments: { sha256 } },
+      }),
+    });
+    const body = (await res.json()) as {
+      result: { content: { type: string; data: string; mimeType: string }[] };
+    };
+    expect(body.result.content[0]?.type).toBe('image');
+    expect(body.result.content[0]?.mimeType).toBe('image/png');
+    expect(body.result.content[0]?.data).toBe(TINY_PNG_BASE64);
+  });
+
   it('不正なcode_verifierではトークンを発行しない', async () => {
     db = createTestDb();
     const userId = uuidv7();

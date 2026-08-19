@@ -1,3 +1,5 @@
+import zlib from 'node:zlib';
+
 /**
  * クライアント申告のContent-Typeを信用せず、実バイト列（マジックバイト）で実体形式を検証する。
  * クライアント側は長辺1600px・WebPへ変換して送る想定だが、iOS Safariの古いバージョン等
@@ -50,4 +52,36 @@ export function detectImageMime(buf: Buffer): string | null {
     if (sig.check(buf)) return sig.mime;
   }
   return null;
+}
+
+/**
+ * PNGの各チャンクのCRC32を検証する（改修16回目：MCP経由でdata URIのbase64をnote/bodyに直書き
+ * していた際、1万文字を超える巨大な文字列をツール呼び出しの引数として生成する過程でごく低い
+ * 確率で1文字だけ化け、マジックバイト（先頭8バイト）の検証だけではすり抜けてしまい、
+ * 「画像がスペースだけで何も表示されない」という沈黙した破損として発覚した問題への対応）。
+ * PNG仕様上、各チャンクはtype+dataに対するCRC32を末尾に持つため、1バイトの破損でも高確率で検出できる。
+ * JPEG/WebP/GIFにはPNGのような全チャンクCRCの仕組みが無いため、当面PNGのみ検証する。
+ */
+export function verifyPngIntegrity(buf: Buffer): boolean {
+  let offset = 8; // PNGシグネチャ（8バイト）の直後から
+  while (offset + 8 <= buf.length) {
+    const length = buf.readUInt32BE(offset);
+    const typeAndDataEnd = offset + 8 + length;
+    const crcEnd = typeAndDataEnd + 4;
+    if (crcEnd > buf.length) return false;
+
+    const typeAndData = buf.subarray(offset + 4, typeAndDataEnd);
+    const expectedCrc = buf.readUInt32BE(typeAndDataEnd);
+    if ((zlib.crc32(typeAndData) >>> 0) !== expectedCrc) return false;
+
+    if (typeAndData.subarray(0, 4).toString('ascii') === 'IEND') return true;
+    offset = crcEnd;
+  }
+  return false;
+}
+
+/** マジックバイト検証に加え、対応形式ではデータの完全性（CRC等）も検証する */
+export function verifyImageIntegrity(buf: Buffer, mime: string): boolean {
+  if (mime === 'image/png') return verifyPngIntegrity(buf);
+  return true;
 }

@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { TOOL_DEFS, findToolDef, callTool } from './tools.js';
 import { hasScope, type VerifiedToken } from './tokens.js';
+import type { Env } from '../env.js';
 
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -23,8 +24,30 @@ export interface JsonRpcError {
 
 const PROTOCOL_VERSION = '2024-11-05';
 
+interface ImageToolResult {
+  __image: true;
+  mime: string;
+  data_base64: string;
+}
+
+function isImageToolResult(result: unknown): result is ImageToolResult {
+  return !!result && typeof result === 'object' && '__image' in result;
+}
+
+/**
+ * get_attachmentツールの戻り値だけはMCPのimage content blockに変換し、Claudeが画像として
+ * 直接見られるようにする（改修16回目）。それ以外のツールは従来通りJSON文字列のtextとして返す
+ */
+function toolResultToContent(result: unknown): { type: string; text?: string; data?: string; mimeType?: string } {
+  if (isImageToolResult(result)) {
+    return { type: 'image', data: result.data_base64, mimeType: result.mime };
+  }
+  return { type: 'text', text: JSON.stringify(result) };
+}
+
 export async function handleMcpRequest(
   db: Database.Database,
+  env: Env,
   verified: VerifiedToken,
   req: JsonRpcRequest,
 ): Promise<JsonRpcSuccess | JsonRpcError> {
@@ -72,11 +95,11 @@ export async function handleMcpRequest(
           return { jsonrpc: '2.0', id, error: { code: -32000, message: 'insufficient scope' } };
         }
 
-        const result = await callTool(db, verified.userId, toolName, params?.arguments ?? {});
+        const result = await callTool(db, env, verified.userId, toolName, params?.arguments ?? {});
         return {
           jsonrpc: '2.0',
           id,
-          result: { content: [{ type: 'text', text: JSON.stringify(result) }] },
+          result: { content: [toolResultToContent(result)] },
         };
       }
 

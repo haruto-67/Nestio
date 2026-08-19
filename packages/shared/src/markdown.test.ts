@@ -66,6 +66,20 @@ describe('markdownToSafeHtml', () => {
     expect(out).not.toContain('src=');
   });
 
+  // 改修16回目：data URI直書きは長大なbase64が壊れやすいため、upload_attachmentツールで
+  // アップロードした画像を参照する相対URL（/api/v1/attachments/<sha256>）を推奨経路にした
+  it('/api/v1/attachments/の添付URL形式の画像記法をimgに変換する', () => {
+    const sha256 = 'a'.repeat(64);
+    expect(markdownToSafeHtml(`![添付](/api/v1/attachments/${sha256})`)).toBe(
+      `<p><img src="/api/v1/attachments/${sha256}" alt="添付"></p>`,
+    );
+  });
+
+  it('sha256の形式が不正な/api/v1/attachments/はimgタグへ変換されない', () => {
+    const out = markdownToSafeHtml('![x](/api/v1/attachments/not-a-valid-sha)');
+    expect(out).not.toContain('<img');
+  });
+
   it('data:text/htmlのような画像以外のdata URIはimgタグへ変換されない', () => {
     const out = markdownToSafeHtml('![x](data:text/html,<script>alert(1)</script>)');
     expect(out).not.toContain('<img');

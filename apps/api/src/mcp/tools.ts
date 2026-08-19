@@ -2,6 +2,16 @@ import type Database from 'better-sqlite3';
 import { uuidv7, markdownToSafeHtml, type SyncOp } from '@nestio/shared';
 import { applySyncOps } from '../sync/apply.js';
 import { searchTasks } from '../search/query.js';
+import type { Env } from '../env.js';
+import { detectImageMime, verifyImageIntegrity } from '../attachments/magic-bytes.js';
+import {
+  computeSha256,
+  saveAttachmentFile,
+  readAttachmentFile,
+  attachmentExists,
+  getUserAttachmentUsageBytes,
+  userOwnsAttachment,
+} from '../attachments/storage.js';
 
 export interface ToolDef {
   name: string;
@@ -12,9 +22,11 @@ export interface ToolDef {
 
 const MARKDOWN_FIELD_DESC =
   '簡単なMarkdown記法が使える（**太字**、*斜体*、`コード`、- 箇条書き、1. 番号付きリスト、' +
-  '[文字](https://...)リンク、![代替テキスト](https://... または data:image/png;base64,...)画像、' +
-  '空行区切りの段落）。見出し(#)は太字の段落として表示される。' +
-  'HTMLタグはそのまま書いても解釈されない（文字として表示される）';
+  '[文字](https://...)リンク、![代替テキスト](url)画像、空行区切りの段落）。' +
+  '見出し(#)は太字の段落として表示される。HTMLタグはそのまま書いても解釈されない（文字として表示される）。' +
+  '画像を貼りたい時は、data:base64をここへ直接書かず、先にupload_attachmentツールで画像を' +
+  'アップロードし、返ってきたurlを![代替テキスト](url)で使うこと（数千文字を超えるbase64を' +
+  'このフィールドに直接書くと、生成過程でごく低い確率で文字化けし、画像が壊れて表示されないことがある）';
 
 /** api-spec.md 10章のツール一覧。書き込み系は/sync/pushと同じ適用ロジック（applySyncOps）を通す */
 export const TOOL_DEFS: ToolDef[] = [
@@ -301,6 +313,35 @@ export const TOOL_DEFS: ToolDef[] = [
     description: 'Hatchトリガーを論理削除する',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   },
+  {
+    name: 'upload_attachment',
+    scope: 'write',
+    description:
+      '画像をタスク/メモへの添付として保存し、そのURLを返す。note/bodyフィールドへ画像を埋め込みたい時は、' +
+      'まずこのツールで画像をアップロードし、返ってきたurlを![代替テキスト](url)としてnote/bodyに書くこと',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        owner_type: { type: 'string', description: "'task' または 'note'" },
+        owner_id: { type: 'string', description: '添付先のタスクIDまたはメモID' },
+        filename: { type: 'string' },
+        data_base64: { type: 'string', description: '画像データのbase64エンコード（data:...;base64,のprefixは付けない）' },
+      },
+      required: ['owner_type', 'owner_id', 'filename', 'data_base64'],
+    },
+  },
+  {
+    name: 'get_attachment',
+    scope: 'read',
+    description:
+      'get_task/list_notesが返すattachments[].urlに対応する画像本体を取得する。' +
+      'タスクやメモに添付された画像の中身を確認したい時に使う',
+    inputSchema: {
+      type: 'object',
+      properties: { sha256: { type: 'string', description: 'attachments[].url末尾のsha256（get_task/list_notesで取得）' } },
+      required: ['sha256'],
+    },
+  },
 ];
 
 class ToolError extends Error {}
@@ -404,6 +445,45 @@ function attachTags(db: Database.Database, userId: string, taskId: string, tagNa
   }
 }
 
+interface AttachmentSummary {
+  id: string;
+  filename: string;
+  mime: string;
+  bytes: number;
+  width: number | null;
+  height: number | null;
+  url: string;
+}
+
+/**
+ * タスク/メモに紐づく添付の一覧（改修16回目：MCP経由で添付画像を確認できるようにする要望への
+ * 対応）。UI内部で使うサムネイル（`__thumb__`prefix、apps/web側で生成）は実装の詳細なので除く
+ */
+function listAttachments(
+  db: Database.Database,
+  userId: string,
+  ownerType: 'task' | 'note',
+  ownerId: string,
+): AttachmentSummary[] {
+  const rows = db
+    .prepare(
+      `SELECT id, filename, mime, bytes, width, height, sha256 FROM attachments
+       WHERE user_id = ? AND owner_type = ? AND owner_id = ? AND deleted_at IS NULL
+       AND filename NOT LIKE '\\_\\_thumb\\_\\_%' ESCAPE '\\'
+       ORDER BY created_at`,
+    )
+    .all(userId, ownerType, ownerId) as {
+    id: string;
+    filename: string;
+    mime: string;
+    bytes: number;
+    width: number | null;
+    height: number | null;
+    sha256: string;
+  }[];
+  return rows.map(({ sha256, ...rest }) => ({ ...rest, url: `/api/v1/attachments/${sha256}` }));
+}
+
 function applyOneOpOrThrow(db: Database.Database, userId: string, op: SyncOp): void {
   const result = applySyncOps(db, userId, [op]);
   if (result.rejected.length > 0) {
@@ -413,6 +493,7 @@ function applyOneOpOrThrow(db: Database.Database, userId: string, op: SyncOp): v
 
 export async function callTool(
   db: Database.Database,
+  env: Env,
   userId: string,
   name: string,
   args: Record<string, unknown>,
@@ -460,9 +541,9 @@ export async function callTool(
       const id = requireString(args, 'id');
       const row = db
         .prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
-        .get(id, userId);
+        .get(id, userId) as Record<string, unknown> | undefined;
       if (!row) throw new ToolError('task not found');
-      return row;
+      return { ...row, attachments: listAttachments(db, userId, 'task', id) };
     }
 
     case 'list_notes': {
@@ -472,8 +553,8 @@ export async function callTool(
           `SELECT id, title, body, pinned FROM notes
            WHERE user_id = ? AND deleted_at IS NULL ORDER BY sort_order LIMIT ?`,
         )
-        .all(userId, limit);
-      return { notes: rows };
+        .all(userId, limit) as { id: string; title: string; body: string; pinned: number }[];
+      return { notes: rows.map((n) => ({ ...n, attachments: listAttachments(db, userId, 'note', n.id) })) };
     }
 
     case 'create_task': {
@@ -865,6 +946,61 @@ export async function callTool(
         fields: {},
       });
       return { id, deleted: true };
+    }
+
+    case 'upload_attachment': {
+      const ownerType = requireString(args, 'owner_type');
+      if (ownerType !== 'task' && ownerType !== 'note') {
+        throw new ToolError("owner_typeは'task'または'note'である必要があります");
+      }
+      const ownerId = requireString(args, 'owner_id');
+      const filename = requireString(args, 'filename');
+      const dataBase64 = requireString(args, 'data_base64');
+
+      const buf = Buffer.from(dataBase64, 'base64');
+      if (buf.length === 0) throw new ToolError('画像データが空です');
+      if (buf.length > env.ATTACHMENT_MAX_BYTES) {
+        throw new ToolError(`ファイルサイズが上限（${env.ATTACHMENT_MAX_BYTES}バイト）を超えています`);
+      }
+      const usage = getUserAttachmentUsageBytes(db, userId);
+      if (usage + buf.length > env.ATTACHMENT_QUOTA_BYTES) {
+        throw new ToolError('ユーザーの総容量上限を超えています');
+      }
+
+      const mime = detectImageMime(buf);
+      if (!mime) throw new ToolError('画像形式として認識できませんでした（PNG/JPEG/WebP/GIFのみ対応）');
+      if (!verifyImageIntegrity(buf, mime)) {
+        throw new ToolError(
+          '画像データが壊れています（整合性チェック不一致）。base64の生成中に文字化けした可能性があるため、もう一度生成してアップロードし直してください',
+        );
+      }
+
+      const sha256 = computeSha256(buf);
+      saveAttachmentFile(env.ATTACHMENT_DIR, sha256, buf, env.ATTACHMENT_ENCRYPTION_KEY || undefined);
+
+      const id = uuidv7();
+      applyOneOpOrThrow(db, userId, {
+        op_id: uuidv7(),
+        table: 'attachments',
+        id,
+        op: 'upsert',
+        updated_at: Date.now(),
+        fields: { owner_type: ownerType, owner_id: ownerId, sha256, filename, mime, bytes: buf.length },
+      });
+
+      return { id, mime, bytes: buf.length, url: `/api/v1/attachments/${sha256}` };
+    }
+
+    case 'get_attachment': {
+      const sha256Param = requireString(args, 'sha256');
+      if (!userOwnsAttachment(db, userId, sha256Param) || !attachmentExists(env.ATTACHMENT_DIR, sha256Param)) {
+        throw new ToolError('添付ファイルが見つかりません');
+      }
+      const row = db
+        .prepare('SELECT mime FROM attachments WHERE user_id = ? AND sha256 = ? AND deleted_at IS NULL LIMIT 1')
+        .get(userId, sha256Param) as { mime: string } | undefined;
+      const buf = readAttachmentFile(env.ATTACHMENT_DIR, sha256Param, env.ATTACHMENT_ENCRYPTION_KEY || undefined);
+      return { __image: true as const, mime: row?.mime ?? 'application/octet-stream', data_base64: buf.toString('base64') };
     }
 
     default:
