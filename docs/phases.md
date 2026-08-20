@@ -946,6 +946,59 @@ data URI（`data:image/...;base64,...`）のみ許可し、`javascript:`等の�
 
 ---
 
+## 改修16回目：スワイプ状態残留・MCP画像添付・画像拡大表示・フォーカス残留の修正（2026-08-20）
+
+ユーザーからの5件のフィードバックに対応。
+
+- [x] タスク行のスワイプ完了/削除の視覚フィードバック（緑/赤の背景）が、意図的にスワイプ
+      していないのにホーム画面から戻ってくると残ったまま固まっている、という報告。原因は
+      iOSでアプリをバックグラウンドに送ると進行中のタッチジェスチャーが`touchend`ではなく
+      `touchcancel`で終わることで、`useSwipeAction`が`touchcancel`をハンドリングしておらず
+      `swiping`/`translateX`のstateがリセットされないまま固まっていたため。`onTouchCancel`
+      ハンドラを追加し、`onTouchEnd`と同様にstateをリセットする（キャンセルなので
+      `onSwipeRight`/`onSwipeLeft`は呼ばない）ようにした
+- [x] MCP経由の画像埋め込み（改修15回目）の不具合修正：「Nestio改修15回目タスクに貼った
+      画像がスペースがあるだけで何も表示されない」「画像挿入にも長い時間かかった」という報告。
+      本番DBに保存された値を元のファイルとバイト単位で比較したところ、1文字だけ異なっており、
+      12000文字を超える巨大なdata URIをMCPツール呼び出しの引数として生成する過程で、ごく
+      低い確率で文字化けが起きPNGのCRC不一致でブラウザが描画できなくなっていたことが判明した。
+      根本対策として、data URI直書きに代えて既存の添付ファイル機構（sha256ベースの短いURL）を
+      経由する`upload_attachment`/`get_attachment`のMCPツールを新設：
+      - `upload_attachment`：base64画像をアップロードし添付として保存、`/api/v1/attachments/
+        <sha256>`のURLを返す。マジックバイト検証に加え、PNGは各チャンクのCRC32を検証し
+        （`apps/api/src/attachments/magic-bytes.ts`の`verifyPngIntegrity`）、データ破損を
+        沈黙させず明示的なエラーで検出できるようにした
+      - `get_attachment`：sha256を指定して画像本体を取得する。MCPのimage content blockとして
+        返し、Claudeが画像を直接見られるようにした
+      - `get_task`/`list_notes`のレスポンスに`attachments`一覧（filename/mime/bytes/width/
+        height/url）を含めるようにした（「MCPの画像取得機能」要望への対応）
+      - `markdownToSafeHtml`の画像記法が許可するURLに、上記の添付URL形式
+        （`/api/v1/attachments/<sha256>`）を追加した。data URI直書きの記法自体は後方互換の
+        ため残すが、MCPツールの説明文では非推奨と明記し、upload_attachment経由を案内する
+- [x] タスク内メモ・メモ機能内の画像・添付画像をクリックすると拡大表示するライトボックスを
+      追加（`apps/web/src/ui/ImageLightbox.tsx`、新規）。`MarkdownField.tsx`のcontentEditable
+      内の`<img>`クリックと、`AttachmentList.tsx`の添付サムネイルクリックの両方から開けるように
+      した。背景クリックまたはEscで閉じる。添付サムネイルは縮小版を表示しているため、拡大時は
+      サムネイルではなく本体画像を見せるようにした
+- [x] スマホでタスク詳細を閉じた後、操作していないのに一覧の行に青いハイライトが残り続ける
+      不具合を修正。`selectedTaskId`はPC向けのj/kキーボードカーソル位置を兼ねるため、詳細
+      パネルを閉じてもstate自体は保持され続ける設計だが、タッチ端末ではカーソル移動の概念が
+      無いため、閉じた行にハイライトだけが取り残されて見えてしまっていた。`TaskListView.tsx`
+      で、タッチ端末では詳細パネルが実際に開いている間だけハイライト用に`selectedTaskId`を
+      渡す（`highlightedTaskId`）ようにし、`selectedTaskId`自体（カーソル位置の実体）は
+      変更しないようにした
+
+**完了条件**：`pnpm typecheck` / `pnpm lint` / `pnpm test`（api 233件・web 23件・shared 21件）・
+Playwright E2Eスモークテスト（3件）が全て通過。スワイプ状態残留の修正・画像クリックでの
+ライトボックス表示はPlaywrightで実ブラウザ操作を通じて動作確認済み。`upload_attachment`の
+CRC検証は、正常なPNGと1バイト破損させたPNGの両方をテストし、破損側だけが明示的なエラーに
+なることを確認した。CI green確認後（Playwrightブラウザインストールが3回GitHub Actions側の
+一時的なネットワーク要因でハングし、4回目の再実行でgreenになった。typecheck/lint/ユニット
+テストは毎回問題なく成功していたため、コード側の問題ではないと判断した）、Pi本番へ
+デプロイ済み（マイグレーションの追加は無し、`attachments`テーブルは既存のものを使用）。
+
+---
+
 ## 進捗管理
 
 - 完了した項目は `[x]` にしてコミットする
