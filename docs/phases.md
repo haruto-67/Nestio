@@ -999,6 +999,62 @@ CRC検証は、正常なPNGと1バイト破損させたPNGの両方をテスト�
 
 ---
 
+## 改修17回目：MCP画像アップロードのワンタイムトークン直接通信化（2026-08-22）
+
+改修16回目でMCP経由の画像埋め込みを`upload_attachment`（data_base64）方式に切り替えたが、
+その後もユーザーから「Nestio内のメモに実測結果と原因分析をまとめたので見てほしい」という
+依頼を受けて着手した対応。
+
+- [x] **問題の実測**：`upload_attachment`（data_base64方式）で異なるサイズの画像を送って
+      検証したところ、128文字（95B）・2,624文字（1,968B）・10,564文字（7,922B）は成功する
+      一方、6,456文字（4,841B）は2回とも失敗した。単純なサイズ閾値ではなく「長いほど当たり
+      やすい確率的事象」であることが判明。原因はdata_base64方式が画像バイト列をLLMの出力
+      トークンとして1文字ずつ生成する設計そのものにあり、改修16回目で対応した「巨大base64が
+      ごく低確率で1文字化ける」問題と同根。base64は1バイトあたり約1.37文字のため、100KBの
+      画像で約35,000トークン（1応答の出力上限に近い）が必要になり、原理的にも数KB程度が
+      実用上限であるとわかった
+- [x] **誤った初期対応策の訂正**：当初「既存のattachmentsRoute（`POST /attachments/:sha256`）を
+      Bearerトークンでも通せば直接curlできる」という案を検討したが、MCP接続はAnthropicの
+      インフラとNestioの間で完結し、MCPアクセストークンはコンテナ内のClaudeには渡らないため
+      不成立と判明。「MCPツールが使い捨ての認証情報を発行してレスポンスで返す」設計が必須
+- [x] **`create_attachment_upload`MCPツールを新設**：`owner_type`/`owner_id`/`filename`/
+      `sha256`（呼び出し側が事前にコード実行環境でローカル計算）を受け取り、その特定のsha256
+      （バイト列）にひも付いた1回使い切り・TTL5分のワンタイムアップロードトークンを発行する。
+      漏洩しても任意ファイルの設置には使えない。新規テーブル`attachment_upload_tokens`
+      （マイグレーション`0009_attachment_upload_tokens.sql`、oauth_tokensと同じく平文非保存・
+      ハッシュのみ保存）で管理する
+- [x] **`attachmentsRoute`のPOSTがワンタイムトークンを受け付けるように**：`Authorization:
+      Bearer <upload_token>`ならワンタイムトークンとして`consumeUploadToken`で検証、それ以外は
+      従来通りセッションCookieとして認証する二段構えにした。トークン検証成功時は、実体保存の
+      成功と同じPOST 1回でattachmentレコードも自動作成する（トークンに埋め込まれた
+      `owner_type`/`owner_id`/`filename`を使う）ため、MCPの往復は`create_attachment_upload`の
+      1回だけで完結する。これによりClaudeのコード実行環境からcurlで直接HTTP通信できる場合、
+      base64を一切経由せず任意サイズ（`ATTACHMENT_MAX_BYTES`まで）の画像をアップロードできる
+      ようになった。既存のsha256照合・マジックバイト検証・content-addressedな重複排除・
+      クォータ・保存時暗号化・所有チェックはすべてそのまま流用した
+- [x] **`upload_attachment`（data_base64方式）の堅牢化**：フォールバック用途として残しつつ、
+      `sha256`引数を追加し実データと照合して不一致なら拒否するようにした（PNG限定のCRC検証の
+      形式非依存な上位互換）。上限を8KB程度に絞り、超える場合は`create_attachment_upload`へ
+      誘導するエラーメッセージにした
+- [x] **`get_attachment`の読み出し側にも上限を追加**：1MBを超える添付は`base64`を返さず
+      `too_large: true`とURLのみ返すようにした（10MBの添付なら13MBのbase64がJSON-RPC
+      レスポンスに乗ってしまう問題への対応）
+- [x] **MCPハンドラへのログ追加**：`upload_attachment`/`get_attachment`/
+      `create_attachment_upload`に`logger.info`/`logger.warn`を追加した（切り分けコストの
+      低減。今回の調査で「サーバーに到達したかどうか判別できず時間がかかった」という
+      フィードバックを受けての対応）
+
+**完了条件**：`pnpm typecheck` / `pnpm lint` / `pnpm test`（api 245件・web 23件・shared 21件）・
+Playwright E2Eスモークテスト（3件）が全て通過。マイグレーション0009をPi本番DBに適用し
+`attachment_upload_tokens`テーブルの作成を確認した上でデプロイ済み。デプロイ後、実際に本番の
+Pi上で`issueUploadToken`相当のトークンを発行し、113KBの画像（`upload_attachment`のdata_base64
+方式では8KB上限に阻まれ確実に失敗するサイズ）を`curl -X POST --data-binary`で本番エンドポイント
+へ直接送信し、201・attachmentレコードの自動作成・`get_task`のattachments反映・note内の
+`![alt](url)`記法での実際の画像埋め込み・トークンの1回使い切り（2回目のPOSTが401になること）
+までEnd-to-endで実機検証した。
+
+---
+
 ## 進捗管理
 
 - 完了した項目は `[x]` にしてコミットする
