@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { TOOL_DEFS, findToolDef, callTool } from './tools.js';
 import { hasScope, type VerifiedToken } from './tokens.js';
 import type { Env } from '../env.js';
+import type { Logger } from '../logger.js';
 
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -48,6 +49,7 @@ function toolResultToContent(result: unknown): { type: string; text?: string; da
 export async function handleMcpRequest(
   db: Database.Database,
   env: Env,
+  logger: Logger,
   verified: VerifiedToken,
   req: JsonRpcRequest,
 ): Promise<JsonRpcSuccess | JsonRpcError> {
@@ -95,7 +97,7 @@ export async function handleMcpRequest(
           return { jsonrpc: '2.0', id, error: { code: -32000, message: 'insufficient scope' } };
         }
 
-        const result = await callTool(db, env, verified.userId, toolName, params?.arguments ?? {});
+        const result = await callTool(db, env, logger, verified.userId, toolName, params?.arguments ?? {});
         return {
           jsonrpc: '2.0',
           id,

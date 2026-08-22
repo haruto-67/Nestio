@@ -1,6 +1,9 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { uuidv7 } from '@nestio/shared';
 import { createTestDb, insertTestUser } from '../test-utils/db.js';
 import { createApp } from '../app.js';
@@ -8,7 +11,14 @@ import { loadEnv } from '../env.js';
 import { createLogger } from '../logger.js';
 
 function setupApp(db: Database.Database) {
-  const env = loadEnv({ NODE_ENV: 'test', LOG_LEVEL: 'error' } as unknown as NodeJS.ProcessEnv);
+  // テストごとに添付ディレクトリを分離する（content-addressedな重複排除により、他のテストで
+  // 既にアップロード済みの画像と同じバイト列を使うと「既に存在する」と誤判定されてしまうため）
+  const attachmentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nestio-mcp-test-'));
+  const env = loadEnv({
+    NODE_ENV: 'test',
+    LOG_LEVEL: 'error',
+    ATTACHMENT_DIR: attachmentDir,
+  } as unknown as NodeJS.ProcessEnv);
   const logger = createLogger(env);
   return createApp(env, db, logger);
 }
@@ -641,6 +651,110 @@ describe('MCP OAuth + tools', () => {
     expect(body.result.content[0]?.type).toBe('image');
     expect(body.result.content[0]?.mimeType).toBe('image/png');
     expect(body.result.content[0]?.data).toBe(TINY_PNG_BASE64);
+  });
+
+  it('upload_attachmentにsha256を渡すと実データと照合し、不一致なら拒否する', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+    const task = await callTool(app, accessToken, 'create_task', { list_id: listId, title: 'タスク' });
+
+    await expect(
+      callTool(app, accessToken, 'upload_attachment', {
+        owner_type: 'task',
+        owner_id: task.id,
+        filename: 'test.png',
+        data_base64: TINY_PNG_BASE64,
+        sha256: 'f'.repeat(64),
+      }),
+    ).rejects.toThrow(/sha256/);
+
+    const uploaded = await callTool(app, accessToken, 'upload_attachment', {
+      owner_type: 'task',
+      owner_id: task.id,
+      filename: 'test.png',
+      data_base64: TINY_PNG_BASE64,
+      sha256: crypto.createHash('sha256').update(Buffer.from(TINY_PNG_BASE64, 'base64')).digest('hex'),
+    });
+    expect(uploaded.mime).toBe('image/png');
+  });
+
+  it('upload_attachmentのdata_base64が上限（8KB）を超えると拒否される', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+    const task = await callTool(app, accessToken, 'create_task', { list_id: listId, title: 'タスク' });
+
+    const oversized = Buffer.alloc(9 * 1024, 0x41).toString('base64'); // 9KB相当のダミーbase64
+    await expect(
+      callTool(app, accessToken, 'upload_attachment', {
+        owner_type: 'task',
+        owner_id: task.id,
+        filename: 'big.png',
+        data_base64: oversized,
+      }),
+    ).rejects.toThrow(/8192バイト/);
+  });
+
+  // 改修17回目：MCPのアクセストークンはコンテナ内のClaudeに渡らないため、create_attachment_upload
+  // が発行するワンタイムトークンでattachmentsRouteへ直接curl POSTするフローを検証する
+  it('create_attachment_uploadで発行したトークンでPOSTすると、attachmentsに反映される', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+    const task = await callTool(app, accessToken, 'create_task', { list_id: listId, title: '直接通信テスト' });
+
+    const fileBuf = Buffer.from(TINY_PNG_BASE64, 'base64');
+    const sha256 = crypto.createHash('sha256').update(fileBuf).digest('hex');
+
+    const issued = await callTool(app, accessToken, 'create_attachment_upload', {
+      owner_type: 'task',
+      owner_id: task.id,
+      filename: 'direct.png',
+      sha256,
+    });
+    expect(issued.upload_url).toBe(`http://localhost:5173/api/v1/attachments/${sha256}`);
+    expect(typeof issued.upload_token).toBe('string');
+
+    const uploadPath = new URL(issued.upload_url as string).pathname;
+    const uploadRes = await app.request(uploadPath, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${issued.upload_token}` },
+      body: fileBuf,
+    });
+    expect(uploadRes.status).toBe(201);
+
+    const fetchedTask = await callTool(app, accessToken, 'get_task', { id: task.id });
+    const attachments = fetchedTask.attachments as { filename: string; mime: string }[];
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]).toMatchObject({ filename: 'direct.png', mime: 'image/png' });
   });
 
   it('不正なcode_verifierではトークンを発行しない', async () => {

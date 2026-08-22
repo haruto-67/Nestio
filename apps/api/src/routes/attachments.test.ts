@@ -9,6 +9,7 @@ import { createTestDb, insertTestUser } from '../test-utils/db.js';
 import { createApp } from '../app.js';
 import { loadEnv } from '../env.js';
 import { createLogger } from '../logger.js';
+import { issueUploadToken } from '../attachments/upload-tokens.js';
 
 function setupApp(db: Database.Database, attachmentDir: string) {
   const env = loadEnv({
@@ -198,6 +199,110 @@ describe('attachments route', () => {
     const app = setupApp(db, attachmentDir);
     const res = await app.request(`/api/v1/attachments/${'a'.repeat(64)}`);
     expect(res.status).toBe(401);
+  });
+
+  // 改修17回目：MCPのアクセストークンはコンテナ内のClaudeに渡らないため、create_attachment_upload
+  // が発行するワンタイムトークンでこのPOSTエンドポイントを直接叩けるようにした
+  it('アップロードトークンでPOSTすると201になり、attachmentレコードも自動作成される', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const app = setupApp(db, attachmentDir);
+    const sha256 = crypto.createHash('sha256').update(FAKE_PNG).digest('hex');
+    const ownerId = uuidv7();
+    const { token } = issueUploadToken(db, userId, 'task', ownerId, 'photo.png', sha256);
+
+    const res = await app.request(`/api/v1/attachments/${sha256}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: FAKE_PNG,
+    });
+    expect(res.status).toBe(201);
+
+    const row = db
+      .prepare('SELECT owner_type, owner_id, filename, mime, bytes FROM attachments WHERE sha256 = ? AND user_id = ?')
+      .get(sha256, userId) as { owner_type: string; owner_id: string; filename: string; mime: string; bytes: number };
+    expect(row).toMatchObject({
+      owner_type: 'task',
+      owner_id: ownerId,
+      filename: 'photo.png',
+      mime: 'image/png',
+      bytes: FAKE_PNG.length,
+    });
+  });
+
+  it('アップロードトークンは1回使うと2回目は401になる', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const app = setupApp(db, attachmentDir);
+    const sha256 = crypto.createHash('sha256').update(FAKE_PNG).digest('hex');
+    const ownerId = uuidv7();
+    const { token } = issueUploadToken(db, userId, 'task', ownerId, 'photo.png', sha256);
+
+    const firstRes = await app.request(`/api/v1/attachments/${sha256}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: FAKE_PNG,
+    });
+    expect(firstRes.status).toBe(201);
+
+    const secondRes = await app.request(`/api/v1/attachments/${sha256}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: FAKE_PNG,
+    });
+    expect(secondRes.status).toBe(401);
+  });
+
+  it('無効なアップロードトークンは401', async () => {
+    db = createTestDb();
+    const app = setupApp(db, attachmentDir);
+    const sha256 = crypto.createHash('sha256').update(FAKE_PNG).digest('hex');
+
+    const res = await app.request(`/api/v1/attachments/${sha256}`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer not-a-real-token' },
+      body: FAKE_PNG,
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('アップロードトークン発行時のsha256とURLのsha256が異なると400', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const app = setupApp(db, attachmentDir);
+    const sha256 = crypto.createHash('sha256').update(FAKE_PNG).digest('hex');
+    const { token } = issueUploadToken(db, userId, 'task', uuidv7(), 'photo.png', 'f'.repeat(64));
+
+    const res = await app.request(`/api/v1/attachments/${sha256}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: FAKE_PNG,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('アップロードトークン経由で既存ファイルへPOSTしても、レコードが無ければ作成される', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const app = setupApp(db, attachmentDir);
+    const sha256 = crypto.createHash('sha256').update(FAKE_PNG).digest('hex');
+    saveFileDirectly(attachmentDir, sha256, FAKE_PNG); // 実体だけ既に存在する状態を再現
+    const ownerId = uuidv7();
+    const { token } = issueUploadToken(db, userId, 'note', ownerId, 'dup.png', sha256);
+
+    const res = await app.request(`/api/v1/attachments/${sha256}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: Buffer.from('ignored because file already exists'),
+    });
+    expect(res.status).toBe(200);
+
+    const row = db.prepare('SELECT owner_type, owner_id FROM attachments WHERE sha256 = ? AND user_id = ?').get(sha256, userId);
+    expect(row).toMatchObject({ owner_type: 'note', owner_id: ownerId });
   });
 
   it('容量上限超過は413', async () => {

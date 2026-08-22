@@ -1,9 +1,13 @@
-import { Hono } from 'hono';
-import { sha256Schema } from '@nestio/shared';
+import { Hono, type Context } from 'hono';
+import type Database from 'better-sqlite3';
+import { uuidv7, sha256Schema } from '@nestio/shared';
 import type { AppVariables } from '../middleware/request-context.js';
 import { requireAuth } from '../middleware/auth.js';
+import { getSessionIdFromRequest, findValidSession } from '../auth/session.js';
+import { applySyncOps } from '../sync/apply.js';
 import { ApiError } from '../errors.js';
 import { detectImageMime } from '../attachments/magic-bytes.js';
+import { consumeUploadToken } from '../attachments/upload-tokens.js';
 import {
   attachmentExists,
   saveAttachmentFile,
@@ -15,22 +19,84 @@ import {
 
 export const attachmentsRoute = new Hono<{ Variables: AppVariables }>();
 
-attachmentsRoute.use('/attachments/*', requireAuth);
+interface UploadAuth {
+  userId: string;
+  /** MCPのcreate_attachment_upload経由の場合のみセットされる。POST成功時にattachmentレコードを
+   * 自動作成する（改修17回目：MCPのアクセストークンはAnthropicのインフラで完結しコンテナ内の
+   * Claudeには渡らないため、セッションCookie前提のこの口をcurlで直接叩くには、
+   * sha256にひも付いた用途限定のワンタイムトークンで代用する必要がある） */
+  autoRecord?: { ownerType: 'task' | 'note'; ownerId: string; filename: string };
+}
+
+/** Authorization: Bearer <upload_token> ならワンタイムトークンとして、それ以外はセッションCookieとして認証する */
+function resolveUploadAuth(c: Context<{ Variables: AppVariables }>, db: Database.Database, sha256Param: string): UploadAuth {
+  const authHeader = c.req.header('authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const verified = consumeUploadToken(db, authHeader.slice('Bearer '.length));
+    if (!verified) throw new ApiError('unauthenticated', 'アップロードトークンが無効か期限切れです');
+    if (verified.sha256 !== sha256Param) {
+      throw new ApiError('validation_failed', 'アップロードトークンのsha256とURLのsha256が一致しません');
+    }
+    return {
+      userId: verified.userId,
+      autoRecord: { ownerType: verified.ownerType, ownerId: verified.ownerId, filename: verified.filename },
+    };
+  }
+
+  const sessionId = getSessionIdFromRequest(c);
+  const session = sessionId ? findValidSession(db, sessionId) : undefined;
+  if (!session) throw new ApiError('unauthenticated', 'セッションが見つかりません');
+  return { userId: session.user_id };
+}
+
+function createAttachmentRecord(
+  db: Database.Database,
+  userId: string,
+  sha256: string,
+  record: { ownerType: 'task' | 'note'; ownerId: string; filename: string; mime: string; bytes: number },
+): void {
+  const result = applySyncOps(db, userId, [
+    {
+      op_id: uuidv7(),
+      table: 'attachments',
+      id: uuidv7(),
+      op: 'upsert',
+      updated_at: Date.now(),
+      fields: {
+        owner_type: record.ownerType,
+        owner_id: record.ownerId,
+        sha256,
+        filename: record.filename,
+        mime: record.mime,
+        bytes: record.bytes,
+      },
+    },
+  ]);
+  if (result.rejected.length > 0) {
+    throw new ApiError('validation_failed', `添付レコードの作成に失敗しました: ${result.rejected[0]?.reason}`);
+  }
+}
 
 attachmentsRoute.post('/attachments/:sha256', async (c) => {
   const env = c.get('env');
   const db = c.get('db');
-  const userId = c.get('userId');
   const logger = c.get('logger');
-  if (!userId) throw new ApiError('unauthenticated', 'セッションが見つかりません');
 
   const sha256Param = c.req.param('sha256');
   if (!sha256Schema.safeParse(sha256Param).success) {
     throw new ApiError('validation_failed', 'sha256の形式が不正です');
   }
 
-  // content-addressedのため既に存在すれば即200（再アップロード不要）
+  const auth = resolveUploadAuth(c, db, sha256Param);
+
+  // content-addressedのため既に存在すれば即200（再アップロード不要）。ただしトークン経由の
+  // アップロードは、実体は既にあってもattachmentレコードがまだ無い可能性があるため作成する
   if (attachmentExists(env.ATTACHMENT_DIR, sha256Param)) {
+    if (auth.autoRecord) {
+      const existing = readAttachmentFile(env.ATTACHMENT_DIR, sha256Param, env.ATTACHMENT_ENCRYPTION_KEY || undefined);
+      const mime = detectImageMime(existing) ?? 'application/octet-stream';
+      createAttachmentRecord(db, auth.userId, sha256Param, { ...auth.autoRecord, mime, bytes: existing.length });
+    }
     return c.body(null, 200);
   }
 
@@ -40,7 +106,7 @@ attachmentsRoute.post('/attachments/:sha256', async (c) => {
     throw new ApiError('payload_too_large', `ファイルサイズが上限（${env.ATTACHMENT_MAX_BYTES}バイト）を超えています`);
   }
 
-  const usage = getUserAttachmentUsageBytes(db, userId);
+  const usage = getUserAttachmentUsageBytes(db, auth.userId);
   if (usage + buf.length > env.ATTACHMENT_QUOTA_BYTES) {
     throw new ApiError('payload_too_large', 'ユーザーの総容量上限を超えています');
   }
@@ -58,12 +124,19 @@ attachmentsRoute.post('/attachments/:sha256', async (c) => {
   }
 
   saveAttachmentFile(env.ATTACHMENT_DIR, sha256Param, buf, env.ATTACHMENT_ENCRYPTION_KEY || undefined);
-  logger.info({ sha256: sha256Param, bytes: buf.length, mime }, 'attachment_uploaded');
+  logger.info(
+    { sha256: sha256Param, bytes: buf.length, mime, via: auth.autoRecord ? 'upload_token' : 'session' },
+    'attachment_uploaded',
+  );
+
+  if (auth.autoRecord) {
+    createAttachmentRecord(db, auth.userId, sha256Param, { ...auth.autoRecord, mime, bytes: buf.length });
+  }
 
   return c.body(null, 201);
 });
 
-attachmentsRoute.get('/attachments/:sha256', (c) => {
+attachmentsRoute.get('/attachments/:sha256', requireAuth, (c) => {
   const env = c.get('env');
   const db = c.get('db');
   const userId = c.get('userId');

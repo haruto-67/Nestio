@@ -1,8 +1,9 @@
 import type Database from 'better-sqlite3';
-import { uuidv7, markdownToSafeHtml, type SyncOp } from '@nestio/shared';
+import { uuidv7, markdownToSafeHtml, sha256Schema, type SyncOp } from '@nestio/shared';
 import { applySyncOps } from '../sync/apply.js';
 import { searchTasks } from '../search/query.js';
 import type { Env } from '../env.js';
+import type { Logger } from '../logger.js';
 import { detectImageMime, verifyImageIntegrity } from '../attachments/magic-bytes.js';
 import {
   computeSha256,
@@ -12,6 +13,7 @@ import {
   getUserAttachmentUsageBytes,
   userOwnsAttachment,
 } from '../attachments/storage.js';
+import { issueUploadToken } from '../attachments/upload-tokens.js';
 
 export interface ToolDef {
   name: string;
@@ -24,9 +26,17 @@ const MARKDOWN_FIELD_DESC =
   '簡単なMarkdown記法が使える（**太字**、*斜体*、`コード`、- 箇条書き、1. 番号付きリスト、' +
   '[文字](https://...)リンク、![代替テキスト](url)画像、空行区切りの段落）。' +
   '見出し(#)は太字の段落として表示される。HTMLタグはそのまま書いても解釈されない（文字として表示される）。' +
-  '画像を貼りたい時は、data:base64をここへ直接書かず、先にupload_attachmentツールで画像を' +
-  'アップロードし、返ってきたurlを![代替テキスト](url)で使うこと（数千文字を超えるbase64を' +
-  'このフィールドに直接書くと、生成過程でごく低い確率で文字化けし、画像が壊れて表示されないことがある）';
+  '画像を貼りたい時は、data:base64をここへ直接書かず、先にcreate_attachment_upload（コード実行' +
+  '環境からNestioへ直接HTTP通信できる場合。推奨）またはupload_attachment（それ以外の場合の' +
+  'フォールバック。数KB程度まで）で画像をアップロードし、返ってきたurlを![代替テキスト](url)で' +
+  '使うこと';
+
+// data_base64経由（LLMが1文字ずつトークン生成する必要がある）はサイズに応じて生成が破損・中断
+// しやすいため、上限を小さく絞る（改修17回目）。より大きな画像はcreate_attachment_uploadを使う
+const UPLOAD_ATTACHMENT_INLINE_MAX_BYTES = 8 * 1024;
+// get_attachmentの結果はJSON-RPCレスポンスにbase64で乗るため、大きすぎるとMCPクライアント側の
+// レスポンスサイズ制限に触れうる（改修17回目）。超える場合はbase64を返さずURLのみ返す
+const GET_ATTACHMENT_INLINE_MAX_BYTES = 1 * 1024 * 1024;
 
 /** api-spec.md 10章のツール一覧。書き込み系は/sync/pushと同じ適用ロジック（applySyncOps）を通す */
 export const TOOL_DEFS: ToolDef[] = [
@@ -317,8 +327,9 @@ export const TOOL_DEFS: ToolDef[] = [
     name: 'upload_attachment',
     scope: 'write',
     description:
-      '画像をタスク/メモへの添付として保存し、そのURLを返す。note/bodyフィールドへ画像を埋め込みたい時は、' +
-      'まずこのツールで画像をアップロードし、返ってきたurlを![代替テキスト](url)としてnote/bodyに書くこと',
+      `画像をタスク/メモへの添付として保存し、そのURLを返す。data_base64は${UPLOAD_ATTACHMENT_INLINE_MAX_BYTES}` +
+      'バイト程度までを目安にすること。それを超える、またはコード実行環境からNestioへ直接HTTP通信' +
+      'できる場合はcreate_attachment_uploadを使う方が確実（base64を1文字ずつ生成する必要が無い）',
     inputSchema: {
       type: 'object',
       properties: {
@@ -326,6 +337,10 @@ export const TOOL_DEFS: ToolDef[] = [
         owner_id: { type: 'string', description: '添付先のタスクIDまたはメモID' },
         filename: { type: 'string' },
         data_base64: { type: 'string', description: '画像データのbase64エンコード（data:...;base64,のprefixは付けない）' },
+        sha256: {
+          type: 'string',
+          description: '（省略可）アップロード元データのSHA-256（16進数64桁・小文字）。渡すと実際のデータと照合し、不一致なら拒否する',
+        },
       },
       required: ['owner_type', 'owner_id', 'filename', 'data_base64'],
     },
@@ -335,11 +350,36 @@ export const TOOL_DEFS: ToolDef[] = [
     scope: 'read',
     description:
       'get_task/list_notesが返すattachments[].urlに対応する画像本体を取得する。' +
-      'タスクやメモに添付された画像の中身を確認したい時に使う',
+      'タスクやメモに添付された画像の中身を確認したい時に使う。' +
+      `${GET_ATTACHMENT_INLINE_MAX_BYTES}バイトを超える画像はbase64を返さず、too_large:trueとurlのみ返す`,
     inputSchema: {
       type: 'object',
       properties: { sha256: { type: 'string', description: 'attachments[].url末尾のsha256（get_task/list_notesで取得）' } },
       required: ['sha256'],
+    },
+  },
+  {
+    name: 'create_attachment_upload',
+    scope: 'write',
+    description:
+      '画像を直接HTTPでアップロードするためのワンタイムトークン付きURLを発行する。コード実行環境から' +
+      'Nestioへ直接HTTP通信できる場合はこちらを使うこと（upload_attachmentのdata_base64方式より確実・' +
+      '高速。base64を1文字ずつ生成する必要が無く、サイズに応じた破損・中断のリスクが無い）。' +
+      '呼び出し前に、アップロードするファイルのSHA-256（16進数64桁・小文字）をコード実行環境側で' +
+      '計算しておくこと。返ってきたupload_urlへ、ヘッダー Authorization: Bearer <upload_token> を' +
+      '付けて生バイナリをPOSTすると保存される（例: curl -X POST --data-binary @file.png ' +
+      '-H "Authorization: Bearer <upload_token>" <upload_url>）。POST成功後、noteやbodyでは' +
+      'upload_urlと同じパス（/api/v1/attachments/<sha256>）を![代替テキスト](url)として使えばよく、' +
+      '別途upload_attachmentを呼ぶ必要は無い。トークンの有効期限は5分・1回のみ使用可能',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        owner_type: { type: 'string', description: "'task' または 'note'" },
+        owner_id: { type: 'string', description: '添付先のタスクIDまたはメモID' },
+        filename: { type: 'string' },
+        sha256: { type: 'string', description: 'アップロードするファイルのSHA-256（16進数64桁・小文字）' },
+      },
+      required: ['owner_type', 'owner_id', 'filename', 'sha256'],
     },
   },
 ];
@@ -494,6 +534,7 @@ function applyOneOpOrThrow(db: Database.Database, userId: string, op: SyncOp): v
 export async function callTool(
   db: Database.Database,
   env: Env,
+  logger: Logger,
   userId: string,
   name: string,
   args: Record<string, unknown>,
@@ -956,11 +997,18 @@ export async function callTool(
       const ownerId = requireString(args, 'owner_id');
       const filename = requireString(args, 'filename');
       const dataBase64 = requireString(args, 'data_base64');
+      const expectedSha256 = typeof args.sha256 === 'string' ? args.sha256 : undefined;
+      if (expectedSha256 !== undefined && !sha256Schema.safeParse(expectedSha256).success) {
+        throw new ToolError('sha256は16進数64桁（小文字）である必要があります');
+      }
 
       const buf = Buffer.from(dataBase64, 'base64');
       if (buf.length === 0) throw new ToolError('画像データが空です');
-      if (buf.length > env.ATTACHMENT_MAX_BYTES) {
-        throw new ToolError(`ファイルサイズが上限（${env.ATTACHMENT_MAX_BYTES}バイト）を超えています`);
+      if (buf.length > UPLOAD_ATTACHMENT_INLINE_MAX_BYTES) {
+        throw new ToolError(
+          `data_base64でアップロードできるのは${UPLOAD_ATTACHMENT_INLINE_MAX_BYTES}バイトまでです。` +
+            'より大きな画像はcreate_attachment_uploadツールを使ってください',
+        );
       }
       const usage = getUserAttachmentUsageBytes(db, userId);
       if (usage + buf.length > env.ATTACHMENT_QUOTA_BYTES) {
@@ -968,14 +1016,29 @@ export async function callTool(
       }
 
       const mime = detectImageMime(buf);
-      if (!mime) throw new ToolError('画像形式として認識できませんでした（PNG/JPEG/WebP/GIFのみ対応）');
+      if (!mime) {
+        logger.warn({ ownerType, ownerId, bytes: buf.length }, 'mcp_upload_attachment_invalid_mime');
+        throw new ToolError('画像形式として認識できませんでした（PNG/JPEG/WebP/GIFのみ対応）');
+      }
+
+      const sha256 = computeSha256(buf);
+      if (expectedSha256 !== undefined && expectedSha256 !== sha256) {
+        logger.warn(
+          { ownerType, ownerId, expectedSha256, actualSha256: sha256, bytes: buf.length },
+          'mcp_upload_attachment_sha256_mismatch',
+        );
+        throw new ToolError(
+          `指定されたsha256（${expectedSha256}）と実際のデータのsha256（${sha256}）が一致しません。` +
+            'base64の生成中に文字化けした可能性があるため、もう一度生成してアップロードし直してください',
+        );
+      }
       if (!verifyImageIntegrity(buf, mime)) {
+        logger.warn({ ownerType, ownerId, sha256, mime, bytes: buf.length }, 'mcp_upload_attachment_integrity_failed');
         throw new ToolError(
           '画像データが壊れています（整合性チェック不一致）。base64の生成中に文字化けした可能性があるため、もう一度生成してアップロードし直してください',
         );
       }
 
-      const sha256 = computeSha256(buf);
       saveAttachmentFile(env.ATTACHMENT_DIR, sha256, buf, env.ATTACHMENT_ENCRYPTION_KEY || undefined);
 
       const id = uuidv7();
@@ -988,19 +1051,55 @@ export async function callTool(
         fields: { owner_type: ownerType, owner_id: ownerId, sha256, filename, mime, bytes: buf.length },
       });
 
+      logger.info({ ownerType, ownerId, sha256, mime, bytes: buf.length }, 'mcp_upload_attachment_success');
       return { id, mime, bytes: buf.length, url: `/api/v1/attachments/${sha256}` };
     }
 
     case 'get_attachment': {
       const sha256Param = requireString(args, 'sha256');
       if (!userOwnsAttachment(db, userId, sha256Param) || !attachmentExists(env.ATTACHMENT_DIR, sha256Param)) {
+        logger.warn({ sha256: sha256Param }, 'mcp_get_attachment_not_found');
         throw new ToolError('添付ファイルが見つかりません');
       }
       const row = db
-        .prepare('SELECT mime FROM attachments WHERE user_id = ? AND sha256 = ? AND deleted_at IS NULL LIMIT 1')
-        .get(userId, sha256Param) as { mime: string } | undefined;
+        .prepare('SELECT mime, bytes FROM attachments WHERE user_id = ? AND sha256 = ? AND deleted_at IS NULL LIMIT 1')
+        .get(userId, sha256Param) as { mime: string; bytes: number } | undefined;
+
+      if (row && row.bytes > GET_ATTACHMENT_INLINE_MAX_BYTES) {
+        logger.info({ sha256: sha256Param, bytes: row.bytes }, 'mcp_get_attachment_too_large_for_inline');
+        return {
+          too_large: true,
+          bytes: row.bytes,
+          mime: row.mime,
+          url: `/api/v1/attachments/${sha256Param}`,
+        };
+      }
+
       const buf = readAttachmentFile(env.ATTACHMENT_DIR, sha256Param, env.ATTACHMENT_ENCRYPTION_KEY || undefined);
+      logger.info({ sha256: sha256Param, bytes: buf.length }, 'mcp_get_attachment_success');
       return { __image: true as const, mime: row?.mime ?? 'application/octet-stream', data_base64: buf.toString('base64') };
+    }
+
+    case 'create_attachment_upload': {
+      const ownerType = requireString(args, 'owner_type');
+      if (ownerType !== 'task' && ownerType !== 'note') {
+        throw new ToolError("owner_typeは'task'または'note'である必要があります");
+      }
+      const ownerId = requireString(args, 'owner_id');
+      const filename = requireString(args, 'filename');
+      const sha256 = requireString(args, 'sha256');
+      if (!sha256Schema.safeParse(sha256).success) {
+        throw new ToolError('sha256は16進数64桁（小文字）である必要があります');
+      }
+
+      const { token, expiresAt } = issueUploadToken(db, userId, ownerType, ownerId, filename, sha256);
+      logger.info({ ownerType, ownerId, sha256, filename }, 'mcp_create_attachment_upload');
+
+      return {
+        upload_url: `${env.APP_ORIGIN}/api/v1/attachments/${sha256}`,
+        upload_token: token,
+        expires_at: expiresAt,
+      };
     }
 
     default:
