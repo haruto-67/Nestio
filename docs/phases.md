@@ -1184,6 +1184,36 @@ sha256不一致を3回連続で起こし400レスポンスの`attempts_remaining
 
 ---
 
+## 改修20回目：MCPリソースによる添付ガイドの提供（2026-08-23）
+
+添付画像の実践手順・エラー対応表を、これまでNestioのメモ機能（「MCP画像アップロード
+現行仕様まとめ」）に書いて`list_notes`経由で見つけてもらう運用にしていたが、偶然の発見に
+頼るしかなく確実性が低かった。ユーザーの提案により、MCPの「resources」（ツールとは別の、
+クライアントが必要な時だけ取得する読み取り専用コンテンツ）としてサーバー自身から提供する形に
+変更した。
+
+- [x] **`resources/list`・`resources/read`をJSON-RPCハンドラに追加**：`initialize`の
+      `capabilities`に`resources: {}`を追加した。`apps/api/src/mcp/resources.ts`に
+      `RESOURCE_DEFS`（一覧用メタデータ）と本文を新設し、`nestio://docs/attachments`
+      という1件のリソース（`text/markdown`）として、アップロード/ダウンロードトークンの
+      仕様・エラーコード対応表・コード実行環境のドメイン許可リスト設定・「ツール/リソース
+      一覧は会話開始時に固定される」という運用上の注意点をまとめた
+- [x] **添付系4ツールの説明文に導線を追加**：`upload_attachment`・`get_attachment`・
+      `create_attachment_upload`・`create_attachment_download`の説明文末尾に
+      「詳しい前提条件・エラー対応表はMCPリソース nestio://docs/attachments を参照」を
+      追記した。ツールのdescriptionは会話の毎ターンにコンテキストへ常駐するため、
+      詳細を移した後もこの1文だけを残す設計にした
+- [x] **Nestioメモ「MCP画像アップロード 現行仕様まとめ」を削除**：内容がリソースに移った
+      ため、ゴミ箱へ移動した（論理削除・復元可能）
+
+**完了条件**：`pnpm typecheck` / `pnpm lint` / `pnpm test`（api 269件）が全て通過。
+`initialize`の`capabilities.resources`、`resources/list`が`nestio://docs/attachments`を
+含むこと、`resources/read`で本文が読めること、未知の`uri`がエラーになることをテストで確認。
+デプロイ後、本番Piで実際のOAuthアクセストークンを使い`resources/list`・`resources/read`を
+curlでEnd-to-endに実行し、同じ結果が返ることを確認した。
+
+---
+
 ## 進捗管理
 
 - 完了した項目は `[x]` にしてコミットする

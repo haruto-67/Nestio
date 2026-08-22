@@ -330,7 +330,8 @@ export const TOOL_DEFS: ToolDef[] = [
     description:
       `画像をタスク/メモへの添付として保存し、そのURLを返す。data_base64は${UPLOAD_ATTACHMENT_INLINE_MAX_BYTES}` +
       'バイト程度までを目安にすること。それを超える、またはコード実行環境からNestioへ直接HTTP通信' +
-      'できる場合はcreate_attachment_uploadを使う方が確実（base64を1文字ずつ生成する必要が無い）',
+      'できる場合はcreate_attachment_uploadを使う方が確実（base64を1文字ずつ生成する必要が無い）。' +
+      '詳しい前提条件・エラー対応表はMCPリソース nestio://docs/attachments を参照',
     inputSchema: {
       type: 'object',
       properties: {
@@ -353,7 +354,8 @@ export const TOOL_DEFS: ToolDef[] = [
       'get_task/list_notesが返すattachments[].urlに対応する画像本体を取得する。' +
       'タスクやメモに添付された画像の中身を確認したい時に使う。' +
       `${GET_ATTACHMENT_INLINE_MAX_BYTES}バイトを超える画像はbase64を返さず、too_large:trueとurlのみ返す` +
-      '（コード実行環境が使えるなら、その場合はcreate_attachment_downloadで直接curl取得する）',
+      '（コード実行環境が使えるなら、その場合はcreate_attachment_downloadで直接curl取得する）。' +
+      '詳しい前提条件・エラー対応表はMCPリソース nestio://docs/attachments を参照',
     inputSchema: {
       type: 'object',
       properties: { sha256: { type: 'string', description: 'attachments[].url末尾のsha256（get_task/list_notesで取得）' } },
@@ -368,7 +370,8 @@ export const TOOL_DEFS: ToolDef[] = [
       `too_large:trueを返した（${GET_ATTACHMENT_INLINE_MAX_BYTES}バイト超）場合や、コード実行環境から` +
       'Nestioへ直接HTTP通信できる場合はこちらを使うこと。返ってきたdownload_urlへ、ヘッダー ' +
       'Authorization: Bearer <download_token> を付けてGETすると画像バイナリが返る（例: curl -o out.png ' +
-      '-H "Authorization: Bearer <download_token>" <download_url>）。トークンの有効期限は5分・1回のみ使用可能',
+      '-H "Authorization: Bearer <download_token>" <download_url>）。トークンの有効期限は5分・1回のみ使用可能。' +
+      '詳しい前提条件・エラー対応表はMCPリソース nestio://docs/attachments を参照',
     inputSchema: {
       type: 'object',
       properties: { sha256: { type: 'string', description: 'attachments[].url末尾のsha256（get_task/list_notesで取得）' } },
@@ -389,7 +392,8 @@ export const TOOL_DEFS: ToolDef[] = [
       'upload_urlと同じパス（/api/v1/attachments/<sha256>）を![代替テキスト](url)として使えばよく、' +
       '別途upload_attachmentを呼ぶ必要は無い。トークンの有効期限は5分。' +
       '内容不一致等でPOSTが失敗しても、同じトークンで成功するまで3回まで再試行できる' +
-      '（4回目以降や期限切れ後はcreate_attachment_uploadを呼び直すこと）',
+      '（4回目以降や期限切れ後はcreate_attachment_uploadを呼び直すこと）。' +
+      '詳しい前提条件・エラー対応表はMCPリソース nestio://docs/attachments を参照',
     inputSchema: {
       type: 'object',
       properties: {

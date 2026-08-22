@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { TOOL_DEFS, findToolDef, callTool } from './tools.js';
+import { RESOURCE_DEFS, findResourceDef, readResourceContent } from './resources.js';
 import { hasScope, type VerifiedToken } from './tokens.js';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
@@ -63,7 +64,7 @@ export async function handleMcpRequest(
           id,
           result: {
             protocolVersion: PROTOCOL_VERSION,
-            capabilities: { tools: {} },
+            capabilities: { tools: {}, resources: {} },
             serverInfo: { name: 'nestio', version: '0.1.0' },
           },
         };
@@ -103,6 +104,25 @@ export async function handleMcpRequest(
           id,
           result: { content: [toolResultToContent(result)] },
         };
+      }
+
+      case 'resources/list':
+        return { jsonrpc: '2.0', id, result: { resources: RESOURCE_DEFS } };
+
+      case 'resources/read': {
+        const params = req.params as { uri?: string } | undefined;
+        const uri = params?.uri;
+        if (!uri) {
+          return { jsonrpc: '2.0', id, error: { code: -32602, message: 'uri is required' } };
+        }
+
+        const def = findResourceDef(uri);
+        const text = readResourceContent(uri);
+        if (!def || text === undefined) {
+          return { jsonrpc: '2.0', id, error: { code: -32001, message: `unknown resource: ${uri}` } };
+        }
+
+        return { jsonrpc: '2.0', id, result: { contents: [{ uri, mimeType: def.mimeType, text }] } };
       }
 
       default:

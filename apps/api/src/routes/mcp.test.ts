@@ -138,6 +138,80 @@ describe('MCP OAuth + tools', () => {
     expect(toolsBody.result.tools.map((t) => t.name)).toContain('create_task');
   });
 
+  it('initializeはcapabilitiesにresourcesを含む', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const res = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { result: { capabilities: { resources?: unknown; tools?: unknown } } };
+    expect(body.result.capabilities.resources).toBeDefined();
+    expect(body.result.capabilities.tools).toBeDefined();
+  });
+
+  it('resources/listで添付ガイドのURIが取得でき、resources/readで本文が読める', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listRes = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'resources/list' }),
+    });
+    expect(listRes.status).toBe(200);
+    const listBody = (await listRes.json()) as {
+      result: { resources: { uri: string; name: string; mimeType: string }[] };
+    };
+    const guide = listBody.result.resources.find((r) => r.uri === 'nestio://docs/attachments');
+    expect(guide).toBeDefined();
+    expect(guide?.mimeType).toBe('text/markdown');
+
+    const readRes = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'resources/read',
+        params: { uri: 'nestio://docs/attachments' },
+      }),
+    });
+    expect(readRes.status).toBe(200);
+    const readBody = (await readRes.json()) as { result: { contents: { uri: string; text: string }[] } };
+    expect(readBody.result.contents[0]?.uri).toBe('nestio://docs/attachments');
+    expect(readBody.result.contents[0]?.text).toContain('create_attachment_upload');
+  });
+
+  it('resources/readに未知のuriを渡すとエラーになる', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const res = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'nestio://docs/unknown' } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { error?: { code: number; message: string } };
+    expect(body.error).toBeDefined();
+  });
+
   it('write権限でcreate_taskを実行できる', async () => {
     db = createTestDb();
     const userId = uuidv7();
