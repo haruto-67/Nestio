@@ -7,7 +7,7 @@ import { getSessionIdFromRequest, findValidSession } from '../auth/session.js';
 import { applySyncOps } from '../sync/apply.js';
 import { ApiError } from '../errors.js';
 import { detectImageMime } from '../attachments/magic-bytes.js';
-import { consumeUploadToken } from '../attachments/upload-tokens.js';
+import { verifyUploadToken, markUploadTokenConsumed } from '../attachments/upload-tokens.js';
 import {
   attachmentExists,
   saveAttachmentFile,
@@ -25,21 +25,34 @@ interface UploadAuth {
    * 自動作成する（改修17回目：MCPのアクセストークンはAnthropicのインフラで完結しコンテナ内の
    * Claudeには渡らないため、セッションCookie前提のこの口をcurlで直接叩くには、
    * sha256にひも付いた用途限定のワンタイムトークンで代用する必要がある） */
-  autoRecord?: { ownerType: 'task' | 'note'; ownerId: string; filename: string };
+  autoRecord?: { tokenId: string; ownerType: 'task' | 'note'; ownerId: string; filename: string };
 }
+
+const UPLOAD_TOKEN_ERROR_MESSAGE: Record<'not_found' | 'expired' | 'used' | 'attempts_exceeded', string> = {
+  // トークンの存在有無を推測されにくくするため、そもそも一致しなかった場合だけ曖昧なメッセージにする
+  not_found: 'アップロードトークンが無効か期限切れです',
+  expired: 'アップロードトークンの有効期限が切れています。create_attachment_uploadを呼び直してください',
+  used: 'このアップロードトークンは既に使用されています',
+  attempts_exceeded: 'このアップロードトークンは再試行回数の上限に達しました。create_attachment_uploadを呼び直してください',
+};
 
 /** Authorization: Bearer <upload_token> ならワンタイムトークンとして、それ以外はセッションCookieとして認証する */
 function resolveUploadAuth(c: Context<{ Variables: AppVariables }>, db: Database.Database, sha256Param: string): UploadAuth {
   const authHeader = c.req.header('authorization');
   if (authHeader?.startsWith('Bearer ')) {
-    const verified = consumeUploadToken(db, authHeader.slice('Bearer '.length));
-    if (!verified) throw new ApiError('unauthenticated', 'アップロードトークンが無効か期限切れです');
-    if (verified.sha256 !== sha256Param) {
+    const result = verifyUploadToken(db, authHeader.slice('Bearer '.length));
+    if (!result.ok) throw new ApiError('unauthenticated', UPLOAD_TOKEN_ERROR_MESSAGE[result.reason]);
+    if (result.token.sha256 !== sha256Param) {
       throw new ApiError('validation_failed', 'アップロードトークンのsha256とURLのsha256が一致しません');
     }
     return {
-      userId: verified.userId,
-      autoRecord: { ownerType: verified.ownerType, ownerId: verified.ownerId, filename: verified.filename },
+      userId: result.token.userId,
+      autoRecord: {
+        tokenId: result.tokenId,
+        ownerType: result.token.ownerType,
+        ownerId: result.token.ownerId,
+        filename: result.token.filename,
+      },
     };
   }
 
@@ -96,6 +109,7 @@ attachmentsRoute.post('/attachments/:sha256', async (c) => {
       const existing = readAttachmentFile(env.ATTACHMENT_DIR, sha256Param, env.ATTACHMENT_ENCRYPTION_KEY || undefined);
       const mime = detectImageMime(existing) ?? 'application/octet-stream';
       createAttachmentRecord(db, auth.userId, sha256Param, { ...auth.autoRecord, mime, bytes: existing.length });
+      markUploadTokenConsumed(db, auth.autoRecord.tokenId);
     }
     return c.body(null, 200);
   }
@@ -131,6 +145,7 @@ attachmentsRoute.post('/attachments/:sha256', async (c) => {
 
   if (auth.autoRecord) {
     createAttachmentRecord(db, auth.userId, sha256Param, { ...auth.autoRecord, mime, bytes: buf.length });
+    markUploadTokenConsumed(db, auth.autoRecord.tokenId);
   }
 
   return c.body(null, 201);

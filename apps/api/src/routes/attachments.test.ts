@@ -255,6 +255,61 @@ describe('attachments route', () => {
     expect(secondRes.status).toBe(401);
   });
 
+  // 改修17回目フォローアップ3：実機検証（2026-08-22）で、宣言と異なるバイト列をPOSTして
+  // 400になった直後、正しいファイルを同じトークンで送っても401（リトライ不可）になる
+  // ことが判明した。確定消費のタイミングをバイト列検証の後に移し、これを解消した
+  it('sha256不一致で400になっても、同じトークンで正しいファイルを再送すれば201で成功する', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const app = setupApp(db, attachmentDir);
+    const sha256 = crypto.createHash('sha256').update(FAKE_PNG).digest('hex');
+    const ownerId = uuidv7();
+    const { token } = issueUploadToken(db, userId, 'task', ownerId, 'photo.png', sha256);
+
+    const wrongBody = Buffer.concat([FAKE_PNG, Buffer.from('extra bytes')]);
+    const failRes = await app.request(`/api/v1/attachments/${sha256}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: wrongBody,
+    });
+    expect(failRes.status).toBe(400);
+
+    const retryRes = await app.request(`/api/v1/attachments/${sha256}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: FAKE_PNG,
+    });
+    expect(retryRes.status).toBe(201);
+  });
+
+  it('検証失敗を繰り返し再試行回数の上限（3回）を超えると401になる', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const app = setupApp(db, attachmentDir);
+    const sha256 = crypto.createHash('sha256').update(FAKE_PNG).digest('hex');
+    const ownerId = uuidv7();
+    const { token } = issueUploadToken(db, userId, 'task', ownerId, 'photo.png', sha256);
+
+    const wrongBody = Buffer.concat([FAKE_PNG, Buffer.from('extra bytes')]);
+    for (let i = 0; i < 3; i++) {
+      const res = await app.request(`/api/v1/attachments/${sha256}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: wrongBody,
+      });
+      expect(res.status).toBe(400);
+    }
+
+    const finalRes = await app.request(`/api/v1/attachments/${sha256}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: FAKE_PNG,
+    });
+    expect(finalRes.status).toBe(401);
+  });
+
   it('無効なアップロードトークンは401', async () => {
     db = createTestDb();
     const app = setupApp(db, attachmentDir);
