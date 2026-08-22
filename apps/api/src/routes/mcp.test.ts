@@ -919,4 +919,44 @@ describe('MCP OAuth + tools', () => {
     const res = await app.request('/api/v1/mcp/.well-known/oauth-authorization-server');
     expect(res.status).toBe(200);
   });
+
+  // 改修17回目：セッションCookieはSameSite=Strictのため、claude.ai等の外部サイトから
+  // この認可画面へトップレベルナビゲーションで遷移すると、Cookieが送信されず
+  // 「セッションが見つかりません」401になってしまっていた不具合の修正
+  it('未ログインでGET /mcp/oauth/authorizeにアクセスすると、元のURLに戻れる形でGoogleログインへリダイレクトされる', async () => {
+    db = createTestDb();
+    const app = setupApp(db);
+
+    const authorizeQuery =
+      'client_id=x&redirect_uri=https%3A%2F%2Fclaude.example.com%2Fcallback&code_challenge=abc&code_challenge_method=S256';
+    const res = await app.request(`/api/v1/mcp/oauth/authorize?${authorizeQuery}`, { redirect: 'manual' });
+    expect(res.status).toBe(302);
+
+    const location = res.headers.get('Location') ?? '';
+    expect(location.startsWith('/api/v1/auth/google?return_to=')).toBe(true);
+    const returnTo = decodeURIComponent(location.split('return_to=')[1] ?? '');
+    expect(returnTo).toBe(`/api/v1/mcp/oauth/authorize?${authorizeQuery}`);
+  });
+
+  it('セッション付きでGET /mcp/oauth/authorizeにアクセスすると、従来通り同意画面が表示される', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+
+    const registerRes = await app.request('/api/v1/mcp/oauth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_name: 'Test Client', redirect_uris: ['https://claude.example.com/callback'] }),
+    });
+    const { client_id: clientId } = (await registerRes.json()) as { client_id: string };
+
+    const res = await app.request(
+      `/api/v1/mcp/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent('https://claude.example.com/callback')}&code_challenge=abc&code_challenge_method=S256`,
+      { headers: { Cookie: `nestio_session=${sessionId}` } },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('許可する');
+  });
 });

@@ -49,7 +49,12 @@ authRoute.get('/auth/google', async (c) => {
   const state = randomToken(24);
   const { codeVerifier, codeChallenge } = await generatePkcePair();
 
-  setOAuthFlowCookies(c, { state, codeVerifier }, env.NODE_ENV === 'production');
+  // ログイン後に戻る先（改修17回目：MCPのOAuth認可画面が未ログインだった場合にここを経由させる
+  // ため。オープンリダイレクト対策として、Nestio自身のパス（'/'始まり）のみ許可する）
+  const returnToParam = c.req.query('return_to');
+  const returnTo = returnToParam?.startsWith('/') ? returnToParam : undefined;
+
+  setOAuthFlowCookies(c, { state, codeVerifier, returnTo }, env.NODE_ENV === 'production');
 
   const authUrl = buildGoogleAuthUrl(
     { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, redirectUri: env.GOOGLE_REDIRECT_URI },
@@ -66,7 +71,7 @@ authRoute.get('/auth/google/callback', async (c) => {
 
   const code = c.req.query('code');
   const returnedState = c.req.query('state');
-  const { state: savedState, codeVerifier } = readOAuthFlowCookies(c);
+  const { state: savedState, codeVerifier, returnTo } = readOAuthFlowCookies(c);
   clearOAuthFlowCookies(c);
 
   if (!code || !returnedState || !savedState || !codeVerifier || returnedState !== savedState) {
@@ -113,7 +118,7 @@ authRoute.get('/auth/google/callback', async (c) => {
 
   logger.info({ user_id: user.id }, 'user_logged_in');
 
-  return c.redirect(env.APP_ORIGIN);
+  return c.redirect(returnTo ? `${env.APP_ORIGIN}${returnTo}` : env.APP_ORIGIN);
 });
 
 authRoute.get('/auth/me', requireAuth, (c) => {

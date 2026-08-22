@@ -5,6 +5,7 @@ import type Database from 'better-sqlite3';
 import { dynamicClientRegistrationRequestSchema } from '@nestio/shared';
 import type { AppVariables } from '../middleware/request-context.js';
 import { requireAuth } from '../middleware/auth.js';
+import { getSessionIdFromRequest, findValidSession } from '../auth/session.js';
 import { ApiError } from '../errors.js';
 import { registerOauthClient, findOauthClient } from '../mcp/clients.js';
 import { issueAuthorizationCode, consumeAuthorizationCode } from '../mcp/authorization-codes.js';
@@ -54,8 +55,20 @@ function validateClientAndRedirect(db: Database.Database, clientId: string, redi
   return client;
 }
 
-mcpRoute.get('/mcp/oauth/authorize', requireAuth, (c) => {
+// セッションCookieはSameSite=Strictのため、claude.ai等の外部サイトからこの認可画面へ
+// トップレベルナビゲーションで遷移してきた場合、Cookieがブラウザから送信されず未ログイン扱いに
+// なる（改修17回目で発覚）。requireAuthで即401にする代わりに、未ログインならGoogleログインへ
+// 誘導し、ログイン完了後にこの認可画面へ戻ってこられるようにする
+mcpRoute.get('/mcp/oauth/authorize', (c) => {
   const db = c.get('db');
+  const sessionId = getSessionIdFromRequest(c);
+  const session = sessionId ? findValidSession(db, sessionId) : undefined;
+  if (!session) {
+    const currentUrl = new URL(c.req.url);
+    const returnTo = currentUrl.pathname + currentUrl.search;
+    return c.redirect(`/api/v1/auth/google?return_to=${encodeURIComponent(returnTo)}`);
+  }
+
   const query = authorizeQuerySchema.parse({
     client_id: c.req.query('client_id'),
     redirect_uri: c.req.query('redirect_uri'),

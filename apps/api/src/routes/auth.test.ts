@@ -118,3 +118,60 @@ describe('auth sessions routes', () => {
     expect(row).toBeDefined();
   });
 });
+
+// 改修17回目：MCPの認可画面（GET /mcp/oauth/authorize）が未ログインだった場合、
+// Googleログインを経由して元の画面に戻れるようにするための return_to 対応
+describe('auth google login のreturn_to', () => {
+  let db: Database.Database;
+
+  afterEach(() => {
+    db?.close();
+  });
+
+  function setupApp() {
+    const env = loadEnv({
+      NODE_ENV: 'test',
+      GOOGLE_CLIENT_ID: 'test-client-id',
+      GOOGLE_CLIENT_SECRET: 'test-client-secret',
+    } as unknown as NodeJS.ProcessEnv);
+    const logger = createLogger(env);
+    return createApp(env, db, logger);
+  }
+
+  it('return_toが/始まりのパスならCookieに保存される', async () => {
+    db = createTestDb();
+    const app = setupApp();
+
+    const res = await app.request(
+      `/api/v1/auth/google?return_to=${encodeURIComponent('/api/v1/mcp/oauth/authorize?foo=bar')}`,
+      { redirect: 'manual' },
+    );
+    expect(res.status).toBe(302);
+    const setCookies = res.headers.getSetCookie();
+    expect(setCookies.some((c) => c.startsWith('nestio_oauth_return_to=') && c.includes('mcp'))).toBe(true);
+  });
+
+  it('return_toが/始まりでなければ無視される（オープンリダイレクト対策）', async () => {
+    db = createTestDb();
+    const app = setupApp();
+
+    const res = await app.request(
+      `/api/v1/auth/google?return_to=${encodeURIComponent('https://evil.example.com/steal')}`,
+      { redirect: 'manual' },
+    );
+    expect(res.status).toBe(302);
+    const setCookies = res.headers.getSetCookie();
+    expect(setCookies.some((c) => c.startsWith('nestio_oauth_return_to='))).toBe(false);
+  });
+
+  it('return_to省略時もCookieを付けずに正常にリダイレクトする', async () => {
+    db = createTestDb();
+    const app = setupApp();
+
+    const res = await app.request('/api/v1/auth/google', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    const setCookies = res.headers.getSetCookie();
+    expect(setCookies.some((c) => c.startsWith('nestio_oauth_return_to='))).toBe(false);
+    expect(setCookies.some((c) => c.startsWith('nestio_oauth_state='))).toBe(true);
+  });
+});
