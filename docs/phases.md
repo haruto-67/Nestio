@@ -1055,6 +1055,40 @@ Pi上で`issueUploadToken`相当のトークンを発行し、113KBの画像（`
 
 ---
 
+## 改修17回目フォローアップ：claude.aiからのMCPコネクタ連携が401になる不具合の修正（2026-08-22）
+
+改修17回目デプロイ後、ユーザーからclaude.aiでNestioをコネクタ連携しようとすると
+`{"error":{"code":"unauthenticated","message":"セッションが見つかりません"}}`になるという
+報告を受けて対応。
+
+- [x] **原因の特定**：本番ログを確認したところ、`GET /api/v1/mcp/oauth/authorize`が
+      `requireAuth`ミドルウェアで401を返していた。セッションCookieは`SameSite=Strict`
+      （絶対原則8）のため、claude.aiという外部サイトからこの認可画面へトップレベル
+      ナビゲーション（リダイレクト）で遷移すると、実際にはNestioへログイン済みでも
+      ブラウザがCookieを送信せず、未ログイン扱いになっていた
+- [x] **対応方針の検討**：`SameSite`を`Lax`へ緩めることも検討したが、ユーザーから
+      「既存のログイン有無にかかわらずログイン行為をさせて回避できないか」という提案を受け、
+      より安全な方針に転換した。`SameSite=Strict`は維持したまま、認可画面自体を
+      「未ログインならGoogleログインを経由して戻ってくる」設計に変更した
+- [x] **`GET /mcp/oauth/authorize`の変更**：`requireAuth`による即401をやめ、セッションが
+      無効な場合は現在のURL（クエリパラメータ込み）を`return_to`として`/auth/google`へ
+      リダイレクトするようにした。`POST /mcp/oauth/authorize`（同意画面からのフォーム送信）は
+      同一オリジンのリクエストで`Strict`でも問題なく送信されるため変更していない
+- [x] **`return_to`の受け渡し**：`/auth/google`が`return_to`クエリを受け取り、既存の
+      `nestio_oauth_state`/`nestio_oauth_verifier`と同じ理由（Googleからのリダイレクトで
+      戻ってくるため`Strict`だと送信されない）で`SameSite=Lax`の短命Cookie
+      （`nestio_oauth_return_to`、TTL5分）に保存する。ログイン成功後はそこへリダイレクトする。
+      オープンリダイレクト対策として`'/'`始まりのパスのみ許可する
+
+**完了条件**：`pnpm typecheck` / `pnpm lint` / `pnpm test`（api 250件・web 23件）・Playwright
+E2Eスモークテスト（3件）が全て通過。Pi本番へデプロイ後、実際に本番URLへ未ログイン状態を模した
+curlリクエストを送り、`GET /mcp/oauth/authorize`が`return_to`付きで`/auth/google`へ302
+リダイレクトすること、`/auth/google`が`nestio_oauth_return_to`Cookieを`SameSite=Lax`で
+正しく設定しGoogleへリダイレクトすることを確認した。実際のGoogleアカウントでのログイン完走と
+claude.ai側でのコネクタ連携成功はブラウザ操作が必要なため、ユーザー側での最終確認待ち。
+
+---
+
 ## 進捗管理
 
 - 完了した項目は `[x]` にしてコミットする
