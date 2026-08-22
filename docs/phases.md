@@ -1089,6 +1089,35 @@ claude.ai側でのコネクタ連携成功はブラウザ操作が必要なた�
 
 ---
 
+## 改修17回目フォローアップ2：Googleログイン後にMCP認可画面へ戻れず無限ループする不具合の修正（2026-08-22）
+
+フォローアップ1（未ログインならGoogleログインへ誘導）をデプロイ後、実際にclaude.aiから
+コネクタ接続すると「アカウントを選択してください」画面から進まないという報告を受けて対応。
+
+- [x] **原因の特定**：本番ログを確認したところ、`authorize→google→callback→authorize→
+      google→callback...`という無限ループが発生していた。原因はブラウザのCookie送信規則。
+      Google（クロスサイト）からのリダイレクトで`/auth/google/callback`が呼ばれた際、
+      そのレスポンスでセッションCookie（`SameSite=Strict`）を発行しつつ302で
+      `/mcp/oauth/authorize`へさらにリダイレクトすると、ブラウザはこの302遷移を
+      「Googleを起点とする一連のクロスサイトナビゲーションの延長」とみなし、たった今
+      設定したばかりの`SameSite=Strict`Cookieを次の遷移先には送らない。結果、
+      `/mcp/oauth/authorize`は再び未ログインと判定し、Googleログインへ逆戻りしていた
+- [x] **対策**：callbackがNestio自身の別ページ（`return_to`）へ戻る場合は直接302にせず、
+      一度HTMLページ（`apps/api/src/auth/login-bounce-page.ts`、新規）を返し、そのページ内の
+      JavaScript（`location.replace`）でナビゲーションさせるようにした。ページを起点とする
+      JS実行による遷移は「Nestio自身から開始された新しいナビゲーション」として扱われるため、
+      `SameSite=Strict`でもセッションCookieが正しく送信される。`return_to`が無い通常ログイン
+      （Web UIからの利用）は従来通り302のまま変更していない
+- [x] **テストの追加**：`exchangeCodeForUserInfo`をモックし、callback全体
+      （Cookie発行→bounceページ返却まで）をend-to-endで検証するテストを追加した。今回の
+      不具合はこの経路が自動テストでカバーされていなかったために発生・見逃されていたため
+
+**完了条件**：`pnpm typecheck` / `pnpm lint` / `pnpm test`（api 252件・web 23件）・Playwright
+E2Eスモークテスト（3件）が全て通過。Pi本番へデプロイ済み（マイグレーションの追加は無し）。
+実際のGoogleアカウントでの最終確認はユーザー側で実施予定。
+
+---
+
 ## 進捗管理
 
 - 完了した項目は `[x]` にしてコミットする
