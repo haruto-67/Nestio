@@ -14,6 +14,7 @@ import {
   userOwnsAttachment,
 } from '../attachments/storage.js';
 import { issueUploadToken } from '../attachments/upload-tokens.js';
+import { issueDownloadToken } from '../attachments/download-tokens.js';
 
 export interface ToolDef {
   name: string;
@@ -351,7 +352,23 @@ export const TOOL_DEFS: ToolDef[] = [
     description:
       'get_task/list_notesが返すattachments[].urlに対応する画像本体を取得する。' +
       'タスクやメモに添付された画像の中身を確認したい時に使う。' +
-      `${GET_ATTACHMENT_INLINE_MAX_BYTES}バイトを超える画像はbase64を返さず、too_large:trueとurlのみ返す`,
+      `${GET_ATTACHMENT_INLINE_MAX_BYTES}バイトを超える画像はbase64を返さず、too_large:trueとurlのみ返す` +
+      '（コード実行環境が使えるなら、その場合はcreate_attachment_downloadで直接curl取得する）',
+    inputSchema: {
+      type: 'object',
+      properties: { sha256: { type: 'string', description: 'attachments[].url末尾のsha256（get_task/list_notesで取得）' } },
+      required: ['sha256'],
+    },
+  },
+  {
+    name: 'create_attachment_download',
+    scope: 'read',
+    description:
+      '添付画像を直接HTTPで取得するためのワンタイムトークン付きURLを発行する。get_attachmentが' +
+      `too_large:trueを返した（${GET_ATTACHMENT_INLINE_MAX_BYTES}バイト超）場合や、コード実行環境から` +
+      'Nestioへ直接HTTP通信できる場合はこちらを使うこと。返ってきたdownload_urlへ、ヘッダー ' +
+      'Authorization: Bearer <download_token> を付けてGETすると画像バイナリが返る（例: curl -o out.png ' +
+      '-H "Authorization: Bearer <download_token>" <download_url>）。トークンの有効期限は5分・1回のみ使用可能',
     inputSchema: {
       type: 'object',
       properties: { sha256: { type: 'string', description: 'attachments[].url末尾のsha256（get_task/list_notesで取得）' } },
@@ -370,7 +387,9 @@ export const TOOL_DEFS: ToolDef[] = [
       '付けて生バイナリをPOSTすると保存される（例: curl -X POST --data-binary @file.png ' +
       '-H "Authorization: Bearer <upload_token>" <upload_url>）。POST成功後、noteやbodyでは' +
       'upload_urlと同じパス（/api/v1/attachments/<sha256>）を![代替テキスト](url)として使えばよく、' +
-      '別途upload_attachmentを呼ぶ必要は無い。トークンの有効期限は5分・1回のみ使用可能',
+      '別途upload_attachmentを呼ぶ必要は無い。トークンの有効期限は5分。' +
+      '内容不一致等でPOSTが失敗しても、同じトークンで成功するまで3回まで再試行できる' +
+      '（4回目以降や期限切れ後はcreate_attachment_uploadを呼び直すこと）',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1072,6 +1091,7 @@ export async function callTool(
           bytes: row.bytes,
           mime: row.mime,
           url: `/api/v1/attachments/${sha256Param}`,
+          message: 'コード実行環境が使えるなら、create_attachment_downloadで直接取得できます',
         };
       }
 
@@ -1098,6 +1118,23 @@ export async function callTool(
       return {
         upload_url: `${env.APP_ORIGIN}/api/v1/attachments/${sha256}`,
         upload_token: token,
+        expires_at: expiresAt,
+      };
+    }
+
+    case 'create_attachment_download': {
+      const sha256Param = requireString(args, 'sha256');
+      if (!userOwnsAttachment(db, userId, sha256Param) || !attachmentExists(env.ATTACHMENT_DIR, sha256Param)) {
+        logger.warn({ sha256: sha256Param }, 'mcp_create_attachment_download_not_found');
+        throw new ToolError('添付ファイルが見つかりません');
+      }
+
+      const { token, expiresAt } = issueDownloadToken(db, userId, sha256Param);
+      logger.info({ sha256: sha256Param }, 'mcp_create_attachment_download');
+
+      return {
+        download_url: `${env.APP_ORIGIN}/api/v1/attachments/${sha256Param}`,
+        download_token: token,
         expires_at: expiresAt,
       };
     }

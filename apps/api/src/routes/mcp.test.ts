@@ -757,6 +757,49 @@ describe('MCP OAuth + tools', () => {
     expect(attachments[0]).toMatchObject({ filename: 'direct.png', mime: 'image/png' });
   });
 
+  // 改修19回目：get_attachmentのbase64サイズ上限（1MB）を超える添付を、書き込み側と対称な
+  // ワンタイムダウンロードトークンでcurl直接GETするフローを検証する
+  it('create_attachment_downloadで発行したトークンでGETすると、元のバイト列がそのまま返る', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+    const task = await callTool(app, accessToken, 'create_task', { list_id: listId, title: 'ダウンロードテスト' });
+    const uploaded = await callTool(app, accessToken, 'upload_attachment', {
+      owner_type: 'task',
+      owner_id: task.id,
+      filename: 'test.png',
+      data_base64: TINY_PNG_BASE64,
+    });
+    const sha256 = (uploaded.url as string).split('/').pop() as string;
+
+    const issued = await callTool(app, accessToken, 'create_attachment_download', { sha256 });
+    expect(issued.download_url).toBe(`http://localhost:5173/api/v1/attachments/${sha256}`);
+    expect(typeof issued.download_token).toBe('string');
+
+    const downloadPath = new URL(issued.download_url as string).pathname;
+    const downloadRes = await app.request(downloadPath, {
+      headers: { Authorization: `Bearer ${issued.download_token}` },
+    });
+    expect(downloadRes.status).toBe(200);
+    const body = Buffer.from(await downloadRes.arrayBuffer());
+    expect(body.toString('base64')).toBe(TINY_PNG_BASE64);
+
+    // ワンタイムなので2回目は401
+    const secondRes = await app.request(downloadPath, {
+      headers: { Authorization: `Bearer ${issued.download_token}` },
+    });
+    expect(secondRes.status).toBe(401);
+  });
+
   it('不正なcode_verifierではトークンを発行しない', async () => {
     db = createTestDb();
     const userId = uuidv7();

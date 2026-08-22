@@ -11,7 +11,7 @@ export function handleError(err: Error, c: Context<{ Variables: AppVariables }>)
 
   if (err instanceof ApiError) {
     logger.warn({ err, code: err.code }, 'api_error');
-    const body: ApiErrorBody = { error: { code: err.code, message: err.message } };
+    const body: ApiErrorBody = { error: { code: err.code, message: err.message, details: err.details } };
     return c.json(body, err.status as 400 | 401 | 403 | 404 | 409 | 413 | 429 | 500);
   }
 

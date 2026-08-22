@@ -2,12 +2,12 @@ import { Hono, type Context } from 'hono';
 import type Database from 'better-sqlite3';
 import { uuidv7, sha256Schema } from '@nestio/shared';
 import type { AppVariables } from '../middleware/request-context.js';
-import { requireAuth } from '../middleware/auth.js';
 import { getSessionIdFromRequest, findValidSession } from '../auth/session.js';
 import { applySyncOps } from '../sync/apply.js';
 import { ApiError } from '../errors.js';
 import { detectImageMime } from '../attachments/magic-bytes.js';
 import { verifyUploadToken, markUploadTokenConsumed } from '../attachments/upload-tokens.js';
+import { verifyDownloadToken } from '../attachments/download-tokens.js';
 import {
   attachmentExists,
   saveAttachmentFile,
@@ -21,6 +21,9 @@ export const attachmentsRoute = new Hono<{ Variables: AppVariables }>();
 
 interface UploadAuth {
   userId: string;
+  /** Bearerトークン経由の場合のみセットされる。バイト列検証（sha256照合・マジックバイト）に
+   * 失敗した際、呼び出し側に残り再試行回数を伝えるために使う（改修19回目） */
+  attemptsRemaining?: number;
   /** MCPのcreate_attachment_upload経由の場合のみセットされる。POST成功時にattachmentレコードを
    * 自動作成する（改修17回目：MCPのアクセストークンはAnthropicのインフラで完結しコンテナ内の
    * Claudeには渡らないため、セッションCookie前提のこの口をcurlで直接叩くには、
@@ -28,25 +31,48 @@ interface UploadAuth {
   autoRecord?: { tokenId: string; ownerType: 'task' | 'note'; ownerId: string; filename: string };
 }
 
-const UPLOAD_TOKEN_ERROR_MESSAGE: Record<'not_found' | 'expired' | 'used' | 'attempts_exceeded', string> = {
+// attempts_exceededだけは「認証が通っていない」のではなく「使い切った」ことが呼び出し側に
+// コードだけで区別できるよう、429（rate_limited）に分離する（改修19回目）
+const UPLOAD_TOKEN_ERROR: Record<
+  'not_found' | 'expired' | 'used' | 'attempts_exceeded',
+  { code: 'unauthenticated' | 'rate_limited'; message: string }
+> = {
   // トークンの存在有無を推測されにくくするため、そもそも一致しなかった場合だけ曖昧なメッセージにする
-  not_found: 'アップロードトークンが無効か期限切れです',
-  expired: 'アップロードトークンの有効期限が切れています。create_attachment_uploadを呼び直してください',
-  used: 'このアップロードトークンは既に使用されています',
-  attempts_exceeded: 'このアップロードトークンは再試行回数の上限に達しました。create_attachment_uploadを呼び直してください',
+  not_found: { code: 'unauthenticated', message: 'アップロードトークンが無効か期限切れです' },
+  expired: {
+    code: 'unauthenticated',
+    message: 'アップロードトークンの有効期限が切れています。create_attachment_uploadを呼び直してください',
+  },
+  used: { code: 'unauthenticated', message: 'このアップロードトークンは既に使用されています' },
+  attempts_exceeded: {
+    code: 'rate_limited',
+    message: 'このアップロードトークンは再試行回数の上限に達しました。create_attachment_uploadを呼び直してください',
+  },
 };
+
+function attemptsDetails(attemptsRemaining: number | undefined): Record<string, unknown> | undefined {
+  return attemptsRemaining === undefined ? undefined : { attempts_remaining: attemptsRemaining };
+}
 
 /** Authorization: Bearer <upload_token> ならワンタイムトークンとして、それ以外はセッションCookieとして認証する */
 function resolveUploadAuth(c: Context<{ Variables: AppVariables }>, db: Database.Database, sha256Param: string): UploadAuth {
   const authHeader = c.req.header('authorization');
   if (authHeader?.startsWith('Bearer ')) {
     const result = verifyUploadToken(db, authHeader.slice('Bearer '.length));
-    if (!result.ok) throw new ApiError('unauthenticated', UPLOAD_TOKEN_ERROR_MESSAGE[result.reason]);
+    if (!result.ok) {
+      const { code, message } = UPLOAD_TOKEN_ERROR[result.reason];
+      throw new ApiError(code, message);
+    }
     if (result.token.sha256 !== sha256Param) {
-      throw new ApiError('validation_failed', 'アップロードトークンのsha256とURLのsha256が一致しません');
+      throw new ApiError(
+        'validation_failed',
+        'アップロードトークンのsha256とURLのsha256が一致しません',
+        attemptsDetails(result.attemptsRemaining),
+      );
     }
     return {
       userId: result.token.userId,
+      attemptsRemaining: result.attemptsRemaining,
       autoRecord: {
         tokenId: result.tokenId,
         ownerType: result.token.ownerType,
@@ -128,13 +154,13 @@ attachmentsRoute.post('/attachments/:sha256', async (c) => {
   // クライアント申告のsha256を信用せず再計算する（任意のハッシュ名でのファイル設置を防ぐ）
   const actualSha256 = computeSha256(buf);
   if (actualSha256 !== sha256Param) {
-    throw new ApiError('validation_failed', 'SHA-256がURLの値と一致しません');
+    throw new ApiError('validation_failed', 'SHA-256がURLの値と一致しません', attemptsDetails(auth.attemptsRemaining));
   }
 
   // クライアント申告のContent-Typeではなくマジックバイトで実体形式を検証する
   const mime = detectImageMime(buf);
   if (!mime) {
-    throw new ApiError('validation_failed', '画像形式として認識できませんでした');
+    throw new ApiError('validation_failed', '画像形式として認識できませんでした', attemptsDetails(auth.attemptsRemaining));
   }
 
   saveAttachmentFile(env.ATTACHMENT_DIR, sha256Param, buf, env.ATTACHMENT_ENCRYPTION_KEY || undefined);
@@ -151,19 +177,43 @@ attachmentsRoute.post('/attachments/:sha256', async (c) => {
   return c.body(null, 201);
 });
 
-attachmentsRoute.get('/attachments/:sha256', requireAuth, (c) => {
+const DOWNLOAD_TOKEN_ERROR_MESSAGE: Record<'not_found' | 'expired' | 'used', string> = {
+  not_found: 'ダウンロードトークンが無効か期限切れです',
+  expired: 'ダウンロードトークンの有効期限が切れています。create_attachment_downloadを呼び直してください',
+  used: 'このダウンロードトークンは既に使用されています',
+};
+
+/** Authorization: Bearer <download_token> ならワンタイムトークンとして、それ以外はセッションCookieとして認証する */
+function resolveDownloadAuth(c: Context<{ Variables: AppVariables }>, db: Database.Database, sha256Param: string): { userId: string } {
+  const authHeader = c.req.header('authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    const result = verifyDownloadToken(db, authHeader.slice('Bearer '.length));
+    if (!result.ok) throw new ApiError('unauthenticated', DOWNLOAD_TOKEN_ERROR_MESSAGE[result.reason]);
+    if (result.token.sha256 !== sha256Param) {
+      throw new ApiError('validation_failed', 'ダウンロードトークンのsha256とURLのsha256が一致しません');
+    }
+    return { userId: result.token.userId };
+  }
+
+  const sessionId = getSessionIdFromRequest(c);
+  const session = sessionId ? findValidSession(db, sessionId) : undefined;
+  if (!session) throw new ApiError('unauthenticated', 'セッションが見つかりません');
+  return { userId: session.user_id };
+}
+
+attachmentsRoute.get('/attachments/:sha256', (c) => {
   const env = c.get('env');
   const db = c.get('db');
-  const userId = c.get('userId');
-  if (!userId) throw new ApiError('unauthenticated', 'セッションが見つかりません');
 
   const sha256Param = c.req.param('sha256');
   if (!sha256Schema.safeParse(sha256Param).success) {
     throw new ApiError('validation_failed', 'sha256の形式が不正です');
   }
 
+  const auth = resolveDownloadAuth(c, db, sha256Param);
+
   // 他人の添付をURL推測で見られないよう、そのユーザーが参照レコードを持っているか確認する
-  if (!userOwnsAttachment(db, userId, sha256Param)) {
+  if (!userOwnsAttachment(db, auth.userId, sha256Param)) {
     throw new ApiError('not_found', '添付ファイルが見つかりません');
   }
   if (!attachmentExists(env.ATTACHMENT_DIR, sha256Param)) {

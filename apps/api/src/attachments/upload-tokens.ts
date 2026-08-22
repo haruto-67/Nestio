@@ -6,7 +6,7 @@ const UPLOAD_TOKEN_TTL_MS = 5 * 60 * 1000;
 // 検証には成功したがバイト列検証（sha256照合・マジックバイト等）で失敗した場合に備え、
 // 確定消費前の再試行を数回まで許す（改修17回目フォローアップ3）。TTLが5分と短いため、
 // この回数を増やしても攻撃面はほとんど広がらない
-const MAX_VERIFY_ATTEMPTS = 3;
+export const MAX_VERIFY_ATTEMPTS = 3;
 
 function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -52,7 +52,7 @@ export interface VerifiedUploadToken {
 }
 
 export type VerifyUploadTokenResult =
-  | { ok: true; tokenId: string; token: VerifiedUploadToken }
+  | { ok: true; tokenId: string; token: VerifiedUploadToken; attemptsRemaining: number }
   | { ok: false; reason: 'not_found' | 'expired' | 'used' | 'attempts_exceeded' };
 
 /**
@@ -87,13 +87,16 @@ export function verifyUploadToken(db: Database.Database, token: string): VerifyU
 
   // 試行回数のインクリメントと上限チェックをアトミックに行う（同時リクエストでの競合を避ける）
   const incremented = db
-    .prepare('UPDATE attachment_upload_tokens SET attempt_count = attempt_count + 1 WHERE id = ? AND attempt_count < ?')
-    .run(row.id, MAX_VERIFY_ATTEMPTS);
-  if (incremented.changes === 0) return { ok: false, reason: 'attempts_exceeded' };
+    .prepare(
+      'UPDATE attachment_upload_tokens SET attempt_count = attempt_count + 1 WHERE id = ? AND attempt_count < ? RETURNING attempt_count',
+    )
+    .get(row.id, MAX_VERIFY_ATTEMPTS) as { attempt_count: number } | undefined;
+  if (!incremented) return { ok: false, reason: 'attempts_exceeded' };
 
   return {
     ok: true,
     tokenId: row.id,
+    attemptsRemaining: MAX_VERIFY_ATTEMPTS - incremented.attempt_count,
     token: {
       userId: row.user_id,
       ownerType: row.owner_type,
