@@ -7,6 +7,7 @@ import { ApiError } from '../errors.js';
 import { buildGoogleAuthUrl, exchangeCodeForUserInfo } from '../auth/google.js';
 import { randomToken, generatePkcePair } from '../auth/pkce.js';
 import { setOAuthFlowCookies, readOAuthFlowCookies, clearOAuthFlowCookies } from '../auth/oauth-flow-cookies.js';
+import { renderLoginBouncePage } from '../auth/login-bounce-page.js';
 import {
   createSession,
   setSessionCookie,
@@ -118,7 +119,12 @@ authRoute.get('/auth/google/callback', async (c) => {
 
   logger.info({ user_id: user.id }, 'user_logged_in');
 
-  return c.redirect(returnTo ? `${env.APP_ORIGIN}${returnTo}` : env.APP_ORIGIN);
+  if (returnTo) {
+    // MCPの認可画面など、Nestio自身の別ページへ戻る場合は直接302にせずbounceページを挟む
+    // （理由はrenderLoginBouncePageのコメント参照）
+    return c.html(renderLoginBouncePage(`${env.APP_ORIGIN}${returnTo}`));
+  }
+  return c.redirect(env.APP_ORIGIN);
 });
 
 authRoute.get('/auth/me', requireAuth, (c) => {

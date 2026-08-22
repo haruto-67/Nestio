@@ -1,10 +1,16 @@
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { uuidv7 } from '@nestio/shared';
 import { createTestDb, insertTestUser } from '../test-utils/db.js';
 import { createApp } from '../app.js';
 import { loadEnv } from '../env.js';
 import { createLogger } from '../logger.js';
+import { exchangeCodeForUserInfo } from '../auth/google.js';
+
+vi.mock('../auth/google.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../auth/google.js')>();
+  return { ...actual, exchangeCodeForUserInfo: vi.fn() };
+});
 
 function insertSession(db: Database.Database, userId: string, createdAt = Date.now()): string {
   const sessionId = 'test-session-' + uuidv7();
@@ -128,14 +134,19 @@ describe('auth google login のreturn_to', () => {
     db?.close();
   });
 
-  function setupApp() {
+  function setupApp(adminEmail = '') {
     const env = loadEnv({
       NODE_ENV: 'test',
       GOOGLE_CLIENT_ID: 'test-client-id',
       GOOGLE_CLIENT_SECRET: 'test-client-secret',
+      ADMIN_EMAIL: adminEmail,
     } as unknown as NodeJS.ProcessEnv);
     const logger = createLogger(env);
     return createApp(env, db, logger);
+  }
+
+  function extractCookieValue(setCookies: string[], name: string): string | undefined {
+    return setCookies.find((c) => c.startsWith(`${name}=`))?.split(';')[0]?.split('=')[1];
   }
 
   it('return_toが/始まりのパスならCookieに保存される', async () => {
@@ -173,5 +184,62 @@ describe('auth google login のreturn_to', () => {
     const setCookies = res.headers.getSetCookie();
     expect(setCookies.some((c) => c.startsWith('nestio_oauth_return_to='))).toBe(false);
     expect(setCookies.some((c) => c.startsWith('nestio_oauth_state='))).toBe(true);
+  });
+
+  // 改修17回目フォローアップ2：claude.aiからのMCPコネクタ連携で、Googleログイン後に
+  // 認可画面へ戻れず無限ループする不具合の再現・修正確認
+  it('return_to指定でログインすると、302ではなくbounceページ（JSナビゲーション）で戻り先へ遷移する', async () => {
+    db = createTestDb();
+    const app = setupApp('user@example.com'); // 管理者扱いにして申請フローをスキップする
+
+    const startRes = await app.request(
+      `/api/v1/auth/google?return_to=${encodeURIComponent('/api/v1/mcp/oauth/authorize?foo=bar')}`,
+      { redirect: 'manual' },
+    );
+    const startCookies = startRes.headers.getSetCookie();
+    const cookieHeader = startCookies.map((c) => c.split(';')[0]).join('; ');
+    const state = extractCookieValue(startCookies, 'nestio_oauth_state');
+
+    vi.mocked(exchangeCodeForUserInfo).mockResolvedValueOnce({
+      sub: 'google-sub-1',
+      email: 'user@example.com',
+      email_verified: true,
+      name: 'Test User',
+    });
+
+    const callbackRes = await app.request(`/api/v1/auth/google/callback?code=dummy-code&state=${state}`, {
+      headers: { Cookie: cookieHeader },
+    });
+    expect(callbackRes.status).toBe(200);
+    const html = await callbackRes.text();
+    expect(html).toContain('location.replace(');
+    expect(html).toContain('/api/v1/mcp/oauth/authorize?foo=bar');
+
+    // 302ではなくHTMLレスポンスでも、セッションCookie自体はこの時点で発行されている
+    const callbackCookies = callbackRes.headers.getSetCookie();
+    expect(callbackCookies.some((c) => c.startsWith('nestio_session='))).toBe(true);
+  });
+
+  it('return_to無しでログインすると、従来通り302でトップページへリダイレクトする', async () => {
+    db = createTestDb();
+    const app = setupApp('user@example.com');
+
+    const startRes = await app.request('/api/v1/auth/google', { redirect: 'manual' });
+    const startCookies = startRes.headers.getSetCookie();
+    const cookieHeader = startCookies.map((c) => c.split(';')[0]).join('; ');
+    const state = extractCookieValue(startCookies, 'nestio_oauth_state');
+
+    vi.mocked(exchangeCodeForUserInfo).mockResolvedValueOnce({
+      sub: 'google-sub-2',
+      email: 'user@example.com',
+      email_verified: true,
+      name: 'Test User',
+    });
+
+    const callbackRes = await app.request(`/api/v1/auth/google/callback?code=dummy-code&state=${state}`, {
+      headers: { Cookie: cookieHeader },
+      redirect: 'manual',
+    });
+    expect(callbackRes.status).toBe(302);
   });
 });
