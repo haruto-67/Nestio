@@ -12,6 +12,7 @@ export default tseslint.config(
       '**/coverage/**',
       '**/*.d.ts',
       'apps/web/dev-dist/**',
+      'apps/web/ios/**',
     ],
   },
   js.configs.recommended,

@@ -65,6 +65,25 @@ authRoute.get('/auth/google', async (c) => {
   return c.redirect(authUrl);
 });
 
+// iOS(Capacitor)のローカルdev server検証用：ローカルにGoogle OAuthの認証情報が無くても
+// ログイン済み状態を作れるようにする一時的なショートカット。本番では必ず無効（改修20回目、検証後削除予定）
+authRoute.get('/dev/login', (c) => {
+  const env = c.get('env');
+  if (env.NODE_ENV === 'production') {
+    throw new ApiError('not_found', 'not found');
+  }
+  const db = c.get('db');
+  const user = findOrCreateUser(db, {
+    sub: 'dev-local-test-user',
+    email: 'dev-local-test@example.com',
+    email_verified: true,
+    name: 'Dev Local Test User',
+  });
+  const { sessionId } = createSession(db, user.id, null);
+  setSessionCookie(c, sessionId, false);
+  return c.redirect('/');
+});
+
 authRoute.get('/auth/google/callback', async (c) => {
   const env = c.get('env');
   const db = c.get('db');

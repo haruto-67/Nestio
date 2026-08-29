@@ -143,7 +143,7 @@ export function TaskDetailPanel({
   return (
       <aside
         data-task-detail-panel="true"
-        className="flex h-full w-full flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"
+        className="flex h-full w-full flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] dark:border-neutral-800 dark:bg-neutral-900"
       >
       <div className="flex items-center justify-between">
         <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">

@@ -56,7 +56,7 @@ export function NoteEditor({ noteId, onClose, closing = false }: NoteEditorProps
         <div className="mx-auto h-full w-1 group-hover:bg-blue-400/60" />
       </div>
       <aside
-        className={`flex h-full w-full shrink-0 flex-col gap-3 overflow-y-auto border-l border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900 ${
+        className={`flex h-full w-full shrink-0 flex-col gap-3 overflow-y-auto border-l border-neutral-200 bg-white px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] dark:border-neutral-800 dark:bg-neutral-900 ${
           closing ? 'nestio-panel-slide-out' : 'nestio-panel-slide-in'
         }`}
       >
