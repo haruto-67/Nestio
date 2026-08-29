@@ -13,3 +13,10 @@ dev-dist/
 .claude/
 test-results/
 playwright-report/
+
+# Capacitor iOS (Xcodeプロジェクト本体はコミットし、生成物のみ除外)
+apps/web/ios/App/App/public/
+apps/web/ios/App/Pods/
+apps/web/ios/DerivedData/
+**/xcuserdata/
+**/*.xcuserstate
