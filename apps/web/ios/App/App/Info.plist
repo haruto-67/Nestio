@@ -31,6 +31,15 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>開発中のローカルサーバーに接続します</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.niwatorimc.nestio</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
+import { App as CapacitorApp } from '@capacitor/app';
 import { googleLoginUrl } from '../../api/auth.js';
 
 /** /auth/google/callback が申請中/却下の場合に付けて返す?login= を見て専用の画面を出す（改修10回目） */
@@ -10,19 +11,36 @@ function useLoginStatus(): 'pending' | 'rejected' | null {
   return null;
 }
 
+// apps/api/src/routes/auth.tsのNATIVE_APP_CALLBACK_URLと一致させる
+const NATIVE_APP_CALLBACK_URL = 'com.niwatorimc.nestio://login-callback';
+
 /**
  * ネイティブアプリ(Capacitor)では Google OAuth を WKWebView 内で直接開くと
  * パスキー(WebAuthn)のBluetooth近接認証が機能せず、Googleが400 malformedを返すこともある。
  * システムブラウザ(SFSafariViewController)経由にすることで両方を回避する（改修20回目）。
  * Web版(PWA)は従来通り <a href> の通常ナビゲーションのまま変更しない。
+ *
+ * SFSafariViewControllerとアプリ本体のWKWebViewはCookieストアが別なため、ブラウザ内で
+ * ログインが成功してもアプリ側のセッションには反映されない（ブラウザの中に丸ごとログイン後の
+ * Nestioが表示されてしまい、閉じるとアプリ本体は未ログインのまま、という不具合として発覚）。
+ * サーバー(/auth/google/callback)はログイン成功後、通常のリダイレクトではなくカスタムURL
+ * スキーム(NATIVE_APP_CALLBACK_URL)へ遷移させ、ここでappUrlOpenイベントを受けてブラウザを
+ * 閉じ、WKWebViewを再読み込みすることでログイン状態を反映させる。
  */
 function useNativeGoogleLogin(): ((e: React.MouseEvent) => void) | undefined {
   const isNative = Capacitor.isNativePlatform();
 
   useEffect(() => {
     if (!isNative) return;
-    const listener = Browser.addListener('browserFinished', () => {
-      window.location.reload();
+    const listener = CapacitorApp.addListener('appUrlOpen', ({ url }) => {
+      if (!url.startsWith(NATIVE_APP_CALLBACK_URL)) return;
+      void Browser.close();
+      const loginStatus = new URLSearchParams(url.split('?')[1] ?? '').get('login');
+      if (loginStatus) {
+        window.location.assign(`${window.location.pathname}?login=${loginStatus}`);
+      } else {
+        window.location.reload();
+      }
     });
     return () => {
       void listener.then((l) => l.remove());
@@ -32,7 +50,7 @@ function useNativeGoogleLogin(): ((e: React.MouseEvent) => void) | undefined {
   if (!isNative) return undefined;
   return (e) => {
     e.preventDefault();
-    void Browser.open({ url: `${window.location.origin}${googleLoginUrl()}` });
+    void Browser.open({ url: `${window.location.origin}${googleLoginUrl()}?native=1` });
   };
 }
 

@@ -25,6 +25,10 @@ import type { AccessRequestRow } from '../auth/access-requests.js';
 
 export const authRoute = new Hono<{ Variables: AppVariables }>();
 
+// iOSアプリのCFBundleURLSchemes（Info.plist / capacitor.config.tsのappIdと一致させる）。
+// ユーザー入力ではなく固定文字列なのでオープンリダイレクトにはならない
+const NATIVE_APP_CALLBACK_URL = 'com.niwatorimc.nestio://login-callback';
+
 /** 新規申請があったことに管理者が気づけるよう、管理者アカウント宛にPush通知する（改修10回目） */
 async function notifyAdminOfNewAccessRequest(
   db: Database.Database,
@@ -55,7 +59,13 @@ authRoute.get('/auth/google', async (c) => {
   const returnToParam = c.req.query('return_to');
   const returnTo = returnToParam?.startsWith('/') ? returnToParam : undefined;
 
-  setOAuthFlowCookies(c, { state, codeVerifier, returnTo }, env.NODE_ENV === 'production');
+  // Capacitor(iOS)からシステムブラウザ経由で開かれた場合のフラグ（改修20回目）。
+  // trueの場合、callback成功時にNESTIO_NATIVE_CALLBACK_URLへリダイレクトしてアプリ本体に
+  // 制御を戻す。値は固定文字列'1'のみを見るサーバー内部フラグで、ユーザー入力のURLそのものを
+  // リダイレクト先にするわけではないためオープンリダイレクトにはならない
+  const native = c.req.query('native') === '1';
+
+  setOAuthFlowCookies(c, { state, codeVerifier, returnTo, native }, env.NODE_ENV === 'production');
 
   const authUrl = buildGoogleAuthUrl(
     { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, redirectUri: env.GOOGLE_REDIRECT_URI },
@@ -91,7 +101,7 @@ authRoute.get('/auth/google/callback', async (c) => {
 
   const code = c.req.query('code');
   const returnedState = c.req.query('state');
-  const { state: savedState, codeVerifier, returnTo } = readOAuthFlowCookies(c);
+  const { state: savedState, codeVerifier, returnTo, native } = readOAuthFlowCookies(c);
   clearOAuthFlowCookies(c);
 
   if (!code || !returnedState || !savedState || !codeVerifier || returnedState !== savedState) {
@@ -128,6 +138,7 @@ authRoute.get('/auth/google/callback', async (c) => {
         { google_sub: googleUser.sub, status: accessRequest.status },
         'access_request_login_blocked',
       );
+      if (native) return c.redirect(`${NATIVE_APP_CALLBACK_URL}?login=${accessRequest.status}`);
       return c.redirect(`${env.APP_ORIGIN}/?login=${accessRequest.status}`);
     }
   }
@@ -137,6 +148,12 @@ authRoute.get('/auth/google/callback', async (c) => {
   setSessionCookie(c, sessionId, env.NODE_ENV === 'production');
 
   logger.info({ user_id: user.id }, 'user_logged_in');
+
+  // Capacitor(iOS)からシステムブラウザ経由でログインした場合、この応答はアプリ本体のWKWebViewとは
+  // 別のCookieストアで開かれているため、そのままAPP_ORIGINへリダイレクトしてもアプリ側は
+  // 未ログインのまま。カスタムURLスキームでアプリに制御を戻し、appUrlOpenイベントで
+  // ブラウザを閉じてWKWebViewを再読み込みさせる（改修20回目）
+  if (native) return c.redirect(NATIVE_APP_CALLBACK_URL);
 
   if (returnTo) {
     // MCPの認可画面など、Nestio自身の別ページへ戻る場合は直接302にせずbounceページを挟む
