@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -20,43 +20,59 @@ const NATIVE_APP_CALLBACK_URL = 'com.niwatorimc.nestio://login-callback';
  * システムブラウザ(SFSafariViewController)経由にすることで両方を回避する（改修20回目）。
  * Web版(PWA)は従来通り <a href> の通常ナビゲーションのまま変更しない。
  *
- * SFSafariViewControllerとアプリ本体のWKWebViewはCookieストアが別なため、ブラウザ内で
- * ログインが成功してもアプリ側のセッションには反映されない（ブラウザの中に丸ごとログイン後の
- * Nestioが表示されてしまい、閉じるとアプリ本体は未ログインのまま、という不具合として発覚）。
- * サーバー(/auth/google/callback)はログイン成功後、通常のリダイレクトではなくカスタムURL
- * スキーム(NATIVE_APP_CALLBACK_URL)へ遷移させ、ここでappUrlOpenイベントを受けてブラウザを
- * 閉じ、WKWebViewを再読み込みすることでログイン状態を反映させる。
+ * SFSafariViewControllerはSafari.appと共有のCookieストアを使うため、アプリ本体のWKWebViewとは
+ * 別物（ブラウザ内でログインが成功しても、閉じるとアプリ本体は未ログインのまま、という不具合として
+ * 発覚）。サーバー(/auth/google/callback)はログイン成功後、ワンタイム引き換えトークンを付けて
+ * カスタムURLスキーム(NATIVE_APP_CALLBACK_URL)へ遷移させる。ここでappUrlOpenイベントを受けたら
+ * ブラウザを閉じ、WKWebView自身からそのトークンを/auth/native-exchangeに渡してセッションCookieを
+ * 発行させてから再読み込みする（WKWebView自身が発行したリクエストなので正しいCookieストアに入る）。
  */
-function useNativeGoogleLogin(): ((e: React.MouseEvent) => void) | undefined {
+function useNativeGoogleLogin(): {
+  onClick: ((e: React.MouseEvent) => void) | undefined;
+  error: string | null;
+} {
   const isNative = Capacitor.isNativePlatform();
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isNative) return;
     const listener = CapacitorApp.addListener('appUrlOpen', ({ url }) => {
       if (!url.startsWith(NATIVE_APP_CALLBACK_URL)) return;
       void Browser.close();
-      const loginStatus = new URLSearchParams(url.split('?')[1] ?? '').get('login');
+      const params = new URLSearchParams(url.split('?')[1] ?? '');
+      const loginStatus = params.get('login');
       if (loginStatus) {
         window.location.assign(`${window.location.pathname}?login=${loginStatus}`);
-      } else {
-        window.location.reload();
+        return;
       }
+      const token = params.get('token');
+      if (!token) return;
+      fetch(`/api/v1/auth/native-exchange?token=${encodeURIComponent(token)}`)
+        .then((res) => {
+          if (!res.ok) throw new Error('exchange failed');
+          window.location.reload();
+        })
+        .catch(() => setError('ログインに失敗しました。もう一度お試しください'));
     });
     return () => {
       void listener.then((l) => l.remove());
     };
   }, [isNative]);
 
-  if (!isNative) return undefined;
-  return (e) => {
-    e.preventDefault();
-    void Browser.open({ url: `${window.location.origin}${googleLoginUrl()}?native=1` });
+  if (!isNative) return { onClick: undefined, error };
+  return {
+    error,
+    onClick: (e) => {
+      e.preventDefault();
+      setError(null);
+      void Browser.open({ url: `${window.location.origin}${googleLoginUrl()}?native=1` });
+    },
   };
 }
 
 export function LoginScreen() {
   const loginStatus = useLoginStatus();
-  const handleNativeClick = useNativeGoogleLogin();
+  const { onClick: handleNativeClick, error: nativeError } = useNativeGoogleLogin();
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-white text-neutral-900 dark:bg-neutral-900 dark:text-white">
@@ -73,6 +89,7 @@ export function LoginScreen() {
       {loginStatus === 'rejected' && (
         <p className="max-w-xs text-center text-sm text-red-500">このアカウントでの利用は許可されていません</p>
       )}
+      {nativeError && <p className="max-w-xs text-center text-sm text-red-500">{nativeError}</p>}
 
       <a
         href={googleLoginUrl()}

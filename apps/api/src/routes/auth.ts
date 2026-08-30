@@ -7,6 +7,7 @@ import { ApiError } from '../errors.js';
 import { buildGoogleAuthUrl, exchangeCodeForUserInfo } from '../auth/google.js';
 import { randomToken, generatePkcePair } from '../auth/pkce.js';
 import { setOAuthFlowCookies, readOAuthFlowCookies, clearOAuthFlowCookies } from '../auth/oauth-flow-cookies.js';
+import { createNativeExchangeToken, consumeNativeExchangeToken } from '../auth/native-exchange.js';
 import { renderLoginBouncePage } from '../auth/login-bounce-page.js';
 import {
   createSession,
@@ -145,15 +146,20 @@ authRoute.get('/auth/google/callback', async (c) => {
 
   const user = findOrCreateUser(db, googleUser);
   const { sessionId } = createSession(db, user.id, null);
-  setSessionCookie(c, sessionId, env.NODE_ENV === 'production');
 
   logger.info({ user_id: user.id }, 'user_logged_in');
 
-  // Capacitor(iOS)からシステムブラウザ経由でログインした場合、この応答はアプリ本体のWKWebViewとは
-  // 別のCookieストアで開かれているため、そのままAPP_ORIGINへリダイレクトしてもアプリ側は
-  // 未ログインのまま。カスタムURLスキームでアプリに制御を戻し、appUrlOpenイベントで
-  // ブラウザを閉じてWKWebViewを再読み込みさせる（改修20回目）
-  if (native) return c.redirect(NATIVE_APP_CALLBACK_URL);
+  // Capacitor(iOS)からシステムブラウザ(SFSafariViewController)経由でログインした場合、
+  // この応答はSafari.appと共有のCookieストアで届くため、ここでsetSessionCookieしても
+  // アプリ本体のWKWebViewには届かない。代わりにワンタイム引き換えトークンをカスタムURL
+  // スキームでアプリへ渡し、WKWebView自身に /auth/native-exchange を叩かせることで
+  // 正しいCookieストアにセッションCookieを発行させる（改修20回目）
+  if (native) {
+    const exchangeToken = createNativeExchangeToken(sessionId);
+    return c.redirect(`${NATIVE_APP_CALLBACK_URL}?token=${exchangeToken}`);
+  }
+
+  setSessionCookie(c, sessionId, env.NODE_ENV === 'production');
 
   if (returnTo) {
     // MCPの認可画面など、Nestio自身の別ページへ戻る場合は直接302にせずbounceページを挟む
@@ -161,6 +167,19 @@ authRoute.get('/auth/google/callback', async (c) => {
     return c.html(renderLoginBouncePage(`${env.APP_ORIGIN}${returnTo}`));
   }
   return c.redirect(env.APP_ORIGIN);
+});
+
+// アプリ本体のWKWebViewから叩かせるための引き換えエンドポイント（改修20回目、上記コメント参照）。
+// トークンは使い捨てかつ60秒で失効するため、通常のCookie発行APIと同等のリスクに収まる
+authRoute.get('/auth/native-exchange', (c) => {
+  const env = c.get('env');
+  const token = c.req.query('token');
+  const sessionId = token ? consumeNativeExchangeToken(token) : undefined;
+  if (!sessionId) {
+    throw new ApiError('forbidden', 'トークンが無効か期限切れです');
+  }
+  setSessionCookie(c, sessionId, env.NODE_ENV === 'production');
+  return c.body(null, 204);
 });
 
 authRoute.get('/auth/me', requireAuth, (c) => {
