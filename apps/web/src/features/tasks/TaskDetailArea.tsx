@@ -39,8 +39,10 @@ export function TaskDetailArea({ taskId, onClose, ...panelProps }: TaskDetailAre
       // 上書きになり、!importantなクラスは常時（PC幅でも）勝ってしまいstyleのwidthを潰してしまう
       // 背景色は敷かない：中身（TaskDetailPanel、bg-white/dark:bg-neutral-900）自体が不透明なので
       // スライドしてきた分だけ裏の一覧が隠れる。外枠に背景色を敷くと、まだスライド中で見えて
-      // いいはずの隙間まで塗りつぶしてしまい、開いた瞬間に一覧が消える不具合になっていた（改修12回目）
-      className={`fixed inset-0 z-40 h-full max-md:!w-full overflow-x-hidden md:relative md:inset-auto md:z-auto md:shrink-0 ${visibilityClass}`}
+      // いいはずの隙間まで塗りつぶしてしまい、開いた瞬間に一覧が消える不具合になっていた（改修12回目）。
+      // 幅を100%ではなく92%にして左端を少し空け、裏の一覧がうっすら見える「カードが上に重なる」
+      // ような見た目にする（改修21回目：全幅を覆うと一瞬画面が暗転して見えるという指摘への対応）
+      className={`fixed inset-0 z-40 h-full max-md:!w-[92%] overflow-x-hidden md:relative md:inset-auto md:z-auto md:shrink-0 ${visibilityClass}`}
       style={{ width: panelResize.width }}
     >
       {/* ハンドルは非スクロールの外枠に置く。asideの内側に置くと（改修5回目で判明）

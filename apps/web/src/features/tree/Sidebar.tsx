@@ -17,6 +17,7 @@ import {
   Tag as TagIcon,
   GripVertical,
   ClipboardCheck,
+  Trash2,
 } from 'lucide-react';
 import type { ListRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
@@ -29,6 +30,7 @@ import { SMART_LISTS, SMART_LIST_DOT_CLASS } from '../../lib/task-views.js';
 import { loadCustomViews, deleteCustomView, subscribeCustomViews } from '../../lib/custom-views.js';
 import { isCoarsePointerDevice } from '../../lib/pointer.js';
 import { useOutsideClick } from '../../lib/useOutsideClick.js';
+import { useSwipeAction } from '../../lib/useSwipeAction.js';
 import { EditableLabel, type EditableLabelHandle } from './EditableLabel.js';
 import type { ViewSelection } from '../../state/view.js';
 
@@ -89,6 +91,11 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
   // クロージャ越しにまだ古い値のまま読んでしまい判定を取りこぼすことがあるため
   // （改修9回目フォローアップで発覚。stateは表示専用、refが判定の正）
   const touchDragRef = useRef<TouchDragState | null>(null);
+  // マウスのネイティブDnDでは今どのリストをドラッグ中かを追跡するReactの状態が無く、
+  // 各ListRowが自分のonDragOverだけで挿入線を独立に決めていたため、ドラッグ中のリストの
+  // すぐ上・すぐ下（＝実質移動にならない位置）にも無条件に線が出てしまっていた
+  // （改修21回目）。タッチのtouchDrag.draggedIdと合わせて集約する
+  const [mouseDraggedListId, setMouseDraggedListId] = useState<string | null>(null);
 
   useEffect(() => subscribeCustomViews(() => setCustomViews(loadCustomViews())), []);
 
@@ -104,6 +111,22 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
     else listsByFolder.set(key, [l]);
   }
   for (const bucket of listsByFolder.values()) bucket.sort((a, b) => a.sort_order - b.sort_order);
+
+  // マウス・タッチどちらかで今ドラッグ中のリストid（無ければnull）
+  const draggedListId = touchDrag?.draggedId ?? mouseDraggedListId;
+
+  /**
+   * bucket内でlistIdの行がdraggedIdの直前/直後（＝そこへドロップしても実質移動にならない位置）
+   * かどうかを返す。別フォルダのbucketにはdraggedId自体が含まれないため、フォルダをまたぐ
+   * ドロップ（並び順だけでなくfolder_idも変わる）では自然にfalseになる
+   */
+  function siblingOfDragged(bucket: typeof lists, listId: string): { isPrevSibling: boolean; isNextSibling: boolean } {
+    if (!draggedListId) return { isPrevSibling: false, isNextSibling: false };
+    const draggedIdx = bucket.findIndex((x) => x.id === draggedListId);
+    if (draggedIdx === -1) return { isPrevSibling: false, isNextSibling: false };
+    const idx = bucket.findIndex((x) => x.id === listId);
+    return { isPrevSibling: idx === draggedIdx - 1, isNextSibling: idx === draggedIdx + 1 };
+  }
 
   const toggleFolder = (id: string) => {
     setOpenFolders((prev) => {
@@ -391,26 +414,37 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
       </div>
 
       <div className="flex flex-col gap-0.5 p-2">
-        {(listsByFolder.get(null) ?? []).map((l) => (
-          <ListRow
-            key={l.id}
-            name={l.name}
-            color={l.color}
-            active={view.type === 'list' && view.listId === l.id}
-            onSelect={() => selectEntryByClick({ type: 'list', listId: l.id })}
-            onRename={(name) => renameList(l.id, name)}
-            onDelete={() => removeList(l.id)}
-            onChangeColor={(color) => changeListColor(l.id, color)}
-            onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
-            listId={l.id}
-            onDropList={(draggedId, position) => reorderList(draggedId, l.id, position)}
-            onGripPointerDown={(e) => handleGripPointerDown(e, l.id)}
-            onGripPointerMove={handleGripPointerMove}
-            onGripPointerUp={handleGripPointerUp}
-            touchDragEdge={touchDrag?.overId === l.id ? touchDrag.edge : null}
-            isBeingTouchDragged={touchDrag?.draggedId === l.id}
-          />
-        ))}
+        {(() => {
+          const rootBucket = listsByFolder.get(null) ?? [];
+          return rootBucket.map((l) => {
+            const { isPrevSibling, isNextSibling } = siblingOfDragged(rootBucket, l.id);
+            return (
+              <ListRow
+                key={l.id}
+                name={l.name}
+                color={l.color}
+                active={view.type === 'list' && view.listId === l.id}
+                onSelect={() => selectEntryByClick({ type: 'list', listId: l.id })}
+                onRename={(name) => renameList(l.id, name)}
+                onDelete={() => removeList(l.id)}
+                onChangeColor={(color) => changeListColor(l.id, color)}
+                onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
+                listId={l.id}
+                onDropList={(draggedId, position) => reorderList(draggedId, l.id, position)}
+                onGripPointerDown={(e) => handleGripPointerDown(e, l.id)}
+                onGripPointerMove={handleGripPointerMove}
+                onGripPointerUp={handleGripPointerUp}
+                onGripDragStart={() => setMouseDraggedListId(l.id)}
+                onGripDragEnd={() => setMouseDraggedListId(null)}
+                touchDragEdge={touchDrag?.overId === l.id ? touchDrag.edge : null}
+                isBeingTouchDragged={touchDrag?.draggedId === l.id}
+                isDraggedSelf={draggedListId === l.id}
+                suppressEdgeBefore={isNextSibling}
+                suppressEdgeAfter={isPrevSibling}
+              />
+            );
+          });
+        })()}
 
         {folders.map((f) => {
           const labelRef = { current: null as EditableLabelHandle | null };
@@ -459,26 +493,37 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             </div>
             {openFolders.has(f.id) && (
               <div className="ml-4 flex flex-col gap-0.5">
-                {(listsByFolder.get(f.id) ?? []).map((l) => (
-                  <ListRow
-                    key={l.id}
-                    name={l.name}
-                    color={l.color}
-                    active={view.type === 'list' && view.listId === l.id}
-                            onSelect={() => selectEntryByClick({ type: 'list', listId: l.id })}
-                    onRename={(name) => renameList(l.id, name)}
-                    onDelete={() => removeList(l.id)}
-                    onChangeColor={(color) => changeListColor(l.id, color)}
-                    onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
-                    listId={l.id}
-                    onDropList={(draggedId, position) => reorderList(draggedId, l.id, position)}
-                    onGripPointerDown={(e) => handleGripPointerDown(e, l.id)}
-                    onGripPointerMove={handleGripPointerMove}
-                    onGripPointerUp={handleGripPointerUp}
-                    touchDragEdge={touchDrag?.overId === l.id ? touchDrag.edge : null}
-                    isBeingTouchDragged={touchDrag?.draggedId === l.id}
-                  />
-                ))}
+                {(() => {
+                  const folderBucket = listsByFolder.get(f.id) ?? [];
+                  return folderBucket.map((l) => {
+                    const { isPrevSibling, isNextSibling } = siblingOfDragged(folderBucket, l.id);
+                    return (
+                      <ListRow
+                        key={l.id}
+                        name={l.name}
+                        color={l.color}
+                        active={view.type === 'list' && view.listId === l.id}
+                        onSelect={() => selectEntryByClick({ type: 'list', listId: l.id })}
+                        onRename={(name) => renameList(l.id, name)}
+                        onDelete={() => removeList(l.id)}
+                        onChangeColor={(color) => changeListColor(l.id, color)}
+                        onDropTask={(taskId) => dropTaskToList(taskId, l.id)}
+                        listId={l.id}
+                        onDropList={(draggedId, position) => reorderList(draggedId, l.id, position)}
+                        onGripPointerDown={(e) => handleGripPointerDown(e, l.id)}
+                        onGripPointerMove={handleGripPointerMove}
+                        onGripPointerUp={handleGripPointerUp}
+                        onGripDragStart={() => setMouseDraggedListId(l.id)}
+                        onGripDragEnd={() => setMouseDraggedListId(null)}
+                        touchDragEdge={touchDrag?.overId === l.id ? touchDrag.edge : null}
+                        isBeingTouchDragged={touchDrag?.draggedId === l.id}
+                        isDraggedSelf={draggedListId === l.id}
+                        suppressEdgeBefore={isNextSibling}
+                        suppressEdgeAfter={isPrevSibling}
+                      />
+                    );
+                  });
+                })()}
               </div>
             )}
           </div>
@@ -519,8 +564,13 @@ function ListRow({
   onGripPointerDown,
   onGripPointerMove,
   onGripPointerUp,
+  onGripDragStart,
+  onGripDragEnd,
   touchDragEdge,
   isBeingTouchDragged,
+  isDraggedSelf,
+  suppressEdgeBefore,
+  suppressEdgeAfter,
 }: {
   listId: string;
   name: string;
@@ -535,8 +585,17 @@ function ListRow({
   onGripPointerDown: (e: ReactPointerEvent<HTMLSpanElement>) => void;
   onGripPointerMove: (e: ReactPointerEvent<HTMLSpanElement>) => void;
   onGripPointerUp: (e: ReactPointerEvent<HTMLSpanElement>) => void;
+  /** マウスのネイティブDnDが始まった/終わったことを親（Sidebar）へ伝える（改修21回目） */
+  onGripDragStart: () => void;
+  onGripDragEnd: () => void;
   touchDragEdge: 'before' | 'after' | null;
   isBeingTouchDragged: boolean;
+  /** この行自身がドラッグ中のリストか（自分の上へは常に線を出さない） */
+  isDraggedSelf: boolean;
+  /** ドラッグ中のリストの直後（＝ここへ'before'で挿入しても実質移動にならない） */
+  suppressEdgeBefore: boolean;
+  /** ドラッグ中のリストの直前（＝ここへ'after'で挿入しても実質移動にならない） */
+  suppressEdgeAfter: boolean;
 }) {
   const labelRef = useRef<EditableLabelHandle | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -549,55 +608,81 @@ function ListRow({
   const [listDragEdge, setListDragEdge] = useState<'before' | 'after' | null>(null);
   // マウスのネイティブDnD（listDragEdge）とタッチの自前ドラッグ（touchDragEdge）のどちらか
   // 有効な方の挿入線を表示する
-  const effectiveDragEdge = listDragEdge ?? touchDragEdge;
+  const rawDragEdge = listDragEdge ?? touchDragEdge;
+  // ドラッグ中のリスト自身、または隣接していて実質移動にならない位置には線を出さない
+  // （改修21回目：常に上下両方に出て不自然という指摘への対応）
+  const suppressed =
+    isDraggedSelf ||
+    (rawDragEdge === 'before' && suppressEdgeBefore) ||
+    (rawDragEdge === 'after' && suppressEdgeAfter);
+  const effectiveDragEdge = suppressed ? null : rawDragEdge;
+  // リスト削除を右上のXボタンではなく右→左スワイプで行えるようにする（改修21回目：
+  // 「罰ボタンを消して欲しい」という要望）。削除は取り消しが効かない操作なので、タスク行の
+  // スワイプ削除（即時・undoトースト）とは違い、実行前に必ず確認する
+  const { translateX, swiping, direction, handlers: swipeHandlers } = useSwipeAction({
+    onSwipeLeft: () => {
+      if (window.confirm(`「${name}」を削除しますか？`)) onDelete();
+    },
+  });
   return (
-    <div
-      ref={rowRef}
-      data-list-row-id={listId}
-      onClick={onSelect}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes(LIST_DRAG_TYPE)) {
-          e.preventDefault();
-          const rect = e.currentTarget.getBoundingClientRect();
-          setListDragEdge(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
-          return;
-        }
-        if (e.dataTransfer.types.includes('text/nestio-task-id')) {
-          e.preventDefault();
-          setTaskDragOver(true);
-        }
-      }}
-      onDragLeave={() => {
-        setTaskDragOver(false);
-        setListDragEdge(null);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        setTaskDragOver(false);
-        if (e.dataTransfer.types.includes(LIST_DRAG_TYPE)) {
-          const draggedListId = e.dataTransfer.getData(LIST_DRAG_TYPE);
-          if (draggedListId) onDropList(draggedListId, listDragEdge ?? 'before');
-          setListDragEdge(null);
-          return;
-        }
-        const taskId = e.dataTransfer.getData('text/nestio-task-id');
-        if (taskId) onDropTask(taskId);
-      }}
-      className={`relative flex cursor-pointer items-center gap-1 rounded-md px-1 py-1 select-none [-webkit-touch-callout:none] ${
-        isBeingTouchDragged ? 'opacity-40' : ''
-      } ${
-        taskDragOver
-          ? 'bg-blue-100 dark:bg-blue-900/40'
-          : active
-            ? 'bg-blue-100 font-medium dark:bg-blue-900/40'
-            : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
-      }`}
-    >
-      {effectiveDragEdge && (
-        <div
-          className={`absolute inset-x-1 h-0.5 rounded-full bg-blue-500 ${effectiveDragEdge === 'before' ? '-top-0.5' : '-bottom-0.5'}`}
-        />
+    <div className="relative overflow-hidden">
+      {translateX < 0 && (
+        <div className="absolute inset-0 flex items-center justify-end rounded-md bg-red-400 pr-4 text-white">
+          <Trash2 size={16} />
+        </div>
       )}
+      <div
+        ref={rowRef}
+        data-list-row-id={listId}
+        onClick={onSelect}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes(LIST_DRAG_TYPE)) {
+            e.preventDefault();
+            const rect = e.currentTarget.getBoundingClientRect();
+            setListDragEdge(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+            return;
+          }
+          if (e.dataTransfer.types.includes('text/nestio-task-id')) {
+            e.preventDefault();
+            setTaskDragOver(true);
+          }
+        }}
+        onDragLeave={() => {
+          setTaskDragOver(false);
+          setListDragEdge(null);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setTaskDragOver(false);
+          if (e.dataTransfer.types.includes(LIST_DRAG_TYPE)) {
+            const draggedListId = e.dataTransfer.getData(LIST_DRAG_TYPE);
+            if (draggedListId) onDropList(draggedListId, listDragEdge ?? 'before');
+            setListDragEdge(null);
+            return;
+          }
+          const taskId = e.dataTransfer.getData('text/nestio-task-id');
+          if (taskId) onDropTask(taskId);
+        }}
+        {...swipeHandlers}
+        style={{
+          transform: translateX !== 0 ? `translateX(${translateX}px)` : undefined,
+          transition: swiping ? 'none' : 'transform 150ms ease-out',
+        }}
+        className={`relative flex cursor-pointer items-center gap-1 rounded-md px-1 py-1 select-none [-webkit-touch-callout:none] ${
+          direction === 'horizontal' ? 'touch-none' : 'touch-pan-y'
+        } ${isBeingTouchDragged ? 'opacity-40' : ''} ${
+          taskDragOver
+            ? 'bg-blue-100 dark:bg-blue-900/40'
+            : active
+              ? 'bg-blue-100 font-medium dark:bg-blue-900/40'
+              : 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
+        }`}
+      >
+        {effectiveDragEdge && (
+          <div
+            className={`absolute inset-x-1 h-0.5 rounded-full bg-blue-500 ${effectiveDragEdge === 'before' ? '-top-0.5' : '-bottom-0.5'}`}
+          />
+        )}
       {/* リストの並び替え用グリップハンドル（改修8回目）。ここだけをdraggableにすることで
           行全体のドラッグ operationとは分離し、タッチ環境ではisCoarsePointerDeviceで
           draggable自体を外してスクロール阻害を避ける（改修7回目で確立したパターンを踏襲）。
@@ -617,7 +702,9 @@ function ListRow({
             const rect = rowRef.current.getBoundingClientRect();
             e.dataTransfer.setDragImage(rowRef.current, e.clientX - rect.left, e.clientY - rect.top);
           }
+          onGripDragStart();
         }}
+        onDragEnd={onGripDragEnd}
         onPointerDown={onGripPointerDown}
         onPointerMove={onGripPointerMove}
         onPointerUp={onGripPointerUp}
@@ -662,27 +749,18 @@ function ListRow({
           </div>
         )}
       </div>
-      <EditableLabel ref={labelRef} value={name} className="flex-1 truncate px-1" onCommit={onRename} />
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          labelRef.current?.startEditing();
-        }}
-        title="名前を変更"
-        className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
-      >
-        <Pencil size={13} />
-      </button>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        title="リストを削除"
-        className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-red-500"
-      >
-        <X size={14} />
-      </button>
+        <EditableLabel ref={labelRef} value={name} className="flex-1 truncate px-1" onCommit={onRename} />
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            labelRef.current?.startEditing();
+          }}
+          title="名前を変更"
+          className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+        >
+          <Pencil size={13} />
+        </button>
+      </div>
     </div>
   );
 }

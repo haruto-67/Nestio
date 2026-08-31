@@ -16,8 +16,8 @@ export function logout(): Promise<void> {
   return apiClient.post<void>('/auth/logout');
 }
 
-export function registerDevice(label: string): Promise<{ device_id: string }> {
-  return apiClient.post<{ device_id: string }>('/devices', { label });
+export function registerDevice(label: string, deviceId?: string): Promise<{ device_id: string }> {
+  return apiClient.post<{ device_id: string }>('/devices', { label, device_id: deviceId });
 }
 
 export function googleLoginUrl(): string {

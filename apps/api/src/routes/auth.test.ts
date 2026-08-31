@@ -86,6 +86,63 @@ describe('auth sessions routes', () => {
     expect(body[0]?.is_current).toBe(true);
   });
 
+  it('POST /devices で登録した端末が今のセッションのdevice_labelに反映される（改修21回目）', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+
+    const app = setupApp();
+    const registerRes = await app.request('/api/v1/devices', {
+      method: 'POST',
+      headers: { Cookie: `nestio_session=${sessionId}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'iPhone (Nestioアプリ)' }),
+    });
+    expect(registerRes.status).toBe(201);
+
+    const sessionsRes = await app.request('/api/v1/auth/sessions', {
+      headers: { Cookie: `nestio_session=${sessionId}` },
+    });
+    const body = (await sessionsRes.json()) as { id: string; device_label: string | null }[];
+    expect(body[0]?.device_label).toBe('iPhone (Nestioアプリ)');
+  });
+
+  it('POST /devices に既存のdevice_idを渡すと、新規行を作らず同じ端末をラベル更新しつつ今のセッションへ紐付け直す（改修21回目）', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const firstSessionId = insertSession(db, userId);
+
+    const app = setupApp();
+    const firstRegister = await app.request('/api/v1/devices', {
+      method: 'POST',
+      headers: { Cookie: `nestio_session=${firstSessionId}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'iPhone (Nestioアプリ)' }),
+    });
+    const { device_id: firstDeviceId } = (await firstRegister.json()) as { device_id: string };
+
+    // ログアウト→再ログイン相当（新しいセッションでも同じdevice_idを送る）
+    const secondSessionId = insertSession(db, userId);
+    const secondRegister = await app.request('/api/v1/devices', {
+      method: 'POST',
+      headers: { Cookie: `nestio_session=${secondSessionId}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'iPhone (Nestioアプリ)', device_id: firstDeviceId }),
+    });
+    const { device_id: secondDeviceId } = (await secondRegister.json()) as { device_id: string };
+    expect(secondDeviceId).toBe(firstDeviceId);
+
+    const devicesCount = db.prepare('SELECT COUNT(*) as c FROM devices WHERE user_id = ?').get(userId) as {
+      c: number;
+    };
+    expect(devicesCount.c).toBe(1);
+
+    const sessionsRes = await app.request('/api/v1/auth/sessions', {
+      headers: { Cookie: `nestio_session=${secondSessionId}` },
+    });
+    const body = (await sessionsRes.json()) as { id: string; device_label: string | null }[];
+    expect(body.find((s) => s.id === secondSessionId)?.device_label).toBe('iPhone (Nestioアプリ)');
+  });
+
   it('DELETE /auth/sessions/:id で他デバイスのセッションを失効できる', async () => {
     db = createTestDb();
     const userId = uuidv7();

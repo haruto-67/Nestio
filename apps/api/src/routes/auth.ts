@@ -262,23 +262,45 @@ authRoute.delete('/auth/sessions/:id', requireAuth, (c) => {
   return c.body(null, 204);
 });
 
-const deviceRequestSchema = z.object({ label: z.string().min(1).max(200) });
+const deviceRequestSchema = z.object({ label: z.string().min(1).max(200), device_id: z.string().optional() });
 
+/**
+ * 端末を登録し、今のセッションへ紐付ける。以前はdevicesを作るだけでsessions.device_idを
+ * 更新しておらず、「ログイン中のセッション」一覧が常にdevice_label=NULL（「ブラウザ」表示）に
+ * なっていた（改修21回目）。加えてクライアント側は端末IDをlocalStorageにキャッシュし2回目
+ * 以降のログインではこのエンドポイント自体を呼ばなかったため、新しいセッションが永久に
+ * 端末と紐付かなかった。device_idをbodyで受け取れるようにし、既存端末ならlabel/last_seenを
+ * 更新するだけにして、ログインの度に呼んでもらう前提に変える（apps/web/src/api/device.ts参照）
+ */
 authRoute.post('/devices', requireAuth, async (c) => {
   const db = c.get('db');
   const userId = c.get('userId');
   if (!userId) throw new ApiError('unauthenticated', 'セッションが見つかりません');
+  const sessionId = getSessionIdFromRequest(c);
+  if (!sessionId) throw new ApiError('unauthenticated', 'セッションが見つかりません');
 
   const body = deviceRequestSchema.parse(await c.req.json());
-  const deviceId = uuidv7();
   const now = Date.now();
-  db.prepare('INSERT INTO devices (id, user_id, label, last_seen, created_at) VALUES (?, ?, ?, ?, ?)').run(
-    deviceId,
-    userId,
-    body.label,
-    now,
-    now,
-  );
+
+  const existing = body.device_id
+    ? (db.prepare('SELECT id FROM devices WHERE id = ? AND user_id = ?').get(body.device_id, userId) as
+        | { id: string }
+        | undefined)
+    : undefined;
+
+  const deviceId = existing?.id ?? uuidv7();
+  if (existing) {
+    db.prepare('UPDATE devices SET label = ?, last_seen = ? WHERE id = ?').run(body.label, now, deviceId);
+  } else {
+    db.prepare('INSERT INTO devices (id, user_id, label, last_seen, created_at) VALUES (?, ?, ?, ?, ?)').run(
+      deviceId,
+      userId,
+      body.label,
+      now,
+      now,
+    );
+  }
+  db.prepare('UPDATE sessions SET device_id = ? WHERE id = ?').run(deviceId, sessionId);
 
   return c.json({ device_id: deviceId }, 201);
 });

@@ -143,7 +143,9 @@ export function TaskDetailPanel({
   return (
       <aside
         data-task-detail-panel="true"
-        className="flex h-full w-full flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] dark:border-neutral-800 dark:bg-neutral-900"
+        // モバイルでは裏の一覧に重なるカードのように見せるためshadowを付ける（改修21回目）。
+        // PCでは常設の並びパネルなので影は不要（max-md:限定）
+        className="flex h-full w-full flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] max-md:shadow-2xl dark:border-neutral-800 dark:bg-neutral-900"
       >
       <div className="flex items-center justify-between">
         <button onClick={onClose} className="text-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">

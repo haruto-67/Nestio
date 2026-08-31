@@ -164,7 +164,10 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-96 rounded-xl bg-surface p-4 shadow-lg nestio-modal-panel">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-96 flex-col rounded-xl bg-surface p-4 shadow-lg nestio-modal-panel"
+      >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">設定</h2>
           <button onClick={onClose} className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
@@ -172,6 +175,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
           </button>
         </div>
 
+        <div className="flex-1 overflow-y-auto">
         <div className="mb-3 flex items-center justify-between border-b border-neutral-200 pb-3 dark:border-neutral-800">
           <span className="text-xs text-muted">外観（テーマ）</span>
           <button
@@ -352,6 +356,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
             添付ファイルの実体は含まれません（機種変更時のデータ移行・手元へのバックアップ用）
           </p>
           {exportImportStatus && <p className="mt-1 text-xs text-neutral-400">{exportImportStatus}</p>}
+        </div>
         </div>
       </div>
     </div>

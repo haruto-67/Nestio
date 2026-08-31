@@ -28,8 +28,11 @@ const PRIORITY_DOT_BG: Record<number, string> = {
 };
 
 // 28pxでもまだ「サブタスクのサブタスク」と見分けにくいという指摘（改修10回目）を受けて56pxに拡大。
-// 新しい1階層分(56px)が旧2階層分(28px*2=56px)とほぼ同じ見た目になるようにした
-const INDENT_PER_DEPTH_PX = 56;
+// 新しい1階層分(56px)が旧2階層分(28px*2=56px)とほぼ同じ見た目になるようにした。
+// 固定56pxのままだとスマホ幅では2階層下がっただけでタイトルの表示領域がほぼ無くなり
+// 見づらいという指摘（改修21回目）を受け、狭い画面ではclamp()で自動的に縮める
+// （PC幅では従来通り56pxのまま変わらない）
+const INDENT_PER_DEPTH = 'clamp(24px, 6vw, 56px)';
 
 interface TaskItemProps {
   node: TaskNode;
@@ -98,7 +101,7 @@ export function TaskItem({
   // モバイルのタスク行スワイプ（改修13回目）：右スワイプ=完了、左スワイプ=削除。
   // 画面左端からのエッジスワイプ（App.tsx側でドロワーを開く操作）とは行の内部でのみ
   // 発動するため競合しない
-  const { translateX, swiping, handlers: swipeHandlers } = useSwipeAction({
+  const { translateX, swiping, direction, handlers: swipeHandlers } = useSwipeAction({
     onSwipeRight: () => {
       if (!disabled) onToggleComplete(task.id, task.completed_at === null);
     },
@@ -107,7 +110,9 @@ export function TaskItem({
 
   return (
     <div>
-      <div className="relative touch-pan-y overflow-hidden">
+      <div
+        className={`relative overflow-hidden ${direction === 'horizontal' ? 'touch-none' : 'touch-pan-y'}`}
+      >
         {translateX !== 0 && (
           <div
             className={`absolute inset-0 flex items-center text-white ${
@@ -162,13 +167,16 @@ export function TaskItem({
               toggleExpanded();
             }}
             title={expanded ? 'サブタスクを折りたたむ' : 'サブタスクを展開する'}
-            style={{ paddingLeft: `${depth * INDENT_PER_DEPTH_PX + 8}px` }}
+            style={{ paddingLeft: `calc(${depth} * ${INDENT_PER_DEPTH} + 8px)` }}
             className="flex min-h-8 min-w-8 shrink-0 items-center justify-center text-sm text-neutral-400"
           >
             {expanded ? '▾' : '▸'}
           </button>
         ) : (
-          <span style={{ paddingLeft: `${depth * INDENT_PER_DEPTH_PX + 8}px` }} className="min-w-8 shrink-0" />
+          <span
+            style={{ paddingLeft: `calc(${depth} * ${INDENT_PER_DEPTH} + 8px)` }}
+            className="min-w-8 shrink-0"
+          />
         )}
         <label
           onClick={(e) => e.stopPropagation()}

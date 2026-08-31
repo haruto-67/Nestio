@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { uuidv7 } from '@nestio/shared';
-import { Menu, Search, Egg, Keyboard, Trash2, Settings, ShieldCheck } from 'lucide-react';
+import { Menu, Search, Egg, Keyboard, Trash2, Settings, ShieldCheck, ListTodo, StickyNote } from 'lucide-react';
 import { AppProvider, useApp } from './state/AppProvider.js';
 import { useTasks, useLists } from './db/queries.js';
 import { SMART_LISTS } from './lib/task-views.js';
@@ -160,12 +160,17 @@ function MainLayout() {
 
   // モバイルで画面左端から右へスワイプするとドロワーを開く（改修13回目：左上のメニュー
   // タップだけだと操作しづらいという要望）。タスク行のスワイプ完了/削除（TaskItem.tsx）とは
-  // 開始位置が画面端24px以内かどうかで区別するため競合しない
+  // 開始位置が画面端24px以内かどうかで区別するため競合しない。
+  // ただしタスク詳細が全画面表示中（モバイル）は、同じ左端スワイプを「一覧へ戻る」操作に
+  // 割り当てる（改修21回目：詳細表示中に左端から振ると、意図せずリスト一覧のドロワーが
+  // 開いてしまい紛らわしいという指摘への対応）
   const edgeSwipeStartXRef = useRef<number | null>(null);
   const EDGE_SWIPE_OPEN_THRESHOLD_PX = 60;
+  const isTaskDetailFullScreen = screen === 'tasks' && detailOpen;
   const handleEdgeSwipeStart = (e: ReactTouchEvent) => {
     const touch = e.touches[0];
-    if (!touch || drawerOpen || touch.clientX > EDGE_SWIPE_ZONE_PX) {
+    const blockedByOpenDrawer = drawerOpen && !isTaskDetailFullScreen;
+    if (!touch || blockedByOpenDrawer || touch.clientX > EDGE_SWIPE_ZONE_PX) {
       edgeSwipeStartXRef.current = null;
       return;
     }
@@ -176,7 +181,11 @@ function MainLayout() {
     const touch = e.touches[0];
     if (!touch) return;
     if (touch.clientX - edgeSwipeStartXRef.current > EDGE_SWIPE_OPEN_THRESHOLD_PX) {
-      setDrawerOpen(true);
+      if (isTaskDetailFullScreen) {
+        setDetailOpen(false);
+      } else {
+        setDrawerOpen(true);
+      }
       edgeSwipeStartXRef.current = null;
     }
   };
@@ -553,15 +562,10 @@ function MainLayout() {
     <div className="flex h-screen flex-col bg-[#FBFAF6] text-neutral-900 dark:bg-[#1a1a18] dark:text-white">
       {/* 管理者バッジ追加後、SyncStatusIndicatorを含めた全ボタンが画面幅に収まらず横スクロールが
           発生し、右端の設定ボタンがスライドしないと押せなくなっていた（改修12回目）。
-          十分な幅があるドロワー側（下記）に同期状態を移し、ヘッダーはボタン群のみにした */}
-      <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 pt-[calc(0.5rem+env(safe-area-inset-top))] dark:border-neutral-800 md:hidden">
-        <button
-          onClick={() => setDrawerOpen(true)}
-          title="メニュー"
-          className="flex min-h-11 min-w-11 items-center justify-center"
-        >
-          <Menu size={26} />
-        </button>
+          十分な幅があるドロワー側（下記）に同期状態を移し、ヘッダーはボタン群のみにした。
+          左上のメニューボタンは下部タブバーの「メニュー」に統合し撤去した（改修21回目：
+          画面下部にタブバーが無く、親指の届きにくい上部操作しかできなかったという指摘への対応） */}
+      <header className="flex items-center justify-end border-b border-neutral-200 px-4 py-2 pt-[calc(0.5rem+env(safe-area-inset-top))] dark:border-neutral-800 md:hidden">
         <div className="flex gap-1">
           <PomodoroHeaderButton
             onClick={() => setShowPomodoro(true)}
@@ -813,6 +817,38 @@ function MainLayout() {
           )}
         </div>
       </div>
+
+      {/* 画面下部の固定タブバー（改修21回目）。スマホでは画面下部が親指の届く範囲で
+          押しやすいため、タスク/メモの切替とメニュー（従来のドロワー）をここに集約する。
+          fixed配置ではなく通常のflex項目にすることで、h-screen flex-colの残り領域を
+          TaskDetailArea等が正しく占有でき、被せ用のpadding調整が不要になる */}
+      <nav className="flex shrink-0 border-t border-neutral-200 bg-[#FBFAF6] pb-[env(safe-area-inset-bottom)] dark:border-neutral-800 dark:bg-[#1a1a18] md:hidden">
+        <button
+          onClick={() => setScreen('tasks')}
+          className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs ${
+            screen === 'tasks' ? 'text-blue-500' : 'text-neutral-400'
+          }`}
+        >
+          <ListTodo size={20} />
+          タスク
+        </button>
+        <button
+          onClick={() => setScreen('notes')}
+          className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs ${
+            screen === 'notes' ? 'text-blue-500' : 'text-neutral-400'
+          }`}
+        >
+          <StickyNote size={20} />
+          メモ
+        </button>
+        <button
+          onClick={() => setDrawerOpen(true)}
+          className="flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs text-neutral-400"
+        >
+          <Menu size={20} />
+          メニュー
+        </button>
+      </nav>
 
       {showHelp && <ShortcutHelpModal onClose={() => setShowHelp(false)} />}
       {showKeymapSettings && (

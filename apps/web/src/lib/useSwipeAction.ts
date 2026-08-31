@@ -20,6 +20,11 @@ interface UseSwipeActionOptions {
 export function useSwipeAction({ onSwipeRight, onSwipeLeft, threshold = 80 }: UseSwipeActionOptions) {
   const [translateX, setTranslateX] = useState(0);
   const [swiping, setSwiping] = useState(false);
+  // 判定ロジック自体はrefが正（コメント参照）。direction stateは呼び出し側が
+  // touch-actionを動的に切り替えるための表示専用ミラー（改修21回目：横スワイプ確定後も
+  // ブラウザのtouch-action:pan-yがそのままだと縦スクロールが同時に効いてしまう指摘への対応。
+  // horizontalと判定した瞬間にtouch-noneへ切り替え、ブラウザのネイティブ縦スクロールを止める）
+  const [direction, setDirection] = useState<'horizontal' | 'vertical' | 'edge' | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
   const directionRef = useRef<'horizontal' | 'vertical' | 'edge' | null>(null);
@@ -29,11 +34,13 @@ export function useSwipeAction({ onSwipeRight, onSwipeLeft, threshold = 80 }: Us
     if (!touch) return;
     if (touch.clientX <= EDGE_SWIPE_ZONE_PX) {
       directionRef.current = 'edge';
+      setDirection('edge');
       return;
     }
     startXRef.current = touch.clientX;
     startYRef.current = touch.clientY;
     directionRef.current = null;
+    setDirection(null);
     setSwiping(true);
   };
 
@@ -46,7 +53,9 @@ export function useSwipeAction({ onSwipeRight, onSwipeLeft, threshold = 80 }: Us
 
     if (!directionRef.current) {
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-      directionRef.current = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
+      const next = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
+      directionRef.current = next;
+      setDirection(next);
     }
     if (directionRef.current === 'vertical') return;
     setTranslateX(dx);
@@ -60,6 +69,7 @@ export function useSwipeAction({ onSwipeRight, onSwipeLeft, threshold = 80 }: Us
     }
     setTranslateX(0);
     directionRef.current = null;
+    setDirection(null);
   };
 
   // iOSでアプリをバックグラウンドに送る（ホームへスワイプ等）と、進行中のタッチジェスチャーは
@@ -70,11 +80,13 @@ export function useSwipeAction({ onSwipeRight, onSwipeLeft, threshold = 80 }: Us
     setSwiping(false);
     setTranslateX(0);
     directionRef.current = null;
+    setDirection(null);
   };
 
   return {
     translateX,
     swiping,
+    direction,
     handlers: { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel },
   };
 }
