@@ -175,6 +175,32 @@ function applyUpsert(
       }
     }
 
+    // task_tags(task_id, tag_id)には論理削除を無視したUNIQUE制約(docs/schema.sql)があり、
+    // 同じペアへ別idで新規INSERTしようとすると生のSQLite例外でリクエスト全体が落ちてしまう。
+    // クライアント側（apps/web/src/state/actions.ts）・MCP側（apps/api/src/mcp/tools.ts）は
+    // 修正済みだが、既にoutboxに積まれた古いクライアントのop（＝この状況）や他経路からの
+    // 重複要求に対してもサーバー側で必ず安全に倒せるようにする（改修21回目、本番ログで
+    // 実際にUNIQUE constraint failedが繰り返し発生しoutboxが詰まっていたことが発覚）
+    if (table === 'task_tags') {
+      const conflict = db
+        .prepare('SELECT * FROM task_tags WHERE user_id = ? AND task_id = ? AND tag_id = ?')
+        .get(userId, fields.task_id, fields.tag_id) as Row | undefined;
+      if (conflict) {
+        if (conflict.deleted_at === null) {
+          // 既に同じペアが存在し削除もされていない＝意図は既に達成されている（冪等に許容）
+          return { ok: true };
+        }
+        // 論理削除済みの行を復元する（新規idでのINSERTは諦め、既存idを蘇らせる）
+        const seq = bumpSeq(db, userId);
+        db.prepare(`UPDATE task_tags SET deleted_at = NULL, updated_at = ?, seq = ? WHERE id = ?`).run(
+          op.updated_at,
+          seq,
+          conflict.id,
+        );
+        return { ok: true };
+      }
+    }
+
     const presentCols = def.columns.filter((c) => fields[c] !== undefined);
     const seq = bumpSeq(db, userId);
     const cols = ['id', 'user_id', ...presentCols, 'created_at', 'updated_at', 'deleted_at', 'seq'];

@@ -650,6 +650,92 @@ describe('applySyncOps', () => {
     const res = applySyncOps(db, userId, [op]);
     expect(res.rejected).toEqual([{ op_id: op.op_id, reason: 'forbidden' }]);
   });
+
+  it('task_tagsで同じ(task_id, tag_id)へ別idでupsertしても、UNIQUE制約違反でクラッシュせず冪等に成功する（改修21回目）', () => {
+    setup();
+    const taskId = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { title: 'タスク' })]);
+    const tagId = uuidv7();
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tags', id: tagId, op: 'upsert', updated_at: Date.now(), fields: { name: 'urgent' } },
+    ]);
+
+    const firstOpId = uuidv7();
+    const first = applySyncOps(db, userId, [
+      {
+        op_id: firstOpId,
+        table: 'task_tags',
+        id: uuidv7(),
+        op: 'upsert',
+        updated_at: Date.now(),
+        fields: { task_id: taskId, tag_id: tagId },
+      },
+    ]);
+    expect(first.rejected).toEqual([]);
+
+    // 別のidで同じ(task_id, tag_id)を再度upsert（クライアントの既存行キャッシュとズレた場合を想定）
+    const second = applySyncOps(db, userId, [
+      {
+        op_id: uuidv7(),
+        table: 'task_tags',
+        id: uuidv7(),
+        op: 'upsert',
+        updated_at: Date.now(),
+        fields: { task_id: taskId, tag_id: tagId },
+      },
+    ]);
+    expect(second.rejected).toEqual([]);
+
+    const rows = db
+      .prepare('SELECT * FROM task_tags WHERE task_id = ? AND tag_id = ? AND deleted_at IS NULL')
+      .all(taskId, tagId);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('task_tagsを論理削除後、別idで再度upsertすると新規行を作らず既存行をrestoreする（改修21回目）', () => {
+    setup();
+    const taskId = uuidv7();
+    applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { title: 'タスク' })]);
+    const tagId = uuidv7();
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'tags', id: tagId, op: 'upsert', updated_at: Date.now(), fields: { name: 'urgent' } },
+    ]);
+
+    const taskTagId = uuidv7();
+    applySyncOps(db, userId, [
+      {
+        op_id: uuidv7(),
+        table: 'task_tags',
+        id: taskTagId,
+        op: 'upsert',
+        updated_at: Date.now(),
+        fields: { task_id: taskId, tag_id: tagId },
+      },
+    ]);
+    applySyncOps(db, userId, [
+      { op_id: uuidv7(), table: 'task_tags', id: taskTagId, op: 'delete', updated_at: Date.now(), fields: {} },
+    ]);
+
+    const reattach = applySyncOps(db, userId, [
+      {
+        op_id: uuidv7(),
+        table: 'task_tags',
+        id: uuidv7(),
+        op: 'upsert',
+        updated_at: Date.now(),
+        fields: { task_id: taskId, tag_id: tagId },
+      },
+    ]);
+    expect(reattach.rejected).toEqual([]);
+
+    const rows = db.prepare('SELECT id, deleted_at FROM task_tags WHERE task_id = ? AND tag_id = ?').all(taskId, tagId) as {
+      id: string;
+      deleted_at: number | null;
+    }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(taskTagId);
+    expect(rows[0]?.deleted_at).toBeNull();
+  });
 });
 
 function insertTrigger(
