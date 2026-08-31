@@ -101,7 +101,7 @@ export function TaskItem({
   // モバイルのタスク行スワイプ（改修13回目）：右スワイプ=完了、左スワイプ=削除。
   // 画面左端からのエッジスワイプ（App.tsx側でドロワーを開く操作）とは行の内部でのみ
   // 発動するため競合しない
-  const { translateX, swiping, direction, handlers: swipeHandlers } = useSwipeAction({
+  const { translateX, swiping, direction, ref: swipeRef } = useSwipeAction({
     onSwipeRight: () => {
       if (!disabled) onToggleComplete(task.id, task.completed_at === null);
     },
@@ -143,7 +143,7 @@ export function TaskItem({
             const draggedId = e.dataTransfer.getData('text/nestio-task-id');
             if (draggedId && draggedId !== task.id) onDropOntoTask(draggedId, task.id);
           }}
-          {...swipeHandlers}
+          ref={swipeRef}
           style={{
             transform: translateX !== 0 ? `translateX(${translateX}px)` : undefined,
             transition: swiping ? 'none' : `transform ${DURATION_BASE_MS}ms ease-out`,
@@ -158,26 +158,34 @@ export function TaskItem({
                 : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
           }`}
         >
-        {node.children.length > 0 ? (
-          // チェックボックスより左側全体（インデント分も含む）を折りたたみボタンの当たり判定にする。
-          // 見た目のアイコン自体は変えず、クリック領域だけ広げる（改修8回目）
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleExpanded();
-            }}
-            title={expanded ? 'サブタスクを折りたたむ' : 'サブタスクを展開する'}
-            style={{ paddingLeft: `calc(${depth} * ${INDENT_PER_DEPTH} + 8px)` }}
-            className="flex min-h-8 min-w-8 shrink-0 items-center justify-center text-sm text-neutral-400"
-          >
-            {expanded ? '▾' : '▸'}
-          </button>
-        ) : (
-          <span
-            style={{ paddingLeft: `calc(${depth} * ${INDENT_PER_DEPTH} + 8px)` }}
-            className="min-w-8 shrink-0"
-          />
-        )}
+        {/* インデント幅はここ（中身を持たないラッパー）にだけ持たせ、中の折りたたみボタン/
+            プレースホルダーは常に固定w-8にする（改修21回目フォローアップ）。以前はpaddingLeftを
+            ボタン自身に直接付けていたため、ボタン内の▾/▸の文字幅ぶんだけボタン全体が
+            min-widthを超えて押し広げられ、その分だけ次のチェックボックスの開始位置が
+            プレースホルダーspanの行よりも右にずれてしまい、兄弟タスクなのに階層が1つ
+            深いかのように見えるインデントのズレになっていた（「下のものが上の階層に
+            いってたりする」という指摘の実体はデータではなくこの見た目のズレだった） */}
+        <div
+          style={{ paddingLeft: `calc(${depth} * ${INDENT_PER_DEPTH} + 8px)` }}
+          className="flex shrink-0"
+        >
+          {node.children.length > 0 ? (
+            // チェックボックスより左側全体（インデント分も含む）を折りたたみボタンの当たり判定にする。
+            // 見た目のアイコン自体は変えず、クリック領域だけ広げる（改修8回目）
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleExpanded();
+              }}
+              title={expanded ? 'サブタスクを折りたたむ' : 'サブタスクを展開する'}
+              className="flex h-8 w-8 shrink-0 items-center justify-center text-sm text-neutral-400"
+            >
+              {expanded ? '▾' : '▸'}
+            </button>
+          ) : (
+            <span className="h-8 w-8 shrink-0" />
+          )}
+        </div>
         <label
           onClick={(e) => e.stopPropagation()}
           className="flex min-h-8 min-w-8 shrink-0 items-center justify-center"

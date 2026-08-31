@@ -10,6 +10,7 @@ import { PushPermissionPrompt } from './ui/PushPermissionPrompt.js';
 import { showToast } from './ui/toast.js';
 import { useResizableWidth } from './lib/useResizableWidth.js';
 import { EDGE_SWIPE_ZONE_PX } from './lib/edge-swipe.js';
+import { useSwipeAction } from './lib/useSwipeAction.js';
 import { LoginScreen } from './features/auth/LoginScreen.js';
 import { Sidebar, type SidebarHandle } from './features/tree/Sidebar.js';
 import { TaskListView } from './features/tasks/TaskListView.js';
@@ -192,6 +193,13 @@ function MainLayout() {
   const handleEdgeSwipeEnd = () => {
     edgeSwipeStartXRef.current = null;
   };
+
+  // モバイルのドロワー（メニュー）を右→左スワイプで閉じる（改修21回目フォローアップ：
+  // 「メニュー表示時は右から左へのスワイプで閉じたい」という要望への対応）
+  const { translateX: drawerTranslateX, swiping: drawerSwiping, ref: drawerSwipeRef } = useSwipeAction({
+    onSwipeLeft: () => setDrawerOpen(false),
+    threshold: 60,
+  });
 
   const handleVisibleTasksChange = useCallback((entries: FlattenedTaskEntry[]) => {
     visibleTaskEntriesRef.current = entries;
@@ -563,9 +571,17 @@ function MainLayout() {
       {/* 管理者バッジ追加後、SyncStatusIndicatorを含めた全ボタンが画面幅に収まらず横スクロールが
           発生し、右端の設定ボタンがスライドしないと押せなくなっていた（改修12回目）。
           十分な幅があるドロワー側（下記）に同期状態を移し、ヘッダーはボタン群のみにした。
-          左上のメニューボタンは下部タブバーの「メニュー」に統合し撤去した（改修21回目：
-          画面下部にタブバーが無く、親指の届きにくい上部操作しかできなかったという指摘への対応） */}
-      <header className="flex items-center justify-end border-b border-neutral-200 px-4 py-2 pt-[calc(0.5rem+env(safe-area-inset-top))] dark:border-neutral-800 md:hidden">
+          改修21回目で左上のメニューボタンを下部タブバーの「メニュー」に統合し一度撤去したが、
+          下部タブに収まらない・操作しづらいとのフィードバックで元の左上ハンバーガーに戻した
+          （改修21回目フォローアップ） */}
+      <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 pt-[calc(0.5rem+env(safe-area-inset-top))] dark:border-neutral-800 md:hidden">
+        <button
+          onClick={() => setDrawerOpen(true)}
+          title="メニュー"
+          className="flex min-h-11 min-w-11 items-center justify-center text-neutral-500 dark:text-neutral-300"
+        >
+          <Menu size={20} />
+        </button>
         <div className="flex gap-1">
           <PomodoroHeaderButton
             onClick={() => setShowPomodoro(true)}
@@ -719,7 +735,14 @@ function MainLayout() {
 
         {drawerOpen && (
           <div className="fixed inset-0 z-50 flex md:hidden">
-            <div className="animate-[nestio-fade-scale-in_150ms_ease-out] flex w-72 flex-col bg-white dark:bg-neutral-900">
+            <div
+              ref={drawerSwipeRef}
+              style={{
+                transform: drawerTranslateX < 0 ? `translateX(${drawerTranslateX}px)` : undefined,
+                transition: drawerSwiping ? 'none' : 'transform 150ms ease-out',
+              }}
+              className="animate-[nestio-fade-scale-in_150ms_ease-out] flex w-72 flex-col bg-white dark:bg-neutral-900"
+            >
               <div className="border-b border-neutral-200 px-3 py-2 pt-[calc(0.5rem+env(safe-area-inset-top))] dark:border-neutral-800">
                 <SyncStatusIndicator />
               </div>
@@ -819,9 +842,11 @@ function MainLayout() {
       </div>
 
       {/* 画面下部の固定タブバー（改修21回目）。スマホでは画面下部が親指の届く範囲で
-          押しやすいため、タスク/メモの切替とメニュー（従来のドロワー）をここに集約する。
-          fixed配置ではなく通常のflex項目にすることで、h-screen flex-colの残り領域を
-          TaskDetailArea等が正しく占有でき、被せ用のpadding調整が不要になる */}
+          押しやすいため、タスク/メモの切替をここに集約する。メニューは下部タブに収まらず
+          操作しづらいとのフィードバックで左上ハンバーガー（上記ヘッダー）に戻した
+          （改修21回目フォローアップ）。fixed配置ではなく通常のflex項目にすることで、
+          h-screen flex-colの残り領域をTaskDetailArea等が正しく占有でき、
+          被せ用のpadding調整が不要になる */}
       <nav className="flex shrink-0 border-t border-neutral-200 bg-[#FBFAF6] pb-[env(safe-area-inset-bottom)] dark:border-neutral-800 dark:bg-[#1a1a18] md:hidden">
         <button
           onClick={() => setScreen('tasks')}
@@ -840,13 +865,6 @@ function MainLayout() {
         >
           <StickyNote size={20} />
           メモ
-        </button>
-        <button
-          onClick={() => setDrawerOpen(true)}
-          className="flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs text-neutral-400"
-        >
-          <Menu size={20} />
-          メニュー
         </button>
       </nav>
 

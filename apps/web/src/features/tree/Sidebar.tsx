@@ -619,7 +619,7 @@ function ListRow({
   // リスト削除を右上のXボタンではなく右→左スワイプで行えるようにする（改修21回目：
   // 「罰ボタンを消して欲しい」という要望）。削除は取り消しが効かない操作なので、タスク行の
   // スワイプ削除（即時・undoトースト）とは違い、実行前に必ず確認する
-  const { translateX, swiping, direction, handlers: swipeHandlers } = useSwipeAction({
+  const { translateX, swiping, direction, ref: swipeRef } = useSwipeAction({
     onSwipeLeft: () => {
       if (window.confirm(`「${name}」を削除しますか？`)) onDelete();
     },
@@ -632,7 +632,10 @@ function ListRow({
         </div>
       )}
       <div
-        ref={rowRef}
+        ref={(el) => {
+          rowRef.current = el;
+          swipeRef.current = el;
+        }}
         data-list-row-id={listId}
         onClick={onSelect}
         onDragOver={(e) => {
@@ -663,7 +666,6 @@ function ListRow({
           const taskId = e.dataTransfer.getData('text/nestio-task-id');
           if (taskId) onDropTask(taskId);
         }}
-        {...swipeHandlers}
         style={{
           transform: translateX !== 0 ? `translateX(${translateX}px)` : undefined,
           transition: swiping ? 'none' : 'transform 150ms ease-out',
@@ -679,8 +681,11 @@ function ListRow({
         }`}
       >
         {effectiveDragEdge && (
+          // 親の外枠（下記コメント参照）がoverflow-hiddenのため、行の外側にわずかにはみ出す
+          // -top-0.5/-bottom-0.5では完全にクリップされ「全く表示されない」状態になっていた
+          // （改修21回目フォローアップ）。行の内側に収まるtop-0/bottom-0にする
           <div
-            className={`absolute inset-x-1 h-0.5 rounded-full bg-blue-500 ${effectiveDragEdge === 'before' ? '-top-0.5' : '-bottom-0.5'}`}
+            className={`absolute inset-x-1 h-0.5 rounded-full bg-blue-500 ${effectiveDragEdge === 'before' ? 'top-0' : 'bottom-0'}`}
           />
         )}
       {/* リストの並び替え用グリップハンドル（改修8回目）。ここだけをdraggableにすることで

@@ -2,7 +2,6 @@ import { useEffect, useState, type MouseEvent, type DragEvent } from 'react';
 import { uuidv7, type ListSortMode } from '@nestio/shared';
 import { Plus } from 'lucide-react';
 import { useApp } from '../../state/AppProvider.js';
-import { useDelayedHide } from '../../lib/panel-transition.js';
 import { useLists, useTasks, useTags, useTaskTags } from '../../db/queries.js';
 import type { ViewSelection } from '../../state/view.js';
 import { filterTasksForView } from '../../lib/filter-tasks.js';
@@ -61,10 +60,6 @@ export function TaskListView({
   quickAddInputRef,
   detailOpen = false,
 }: TaskListViewProps) {
-  // 詳細パネルが開いた瞬間ではなく、そのスライドインアニメーションが終わってから一覧を隠す。
-  // 閉じる時は逆に即座に表示へ戻す（改修12回目：以前はdetailOpenを直接使っており、開いた瞬間に
-  // 一覧が消え、閉じてもアニメーションが終わるまで一覧が戻らなかった）
-  const hideForDetail = useDelayedHide(detailOpen);
   // selectedTaskIdはPC向けのj/kカーソル位置を兼ねるため、詳細パネルを閉じても保持され続ける
   // （キーボードナビゲーションの基準点として必要）。しかしタッチ端末ではカーソル移動の概念が
   // 無く、タスク詳細を閉じた後もタップした行にだけ青いハイライトが残り続けているように
@@ -277,9 +272,12 @@ export function TaskListView({
 
   return (
     <div
-      className={`h-full flex-1 flex-col overflow-hidden border-t-4 ${headerAccentClass} ${
-        hideForDetail ? 'hidden md:flex' : 'flex'
-      }`}
+      // モバイルで詳細パネルを開いた時も一覧をdisplay:noneにせず裏に表示したままにする
+      // （改修21回目フォローアップ：以前はアニメーション終了後にhidden md:flexへ切り替えており、
+      // TaskDetailArea側が意図的に空けている左端の隙間から覗けるはずの一覧が結局消えてしまい
+      // 「一瞬画面が暗くなる」不具合になっていた。詳細パネルはz-40のfixedオーバーレイなので
+      // 覆われている部分は元々クリックされない。常時表示にして裏の一覧を透けて見せ続ける）
+      className={`flex h-full flex-1 flex-col overflow-hidden border-t-4 ${headerAccentClass}`}
       onClick={closeDetailUnlessRowClick}
     >
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800 md:px-6 md:py-4">
