@@ -330,6 +330,44 @@ describe('MCP OAuth + tools', () => {
     expect(row.name).toBe('manual');
   });
 
+  it('get_task/list_tasks/search_tasksがtagsを含む（改修21回目：付いているタグをClaudeが会話中に把握できるように）', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+
+    const created = (await callTool(app, accessToken, 'create_task', {
+      list_id: listId,
+      title: 'タグ確認タスク',
+      tags: ['webPC使用時'],
+    })) as { id: string };
+
+    const fetched = (await callTool(app, accessToken, 'get_task', { id: created.id })) as {
+      tags: { name: string }[];
+    };
+    expect(fetched.tags.map((t) => t.name)).toEqual(['webPC使用時']);
+
+    const listed = (await callTool(app, accessToken, 'list_tasks', { list_id: listId })) as {
+      tasks: { id: string; tags: { name: string }[] }[];
+    };
+    const listedTask = listed.tasks.find((t) => t.id === created.id);
+    expect(listedTask?.tags.map((t) => t.name)).toEqual(['webPC使用時']);
+
+    const searched = (await callTool(app, accessToken, 'search_tasks', { q: 'タグ確認' })) as {
+      tasks: { id: string; tags: { name: string }[] }[];
+    };
+    const searchedTask = searched.tasks.find((t) => t.id === created.id);
+    expect(searchedTask?.tags.map((t) => t.name)).toEqual(['webPC使用時']);
+  });
+
   it('update_noteでメモの内容とpinnedを更新できる', async () => {
     db = createTestDb();
     const userId = uuidv7();

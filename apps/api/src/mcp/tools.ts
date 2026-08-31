@@ -44,7 +44,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: 'list_tasks',
     scope: 'read',
-    description: 'タスクの一覧を取得する（既定では未完了のみ）',
+    description: 'タスクの一覧を取得する（既定では未完了のみ）。各タスクにtags（{id, name, color}の配列）を含む',
     inputSchema: {
       type: 'object',
       properties: {
@@ -58,7 +58,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: 'search_tasks',
     scope: 'read',
-    description: 'タスクをタイトル・本文で全文検索する',
+    description: 'タスクをタイトル・本文で全文検索する。各タスクにtags（{id, name, color}の配列）を含む',
     inputSchema: {
       type: 'object',
       properties: { q: { type: 'string' }, limit: { type: 'number' } },
@@ -68,7 +68,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: 'get_task',
     scope: 'read',
-    description: 'タスクIDを指定して詳細を取得する',
+    description: 'タスクIDを指定して詳細を取得する。tags（{id, name, color}の配列）を含む',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   },
   {
@@ -518,6 +518,29 @@ interface AttachmentSummary {
   url: string;
 }
 
+interface TagSummary {
+  id: string;
+  name: string;
+  color: string;
+}
+
+/**
+ * タスクに紐づくタグの一覧（改修21回目：get_task/list_tasks/search_tasksがタグを返さず、
+ * Claudeが会話中にタスクへ付いているタグを把握できなかったため追加）
+ */
+function listTaskTags(db: Database.Database, userId: string, taskId: string): TagSummary[] {
+  return db
+    .prepare(
+      `SELECT tags.id as id, tags.name as name, tags.color as color
+       FROM task_tags
+       JOIN tags ON tags.id = task_tags.tag_id
+       WHERE task_tags.task_id = ? AND task_tags.user_id = ?
+         AND task_tags.deleted_at IS NULL AND tags.deleted_at IS NULL
+       ORDER BY tags.name`,
+    )
+    .all(taskId, userId) as TagSummary[];
+}
+
 /**
  * タスク/メモに紐づく添付の一覧（改修16回目：MCP経由で添付画像を確認できるようにする要望への
  * 対応）。UI内部で使うサムネイル（`__thumb__`prefix、apps/web側で生成）は実装の詳細なので除く
@@ -591,14 +614,15 @@ export async function callTool(
           `SELECT id, title, list_id, parent_id, priority, due_at, due_date, completed_at FROM tasks
            WHERE ${conditions.join(' AND ')} ORDER BY sort_order LIMIT ?`,
         )
-        .all(...params);
-      return { tasks: rows };
+        .all(...params) as { id: string }[];
+      return { tasks: rows.map((t) => ({ ...t, tags: listTaskTags(db, userId, t.id) })) };
     }
 
     case 'search_tasks': {
       const q = requireString(args, 'q');
       const limit = typeof args.limit === 'number' ? args.limit : 20;
-      return { tasks: searchTasks(db, userId, q, limit) };
+      const results = searchTasks(db, userId, q, limit);
+      return { tasks: results.map((t) => ({ ...t, tags: listTaskTags(db, userId, t.id) })) };
     }
 
     case 'get_task': {
@@ -607,7 +631,7 @@ export async function callTool(
         .prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
         .get(id, userId) as Record<string, unknown> | undefined;
       if (!row) throw new ToolError('task not found');
-      return { ...row, attachments: listAttachments(db, userId, 'task', id) };
+      return { ...row, tags: listTaskTags(db, userId, id), attachments: listAttachments(db, userId, 'task', id) };
     }
 
     case 'list_notes': {
