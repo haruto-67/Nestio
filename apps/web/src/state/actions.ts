@@ -83,6 +83,21 @@ export function deleteTaskTag(id: string): void {
   commitAndSync(deleteLocal('task_tags', id));
 }
 
+/**
+ * task_tags(task_id, tag_id)は論理削除を無視した一意制約（docs/schema.sql）を持つため、
+ * 以前付けて外したタグを再度付ける時、新しいidでupsertLocalすると同じ(task_id, tag_id)の
+ * 行が重複しサーバー側のUNIQUE制約違反でsyncが失敗する。既存の（論理削除済みも含む）行を
+ * 探し、あればrestoreLocalで復元し、無ければ新規作成する（改修21回目）
+ */
+export async function attachTaskTag(userId: string, taskId: string, tagId: string): Promise<void> {
+  const existing = await db.task_tags.filter((tt) => tt.task_id === taskId && tt.tag_id === tagId).first();
+  if (existing) {
+    if (existing.deleted_at !== null) commitAndSync(restoreLocal('task_tags', existing.id));
+    return;
+  }
+  commitAndSync(upsertLocal(userId, 'task_tags', uuidv7(), { task_id: taskId, tag_id: tagId }));
+}
+
 export function upsertUserSettings(userId: string, fields: UserSettingsWritableFields): void {
   commitAndSync(upsertUserSettingsLocal(userId, fields));
 }

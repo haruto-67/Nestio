@@ -493,10 +493,24 @@ function findOrCreateTagId(db: Database.Database, userId: string, name: string):
 function attachTags(db: Database.Database, userId: string, taskId: string, tagNames: string[]): void {
   for (const name of tagNames) {
     const tagId = findOrCreateTagId(db, userId, name);
-    const already = db
-      .prepare('SELECT 1 FROM task_tags WHERE task_id = ? AND tag_id = ? AND deleted_at IS NULL')
-      .get(taskId, tagId);
-    if (already) continue;
+    // task_tags(task_id, tag_id)には論理削除を無視した一意制約があるため、以前付けて外した
+    // タグを再度付ける時は新規行をINSERTせず、既存の（論理削除済み）行をrestoreする必要がある
+    // （改修21回目：新規INSERTしてUNIQUE constraint failedになる不具合を修正）
+    const existing = db
+      .prepare('SELECT id, deleted_at FROM task_tags WHERE task_id = ? AND tag_id = ?')
+      .get(taskId, tagId) as { id: string; deleted_at: number | null } | undefined;
+    if (existing && existing.deleted_at === null) continue;
+    if (existing) {
+      applyOneOpOrThrow(db, userId, {
+        op_id: uuidv7(),
+        table: 'task_tags',
+        id: existing.id,
+        op: 'restore',
+        updated_at: Date.now(),
+        fields: {},
+      });
+      continue;
+    }
     applyOneOpOrThrow(db, userId, {
       op_id: uuidv7(),
       table: 'task_tags',

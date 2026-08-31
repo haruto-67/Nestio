@@ -8,7 +8,7 @@ import {
   upsertTask,
   deleteTask,
   upsertTag,
-  upsertTaskTag,
+  attachTaskTag,
   deleteTaskTag,
   completeTask,
   skipTaskOccurrence,
@@ -130,14 +130,14 @@ export function TaskDetailPanel({
     if (existing) {
       deleteTaskTag(existing.id);
     } else {
-      upsertTaskTag(userId, uuidv7(), { task_id: taskId, tag_id: tagId });
+      void attachTaskTag(userId, taskId, tagId);
     }
   };
 
   const createAndAttachTag = (name: string) => {
     const tagId = uuidv7();
     upsertTag(userId, tagId, { name, color: '#888888' });
-    upsertTaskTag(userId, uuidv7(), { task_id: taskId, tag_id: tagId });
+    void attachTaskTag(userId, taskId, tagId);
   };
 
   return (
