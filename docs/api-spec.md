@@ -4,7 +4,7 @@
 - 認証：httpOnly / Secure / **SameSite=Strict** の**セッション Cookie**
   - PWA では localStorage にトークンを置かない（XSS で抜かれるため）
   - SameSite=Strict により CSRF（外部サイトからの偽装リクエスト）を防ぐ
-- **レート制限**：`/sync/push`・`/auth/*`・`/mcp`・`/attachments/*` にユーザー / IP 単位で適用
+- **レート制限**：`/sync/push`・`/auth/*`・`/mcp`・`/attachments/*`・`/public/*` にユーザー / IP 単位で適用
 - リクエスト / レスポンスともに JSON（添付アップロードを除く）
 - 型定義と Zod スキーマは `packages/shared` に置き、フロントとバックで共有する
 
@@ -215,4 +215,69 @@
   （`**太字**`・`*斜体*`・`` `コード` ``・箇条書き・番号付きリスト・`[text](url)`リンク・空行区切りの段落）を
   受け付け、サーバー側（`@nestio/shared`の`markdownToSafeHtml`）でUIが許可するHTMLタグへ変換してから保存する
   （改修8回目）。人間がUIで直接編集する場合はWYSIWYGのリッチテキスト編集のままで、Markdown記法のパースは
-  行わない。この変換はMCP書き込み経路にのみ適用される
+  行わない。この変換はMCP・11章の公開APIの書き込み経路にのみ適用される
+
+## 11. 公開API（外部連携用・個人用APIキー認証）
+
+外部スクリプトやZapier等のサービス連携から、MCPのOAuth 2.1（PKCE）フローを踏まずに手軽に
+叩けるようにするためのREST API（改修22回目）。
+
+**2章の「CRUD用の個別エンドポイントは作らない」との関係**：あの原則が禁じているのは
+"独自の適用ロジックを持つ二重実装"（seq採番や循環チェックを漏らしうるため）であって、
+このAPIは新しいロジックを一切持たず、MCPツール（`apps/api/src/mcp/tools.ts`の`callTool`。
+内部で`/sync/push`と同じ`applySyncOps`を通す）をそのまま呼ぶ薄いアダプタに徹している。
+MCP自身も同じやり方でこの原則の対象外になっている。
+
+### 認証
+
+- ベースパス：`/api/v1/public/*`
+- ヘッダー：`Authorization: Bearer <個人用APIキー>`（`nestio_sk_`で始まる）
+- キーは平文を保存せずSHA-256ハッシュのみ`api_keys`に保存する（`oauth_tokens`と同じ方針）
+- スコープは`read` / `read write`の2値（設定画面では「読み取りのみ」「読み書き」として選択）
+
+### APIキーの発行・管理（セッションCookie認証。設定画面から使う）
+
+| メソッド | パス | 内容 |
+|---|---|---|
+| GET | `/api-keys` | 自分のAPIキー一覧（失効済みは含まない。`key`本体は返らない） |
+| POST | `/api-keys` | `{name, scope}` → `{id, key, name, scope}`。**`key`はこのレスポンスのみで取得可能** |
+| DELETE | `/api-keys/{id}` | 失効させる（`revoked_at`を立てる。物理削除しない） |
+
+### リソースエンドポイント（APIキー認証。MCPツールと1:1対応）
+
+| メソッド | パス | 対応するMCPツール |
+|---|---|---|
+| GET | `/public/tasks` | `list_tasks`（`list_id`/`parent_id`/`include_completed`/`limit`をクエリで指定） |
+| GET | `/public/tasks/search?q=` | `search_tasks` |
+| GET | `/public/tasks/{id}` | `get_task` |
+| POST | `/public/tasks` | `create_task`（bodyはJSON、MCPツールの引数と同じ形） |
+| PATCH | `/public/tasks/{id}` | `update_task` |
+| POST | `/public/tasks/{id}/complete` | `complete_task` |
+| DELETE | `/public/tasks/{id}` | `delete_task` |
+| POST | `/public/tasks/{id}/restore` | `restore_task` |
+| GET | `/public/notes` | `list_notes` |
+| POST | `/public/notes` | `create_note` |
+| PATCH | `/public/notes/{id}` | `update_note` |
+| DELETE | `/public/notes/{id}` | `delete_note` |
+| POST | `/public/notes/{id}/restore` | `restore_note` |
+| GET | `/public/lists` | `list_lists` |
+| POST | `/public/lists` | `create_list` |
+| PATCH | `/public/lists/{id}` | `update_list` |
+| DELETE | `/public/lists/{id}` | `delete_list` |
+| GET | `/public/folders` | `list_folders` |
+| POST | `/public/folders` | `create_folder` |
+| PATCH | `/public/folders/{id}` | `update_folder` |
+| DELETE | `/public/folders/{id}` | `delete_folder` |
+| GET | `/public/tags` | `list_tags` |
+| POST | `/public/tags` | `create_tag` |
+| PATCH | `/public/tags/{id}` | `update_tag` |
+| DELETE | `/public/tags/{id}` | `delete_tag` |
+| GET | `/public/triggers` | `list_triggers` |
+| POST | `/public/triggers` | `create_trigger` |
+| PATCH | `/public/triggers/{id}` | `update_trigger` |
+| DELETE | `/public/triggers/{id}` | `delete_trigger` |
+
+- 各エンドポイントの入力・出力の形は10章のMCPツール一覧と同一（`tools.ts`の`TOOL_DEFS`が単一の情報源）
+- `write`スコープが必要な操作を`read`のみのキーで呼ぶと403
+- 添付ファイルのアップロード/ダウンロードはMCP専用ツール（`create_attachment_upload`等）のみで、
+  このAPIには公開していない（改修22回目時点。必要になったら追加を検討する）

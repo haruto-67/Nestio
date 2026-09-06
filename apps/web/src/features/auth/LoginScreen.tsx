@@ -75,7 +75,7 @@ export function LoginScreen() {
   const { onClick: handleNativeClick, error: nativeError } = useNativeGoogleLogin();
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-white text-neutral-900 dark:bg-neutral-900 dark:text-white">
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-white text-neutral-900 dark:bg-neutral-900 dark:text-white">
       <div className="flex flex-col items-center gap-2">
         <h1 className="text-3xl font-semibold">Nestio</h1>
         <p className="text-sm text-muted">巣に、今日やることを集めよう</p>

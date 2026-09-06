@@ -9,6 +9,7 @@ export * from './hatch.js';
 export * from './sync.js';
 export * from './settings.js';
 export * from './oauth.js';
+export * from './api-keys.js';
 export * from './errors.js';
 export * from './client-logs.js';
 export * from './search.js';

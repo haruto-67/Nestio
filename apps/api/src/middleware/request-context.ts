@@ -10,6 +10,8 @@ export type AppVariables = {
   env: Env;
   db: Database.Database;
   userId?: string;
+  /** 個人用APIキー認証（改修22回目）を通った場合のみセットされる。'read' / 'read write' */
+  apiKeyScope?: string;
 };
 
 /** request_id を発番し、全リクエストの開始・終了をstructured logで記録する */

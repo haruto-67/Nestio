@@ -5,6 +5,8 @@ import { sendClientLogs } from '../../api/client-logs.js';
 import { enablePushNotifications, getPushSubscriptionState, type PushSubscriptionState } from '../../lib/push-subscription.js';
 import { sendTestPush } from '../../api/push.js';
 import { createCalendarFeed, listCalendarFeeds, revokeCalendarFeed, type CalendarFeed } from '../../api/calendar.js';
+import { listApiKeys, createApiKey, revokeApiKey } from '../../api/api-keys.js';
+import type { ApiKeyRow } from '@nestio/shared';
 import { exportAllData, importAllData } from '../../api/export.js';
 import { listSessions, revokeSession, type SessionInfo } from '../../api/sessions.js';
 import { formatDateTimeJst } from '../../lib/datetime.js';
@@ -34,6 +36,15 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
   // 楽観的更新で見た目の反応自体は直したが、連打そのものを防ぐ二重の保険として追加する）
   const [revokingSessionIds, setRevokingSessionIds] = useState<Set<string>>(new Set());
   const [revokingFeedIds, setRevokingFeedIds] = useState<Set<string>>(new Set());
+  // 「API化」機能（改修22回目）：外部スクリプト・Zapier等から叩ける個人用APIキーの発行・失効
+  const [apiKeys, setApiKeys] = useState<ApiKeyRow[]>([]);
+  const [apiKeyStatus, setApiKeyStatus] = useState<string | null>(null);
+  const [showApiKeyForm, setShowApiKeyForm] = useState(false);
+  const [newApiKeyName, setNewApiKeyName] = useState('');
+  const [newApiKeyScope, setNewApiKeyScope] = useState<'read' | 'write'>('read');
+  // 発行直後のみサーバーから平文が返る。DBにはハッシュしか残らないため、この画面を離れると二度と見られない
+  const [issuedApiKey, setIssuedApiKey] = useState<string | null>(null);
+  const [revokingApiKeyIds, setRevokingApiKeyIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     getPushSubscriptionState()
@@ -41,6 +52,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
       .catch(() => setPushState({ permission: 'unsupported', subscribed: false }));
     listCalendarFeeds().then(setFeeds).catch(() => {});
     listSessions().then(setSessions).catch(() => {});
+    listApiKeys().then(setApiKeys).catch(() => {});
   }, []);
 
   const handleRevokeSession = async (id: string) => {
@@ -116,6 +128,39 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
     } catch (err) {
       setCalendarStatus('作成に失敗しました');
       console.error(err);
+    }
+  };
+
+  const handleCreateApiKey = async () => {
+    if (!newApiKeyName.trim()) return;
+    try {
+      const { key } = await createApiKey(newApiKeyName.trim(), newApiKeyScope);
+      setIssuedApiKey(key);
+      setNewApiKeyName('');
+      setShowApiKeyForm(false);
+      setApiKeys(await listApiKeys());
+    } catch (err) {
+      setApiKeyStatus('作成に失敗しました');
+      console.error(err);
+    }
+  };
+
+  const handleRevokeApiKey = async (id: string) => {
+    if (revokingApiKeyIds.has(id)) return;
+    setRevokingApiKeyIds((prev) => new Set(prev).add(id));
+    try {
+      await revokeApiKey(id);
+      // handleRevokeSession/handleRevokeFeedと同じ理由（連続失効時のレースコンディション回避）で楽観的更新にする
+      setApiKeys((prev) => prev.filter((k) => k.id !== id));
+    } catch (err) {
+      console.error(err);
+      setApiKeyStatus('失効に失敗しました');
+    } finally {
+      setRevokingApiKeyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -284,6 +329,109 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
               </ul>
             )}
             {calendarStatus && <p className="mt-1 break-all text-xs text-neutral-400">{calendarStatus}</p>}
+          </CollapsibleSection>
+        </div>
+
+        <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          {/* 外部スクリプト・Zapier等から叩ける個人用APIキー（改修22回目）。
+              MCP（Claudeとの会話）とは別の、素のREST APIとしての読み書き用 */}
+          <CollapsibleSection
+            title={`APIキー（外部連携用）${apiKeys.length > 0 ? `（${apiKeys.length}件）` : ''}`}
+            action={
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowApiKeyForm(true);
+                }}
+                className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                + 発行
+              </button>
+            }
+          >
+            <p className="mt-2 text-xs text-neutral-400">
+              外部スクリプトやZapier等の連携から「Authorization: Bearer &lt;キー&gt;」ヘッダーで
+              /api/v1/public/以下のエンドポイントを呼べます
+            </p>
+            {issuedApiKey && (
+              <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs dark:border-amber-700 dark:bg-amber-950/40">
+                <p className="mb-1 font-medium text-amber-700 dark:text-amber-300">
+                  このキーは今だけ表示されます。控えてください
+                </p>
+                <div className="flex items-center gap-1">
+                  <code className="min-w-0 flex-1 truncate rounded bg-white px-1 py-0.5 dark:bg-neutral-900">
+                    {issuedApiKey}
+                  </code>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(issuedApiKey);
+                        setApiKeyStatus('コピーしました');
+                      } catch {
+                        setApiKeyStatus(null);
+                      }
+                    }}
+                    className="shrink-0 rounded-md border border-neutral-300 px-2 py-1 dark:border-neutral-700"
+                  >
+                    コピー
+                  </button>
+                </div>
+                <button
+                  onClick={() => setIssuedApiKey(null)}
+                  className="mt-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                >
+                  閉じる
+                </button>
+              </div>
+            )}
+            {showApiKeyForm && (
+              <div className="mt-2 flex flex-col gap-1">
+                <input
+                  autoFocus
+                  value={newApiKeyName}
+                  onChange={(e) => setNewApiKeyName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleCreateApiKey()}
+                  placeholder="名前（例: 自動化スクリプト）"
+                  className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-xs dark:border-neutral-700"
+                />
+                <div className="flex items-center gap-2">
+                  <select
+                    value={newApiKeyScope}
+                    onChange={(e) => setNewApiKeyScope(e.target.value as 'read' | 'write')}
+                    className="rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-xs dark:border-neutral-700"
+                  >
+                    <option value="read">読み取りのみ</option>
+                    <option value="write">読み書き</option>
+                  </select>
+                  <button
+                    onClick={handleCreateApiKey}
+                    className="shrink-0 rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-600 dark:border-blue-700 dark:text-blue-300"
+                  >
+                    発行
+                  </button>
+                </div>
+              </div>
+            )}
+            {apiKeys.length > 0 && (
+              <ul className="mt-2 flex flex-col gap-1">
+                {apiKeys.map((k) => (
+                  <li key={k.id} className="flex items-center justify-between text-xs text-neutral-400">
+                    <span className="min-w-0 flex-1 truncate">
+                      {k.name}（{k.scope === 'read write' ? '読み書き' : '読み取りのみ'}）
+                    </span>
+                    <button
+                      onClick={() => handleRevokeApiKey(k.id)}
+                      disabled={revokingApiKeyIds.has(k.id)}
+                      title="このキーを無効化する"
+                      className="ml-2 shrink-0 text-red-500 disabled:opacity-40"
+                    >
+                      {revokingApiKeyIds.has(k.id) ? '処理中…' : '失効させる'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {apiKeyStatus && <p className="mt-1 text-xs text-neutral-400">{apiKeyStatus}</p>}
           </CollapsibleSection>
         </div>
 

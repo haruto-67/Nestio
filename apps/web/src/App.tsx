@@ -81,7 +81,7 @@ function Root() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-neutral-400">
+      <div className="flex min-h-dvh items-center justify-center text-sm text-neutral-400">
         読み込み中...
       </div>
     );
@@ -567,7 +567,11 @@ function MainLayout() {
   );
 
   return (
-    <div className="flex h-screen flex-col bg-[#FBFAF6] text-neutral-900 dark:bg-[#1a1a18] dark:text-white">
+    // h-screen(=100vh)ではなくh-dvh(動的ビューポート高さ)を使う（改修22回目：Webモバイルの
+    // Safariでアドレスバーの表示/非表示によりツールバー分の高さが変動するにもかかわらず
+    // 100vhは固定値扱いになるため、上下の余白がずれたり下部タブバーが画面外にはみ出したり
+    // していた不具合の修正）
+    <div className="flex h-dvh flex-col bg-[#FBFAF6] text-neutral-900 dark:bg-[#1a1a18] dark:text-white">
       {/* 管理者バッジ追加後、SyncStatusIndicatorを含めた全ボタンが画面幅に収まらず横スクロールが
           発生し、右端の設定ボタンがスライドしないと押せなくなっていた（改修12回目）。
           十分な幅があるドロワー側（下記）に同期状態を移し、ヘッダーはボタン群のみにした。
@@ -845,7 +849,7 @@ function MainLayout() {
           押しやすいため、タスク/メモの切替をここに集約する。メニューは下部タブに収まらず
           操作しづらいとのフィードバックで左上ハンバーガー（上記ヘッダー）に戻した
           （改修21回目フォローアップ）。fixed配置ではなく通常のflex項目にすることで、
-          h-screen flex-colの残り領域をTaskDetailArea等が正しく占有でき、
+          h-dvh flex-colの残り領域をTaskDetailArea等が正しく占有でき、
           被せ用のpadding調整が不要になる */}
       <nav className="flex shrink-0 border-t border-neutral-200 bg-[#FBFAF6] pb-[env(safe-area-inset-bottom)] dark:border-neutral-800 dark:bg-[#1a1a18] md:hidden">
         <button

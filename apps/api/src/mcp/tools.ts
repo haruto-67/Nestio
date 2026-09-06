@@ -407,7 +407,8 @@ export const TOOL_DEFS: ToolDef[] = [
   },
 ];
 
-class ToolError extends Error {}
+// 改修22回目：公開API（routes/public-api.ts）がinstanceofで判定し404/400を出し分けるためexportする
+export class ToolError extends Error {}
 
 function requireString(args: Record<string, unknown>, key: string): string {
   const v = args[key];
