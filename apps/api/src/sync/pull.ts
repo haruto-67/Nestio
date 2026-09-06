@@ -4,9 +4,10 @@ import { isImplementedSyncTable } from './tables.js';
 import { getLastSeq, getGcBoundarySeq } from './seq.js';
 
 const ALL_TABLES = syncableTableSchema.options;
-// リスト共有（改修22回目）：この2テーブルだけ、自分がownerの行に加えて
-// shared_row_changes経由で複製された行もマージして返す（docs/sync-protocol.md 10章）
-const SHAREABLE_TABLES = new Set(['tasks', 'lists']);
+// リスト/フォルダ共有（改修22回目・改修22回目フォローアップ）：この3テーブルだけ、
+// 自分がownerの行に加えてshared_row_changes経由で複製された行もマージして返す
+// （docs/sync-protocol.md 10章）
+const SHAREABLE_TABLES = new Set(['tasks', 'lists', 'folders']);
 
 /**
  * 各テーブルごとに `seq > since` を limit 件まで取得する（sync-protocol.md 3章）。

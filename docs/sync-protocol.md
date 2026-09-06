@@ -279,6 +279,34 @@ CREATE TABLE shared_row_changes (
 - owner側の変更で共有先editorのseqも進むため、`broadcastBump`は変更を行ったuser_idだけでなく、
   影響を受けた各editorのuser_idにも`bump`イベントを送る
 
+### フォルダ共有（改修22回目フォローアップ）
+
+リスト共有と対称の、フォルダ単位の共有。**「後からそのフォルダに追加/移動されたリストも
+自動的に共有対象になる」動的共有**である点がリスト共有と異なる（ユーザー要望により意図的にこう設計した）。
+
+- `folder_shares(id, folder_id, owner_user_id, invited_user_id, invited_email, status, created_at, accepted_at, deleted_at)`。
+  招待・承諾・解除のAPI形状・権限モデル（編集権限のみ）はlist_sharesと完全に対称
+- `shared_row_changes.table_name`に`'folders'`を追加（CHECK制約をテーブル再作成で緩和）。
+  `folders`もpull時にown+shared複製をUNIONする対象（`tasks`・`lists`と同じ扱い）
+- **リストの編集可否判定の拡張**：`resolveEditableListOwner`は、
+  「リストを直接list_sharesで共有されている」に加えて
+  「リストの所属フォルダ（`lists.folder_id`）がfolder_sharesで共有されている」場合も許可する。
+  これによりtasks/listsの共有先editor集合（`listShareEditorIds`）も自動的に
+  フォルダ経由の共有先を含むようになり、`apply.ts`・`pull.ts`側のコードは
+  リスト共有と共通のまま変更不要で済む
+- **動的共有の実現**：
+  - 新規リストが最初から共有中フォルダのfolder_idを持って作られた場合、
+    そのリスト自体のupsert成功時に（listShareEditorIds経由で）自動的に複製される
+  - 既存リストが共有中フォルダへ移動（folder_idが変わる）した場合、そのリストの
+    既存タスク全件を新しい共有先へ複製し直す（`replicateAllTasksInList`）。
+    逆に共有中フォルダから外れた場合、以後の新しい変更は複製されなくなるが、
+    既に複製済みの過去データがeditor側に残る点はリスト間移動と同じ簡略化として許容する
+  - フォルダ共有の承諾時は、そのフォルダ自体・配下の全リスト・各リストの全タスクを
+    一括で新しいeditorへ複製する（`replicateExistingFolderToNewEditor`）
+- **フォルダ自体の書き込みはownerのみ**（リスト共有と同じ方針）。フォルダ名の変更等は
+  editorには許可しない。フォルダ自体の複製は「editorが名前を見られるようにする」ためだけの、
+  読み取り専用の反映
+
 ## 11. テストで必ず確認すること
 
 - [ ] 機内モードで作成 → 復帰 → 別デバイスに反映される

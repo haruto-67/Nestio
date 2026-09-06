@@ -34,9 +34,15 @@ import { useOutsideClick } from '../../lib/useOutsideClick.js';
 import { useSwipeAction } from '../../lib/useSwipeAction.js';
 import { EditableLabel, type EditableLabelHandle } from './EditableLabel.js';
 import { ListShareModal } from './ListShareModal.js';
+import { FolderShareModal } from './FolderShareModal.js';
 import { listIncomingShares, acceptListShare, revokeListShare } from '../../api/list-shares.js';
+import {
+  listIncomingFolderShares,
+  acceptFolderShare,
+  revokeFolderShare,
+} from '../../api/folder-shares.js';
 import { syncNow } from '../../sync/engine.js';
-import type { IncomingListShareView } from '@nestio/shared';
+import type { IncomingListShareView, IncomingFolderShareView } from '@nestio/shared';
 import type { ViewSelection } from '../../state/view.js';
 
 const LIST_DRAG_TYPE = 'text/nestio-list-id';
@@ -101,54 +107,71 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
   // すぐ上・すぐ下（＝実質移動にならない位置）にも無条件に線が出てしまっていた
   // （改修21回目）。タッチのtouchDrag.draggedIdと合わせて集約する
   const [mouseDraggedListId, setMouseDraggedListId] = useState<string | null>(null);
-  // 共有管理モーダル（改修22回目）：どのリストを共有しようとしているか
+  // 共有管理モーダル（改修22回目）：どのリスト/フォルダを共有しようとしているか
   const [shareModalList, setShareModalList] = useState<{ id: string; name: string } | null>(null);
+  const [shareModalFolder, setShareModalFolder] = useState<{ id: string; name: string } | null>(null);
   // 受け取った招待（改修22回目フォローアップ：設定画面だと気付きにくいという指摘を受け、
-  // リスト一覧側に「どのリストを」「誰から」共有されたか出す。pendingのみここに表示し、
-  // 承諾済みの離脱は引き続き設定画面から行う）
-  const [pendingShares, setPendingShares] = useState<IncomingListShareView[]>([]);
+  // リスト一覧側に「どのリスト/フォルダを」「誰から」共有されたか出す。リスト招待とフォルダ招待を
+  // 共通の表現にまとめて表示する。pendingのみここに表示し、承諾済みの離脱は設定画面から行う）
+  interface PendingInvite {
+    kind: 'list' | 'folder';
+    shareId: string;
+    name: string;
+    ownerEmail: string;
+  }
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [processingShareIds, setProcessingShareIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    listIncomingShares()
-      .then((shares) => setPendingShares(shares.filter((s) => s.status === 'pending')))
+    Promise.all([listIncomingShares(), listIncomingFolderShares()])
+      .then(([listShares, folderShares]) => {
+        const fromLists: PendingInvite[] = listShares
+          .filter((s: IncomingListShareView) => s.status === 'pending')
+          .map((s) => ({ kind: 'list' as const, shareId: s.id, name: s.list_name, ownerEmail: s.owner_email }));
+        const fromFolders: PendingInvite[] = folderShares
+          .filter((s: IncomingFolderShareView) => s.status === 'pending')
+          .map((s) => ({ kind: 'folder' as const, shareId: s.id, name: s.folder_name, ownerEmail: s.owner_email }));
+        setPendingInvites([...fromLists, ...fromFolders]);
+      })
       .catch(() => {});
   }, []);
 
-  const handleAcceptInvite = async (id: string) => {
-    if (processingShareIds.has(id)) return;
-    setProcessingShareIds((prev) => new Set(prev).add(id));
+  const handleAcceptInvite = async (invite: PendingInvite) => {
+    if (processingShareIds.has(invite.shareId)) return;
+    setProcessingShareIds((prev) => new Set(prev).add(invite.shareId));
     try {
-      await acceptListShare(id);
-      setPendingShares((prev) => prev.filter((s) => s.id !== id));
+      if (invite.kind === 'list') await acceptListShare(invite.shareId);
+      else await acceptFolderShare(invite.shareId);
+      setPendingInvites((prev) => prev.filter((s) => s.shareId !== invite.shareId));
       // 承諾直後は既存タスク・リスト自体の複製がまだローカルDBに無いため、すぐ同期を走らせる
       await syncNow();
-      showToast('共有リストに参加しました');
+      showToast(invite.kind === 'list' ? '共有リストに参加しました' : '共有フォルダに参加しました');
     } catch (err) {
       console.error(err);
       showToast('参加に失敗しました');
     } finally {
       setProcessingShareIds((prev) => {
         const next = new Set(prev);
-        next.delete(id);
+        next.delete(invite.shareId);
         return next;
       });
     }
   };
 
-  const handleDeclineInvite = async (id: string) => {
-    if (processingShareIds.has(id)) return;
-    setProcessingShareIds((prev) => new Set(prev).add(id));
+  const handleDeclineInvite = async (invite: PendingInvite) => {
+    if (processingShareIds.has(invite.shareId)) return;
+    setProcessingShareIds((prev) => new Set(prev).add(invite.shareId));
     try {
-      await revokeListShare(id);
-      setPendingShares((prev) => prev.filter((s) => s.id !== id));
+      if (invite.kind === 'list') await revokeListShare(invite.shareId);
+      else await revokeFolderShare(invite.shareId);
+      setPendingInvites((prev) => prev.filter((s) => s.shareId !== invite.shareId));
     } catch (err) {
       console.error(err);
       showToast('辞退に失敗しました');
     } finally {
       setProcessingShareIds((prev) => {
         const next = new Set(prev);
-        next.delete(id);
+        next.delete(invite.shareId);
         return next;
       });
     }
@@ -450,31 +473,34 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
         ))}
       </div>
 
-      {/* リストの共有招待（改修22回目フォローアップ）：設定画面だと気付きにくいという指摘を
-          受け、リスト一覧の直前に「どのリストを」「誰(メールアドレス)から」共有されたか出す */}
-      {pendingShares.length > 0 && (
+      {/* リスト/フォルダの共有招待（改修22回目・フォローアップ）：設定画面だと気付きにくいという
+          指摘を受け、リスト一覧の直前に「何を」「誰(メールアドレス)から」共有されたか出す */}
+      {pendingInvites.length > 0 && (
         <div className="mt-2 flex flex-col gap-1 px-2">
           <div className="px-1 text-xs font-semibold uppercase text-neutral-400">招待</div>
-          {pendingShares.map((s) => (
+          {pendingInvites.map((invite) => (
             <div
-              key={s.id}
+              key={invite.shareId}
               className="flex items-center justify-between gap-2 rounded-md bg-blue-50 px-2 py-1.5 dark:bg-blue-950/30"
             >
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{s.list_name}</div>
-                <div className="truncate text-[10px] text-neutral-400">{s.owner_email}から共有</div>
+                <div className="truncate text-sm font-medium">
+                  {invite.kind === 'folder' && <FolderPlus size={11} className="mr-1 inline shrink-0 align-[-1px] text-neutral-400" />}
+                  {invite.name}
+                </div>
+                <div className="truncate text-[10px] text-neutral-400">{invite.ownerEmail}から共有</div>
               </div>
               <div className="flex shrink-0 gap-1">
                 <button
-                  onClick={() => handleAcceptInvite(s.id)}
-                  disabled={processingShareIds.has(s.id)}
+                  onClick={() => handleAcceptInvite(invite)}
+                  disabled={processingShareIds.has(invite.shareId)}
                   className="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-600 disabled:opacity-40 dark:border-blue-700 dark:text-blue-300"
                 >
                   承諾
                 </button>
                 <button
-                  onClick={() => handleDeclineInvite(s.id)}
-                  disabled={processingShareIds.has(s.id)}
+                  onClick={() => handleDeclineInvite(invite)}
+                  disabled={processingShareIds.has(invite.shareId)}
                   className="rounded-md px-2 py-1 text-xs text-neutral-400 hover:text-neutral-700 disabled:opacity-40 dark:hover:text-neutral-200"
                 >
                   辞退
@@ -576,6 +602,15 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
               >
                 <Plus size={14} />
               </button>
+              {/* フォルダ共有（改修22回目フォローアップ）：以後このフォルダへ追加/移動した
+                  リストも自動的に共有対象になる（動的共有） */}
+              <button
+                onClick={() => setShareModalFolder({ id: f.id, name: f.name })}
+                title="共有"
+                className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+              >
+                <Users size={13} />
+              </button>
               <button
                 onClick={() => removeFolder(f.id)}
                 title="フォルダを削除"
@@ -629,6 +664,13 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
           listId={shareModalList.id}
           listName={shareModalList.name}
           onClose={() => setShareModalList(null)}
+        />
+      )}
+      {shareModalFolder && (
+        <FolderShareModal
+          folderId={shareModalFolder.id}
+          folderName={shareModalFolder.name}
+          onClose={() => setShareModalFolder(null)}
         />
       )}
     </nav>

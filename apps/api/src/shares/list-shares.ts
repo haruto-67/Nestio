@@ -125,26 +125,33 @@ export function revokeShare(db: Database.Database, callerId: string, shareId: st
   return result.changes > 0;
 }
 
-/** そのユーザーが編集可能な共有リストのlist_id一覧（accepted のみ） */
-export function acceptedSharedListIds(db: Database.Database, invitedUserId: string): string[] {
-  const rows = db
-    .prepare(
-      `SELECT list_id FROM list_shares WHERE invited_user_id = ? AND status = 'accepted' AND deleted_at IS NULL`,
-    )
-    .all(invitedUserId) as { list_id: string }[];
-  return rows.map((r) => r.list_id);
-}
-
-/** callerIdがlistIdを編集できるか（owner本人、またはacceptedな共有を持つ）。持つならownerのuser_idを返す */
+/**
+ * callerIdがlistIdを編集できるか（owner本人、リストを直接共有されている、またはリストの
+ * 所属フォルダを共有されている）。持つならownerのuser_idを返す（改修22回目フォローアップ：
+ * フォルダ共有対応。フォルダ経由の共有は動的＝以後そのフォルダに追加/移動されたリストにも及ぶ）
+ */
 export function resolveEditableListOwner(db: Database.Database, callerId: string, listId: string): string | null {
-  const ownerId = findListOwnerId(db, listId);
-  if (!ownerId) return null;
-  if (ownerId === callerId) return ownerId;
+  const list = db.prepare('SELECT user_id, folder_id FROM lists WHERE id = ? AND deleted_at IS NULL').get(listId) as
+    | { user_id: string; folder_id: string | null }
+    | undefined;
+  if (!list) return null;
+  if (list.user_id === callerId) return list.user_id;
 
-  const shared = db
+  const sharedDirectly = db
     .prepare(
       `SELECT 1 FROM list_shares WHERE list_id = ? AND invited_user_id = ? AND status = 'accepted' AND deleted_at IS NULL`,
     )
     .get(listId, callerId);
-  return shared ? ownerId : null;
+  if (sharedDirectly) return list.user_id;
+
+  if (list.folder_id) {
+    const sharedViaFolder = db
+      .prepare(
+        `SELECT 1 FROM folder_shares WHERE folder_id = ? AND invited_user_id = ? AND status = 'accepted' AND deleted_at IS NULL`,
+      )
+      .get(list.folder_id, callerId);
+    if (sharedViaFolder) return list.user_id;
+  }
+
+  return null;
 }

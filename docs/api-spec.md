@@ -300,3 +300,17 @@ MCP自身も同じやり方でこの原則の対象外になっている。
   タグの新規作成、Hatchトリガーはownerのみ
 - 新規ユーザーの招待（メール送信によるサインアップ導線）は非対応。招待は
   Nestioに登録済み（`email_verified`済み）のメールアドレスのみ受け付ける
+
+## 13. フォルダ共有（改修22回目フォローアップ）
+
+フォルダ単位で既存ユーザーへ編集権限を招待する機能。API形状・権限モデルは12章のリスト共有と対称。
+**リスト共有と異なり動的共有**：以後そのフォルダに追加/移動されたリストも自動的に共有対象になる
+（詳細は`sync-protocol.md` 10章「フォルダ共有」を参照）。
+
+| メソッド | パス | 内容 |
+|---|---|---|
+| POST | `/folder-shares` | `{folder_id, invited_email}` → 招待を作成（`invited_email`は既存ユーザーのみ） |
+| GET | `/folder-shares/outgoing?folder_id=` | 自分が送った招待の一覧 |
+| GET | `/folder-shares/incoming` | 自分が受け取った招待の一覧（pending/accepted両方） |
+| POST | `/folder-shares/{id}/accept` | 招待された本人のみ承諾できる。承諾するとフォルダ自体・配下の全リスト・全タスクが複製される |
+| DELETE | `/folder-shares/{id}` | 共有を解除する |

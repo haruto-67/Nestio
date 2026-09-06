@@ -6,6 +6,7 @@ import { raiseGcBoundarySeq } from './seq.js';
 import { pullChanges } from './pull.js';
 import { applySyncOps } from './apply.js';
 import { inviteToList, acceptShare } from '../shares/list-shares.js';
+import { inviteToFolder, acceptFolderShare } from '../shares/folder-shares.js';
 
 describe('pullChanges', () => {
   let db: Database.Database;
@@ -128,5 +129,59 @@ describe('pullChanges: リスト共有（改修22回目）', () => {
 
     expect(result.changes.tasks).toHaveLength(0);
     expect(result.changes.lists).toHaveLength(0);
+  });
+});
+
+describe('pullChanges: フォルダ共有（改修22回目フォローアップ）', () => {
+  let db: Database.Database;
+  let ownerId: string;
+  let editorId: string;
+  let folderId: string;
+  let listId: string;
+
+  afterEach(() => db?.close());
+
+  function insertFolder(userId: string): string {
+    const id = uuidv7();
+    db.prepare(
+      `INSERT INTO folders (id, user_id, name, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, 'フォルダ', 1, ?, ?, NULL, 1)`,
+    ).run(id, userId, Date.now(), Date.now());
+    return id;
+  }
+
+  function setup() {
+    db = createTestDb();
+    ownerId = uuidv7();
+    editorId = uuidv7();
+    insertTestUser(db, ownerId);
+    insertTestUser(db, editorId);
+    folderId = insertFolder(ownerId);
+    listId = insertTestList(db, ownerId);
+    db.prepare('UPDATE lists SET folder_id = ? WHERE id = ?').run(folderId, listId);
+  }
+
+  it('editorのpullにはフォルダ自体・配下リスト・タスクがすべて含まれる', () => {
+    setup();
+    const taskId = insertTestTask(db, ownerId, listId, 'フォルダ共有タスク');
+    const share = inviteToFolder(db, ownerId, folderId, `${editorId}@example.com`);
+    acceptFolderShare(db, editorId, share.id);
+
+    const result = pullChanges(db, editorId, 0, 500);
+
+    expect(result.changes.folders?.map((f) => (f as { id: string }).id)).toContain(folderId);
+    expect(result.changes.lists?.map((l) => (l as { id: string }).id)).toContain(listId);
+    expect(result.changes.tasks?.map((t) => (t as { id: string }).id)).toContain(taskId);
+  });
+
+  it('フォルダ未共有のeditorのpullにはフォルダ・配下データが含まれない', () => {
+    setup();
+    insertTestTask(db, ownerId, listId, '共有していないタスク');
+
+    const result = pullChanges(db, editorId, 0, 500);
+
+    expect(result.changes.folders).toHaveLength(0);
+    expect(result.changes.lists).toHaveLength(0);
+    expect(result.changes.tasks).toHaveLength(0);
   });
 });

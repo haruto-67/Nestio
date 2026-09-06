@@ -4,6 +4,7 @@ import { uuidv7, type SyncOp } from '@nestio/shared';
 import { createTestDb, insertTestUser } from '../test-utils/db.js';
 import { applySyncOps } from './apply.js';
 import { inviteToList, acceptShare, revokeShare } from '../shares/list-shares.js';
+import { inviteToFolder, acceptFolderShare, revokeFolderShare } from '../shares/folder-shares.js';
 
 function makeListOp(userId: string, listId: string, updatedAt: number): SyncOp {
   return {
@@ -1018,5 +1019,127 @@ describe('applySyncOps: リスト共有（改修22回目）', () => {
       .prepare(`SELECT 1 FROM shared_row_changes WHERE user_id = ? AND table_name = 'tasks' AND row_id = ?`)
       .get(editorId, taskId);
     expect(replicated).toBeTruthy();
+  });
+});
+
+function insertFolder(db: Database.Database, userId: string): string {
+  const id = uuidv7();
+  db.prepare(
+    `INSERT INTO folders (id, user_id, name, sort_order, created_at, updated_at, deleted_at, seq)
+     VALUES (?, ?, 'フォルダ', 1, ?, ?, NULL, 1)`,
+  ).run(id, userId, Date.now(), Date.now());
+  return id;
+}
+
+describe('applySyncOps: フォルダ共有（改修22回目フォローアップ）', () => {
+  let db: Database.Database;
+  let ownerId: string;
+  let editorId: string;
+  let folderId: string;
+  let listId: string;
+
+  function setup() {
+    db = createTestDb();
+    ownerId = uuidv7();
+    editorId = uuidv7();
+    insertTestUser(db, ownerId);
+    insertTestUser(db, editorId);
+    folderId = insertFolder(db, ownerId);
+    listId = uuidv7();
+    applySyncOps(db, ownerId, [
+      {
+        op_id: uuidv7(),
+        table: 'lists',
+        id: listId,
+        op: 'upsert',
+        updated_at: Date.now(),
+        fields: { name: 'リスト', sort_order: 1, folder_id: folderId },
+      },
+    ]);
+  }
+
+  afterEach(() => db?.close());
+
+  it('フォルダを共有されたeditorは、フォルダ内リストのタスクを編集できる', () => {
+    setup();
+    const share = inviteToFolder(db, ownerId, folderId, `${editorId}@example.com`);
+    acceptFolderShare(db, editorId, share.id);
+
+    const taskId = uuidv7();
+    const res = applySyncOps(db, editorId, [makeTaskOp(listId, taskId, Date.now(), { title: 'フォルダ経由' })]);
+    expect(res.rejected).toEqual([]);
+    expect((db.prepare('SELECT user_id FROM tasks WHERE id = ?').get(taskId) as { user_id: string }).user_id).toBe(
+      ownerId,
+    );
+  });
+
+  it('動的共有：フォルダ共有後に新しく作られたリストも自動的に編集可能になる', () => {
+    setup();
+    const share = inviteToFolder(db, ownerId, folderId, `${editorId}@example.com`);
+    acceptFolderShare(db, editorId, share.id);
+
+    const newListId = uuidv7();
+    applySyncOps(db, ownerId, [
+      {
+        op_id: uuidv7(),
+        table: 'lists',
+        id: newListId,
+        op: 'upsert',
+        updated_at: Date.now(),
+        fields: { name: '後から追加したリスト', sort_order: 2, folder_id: folderId },
+      },
+    ]);
+
+    const taskId = uuidv7();
+    const res = applySyncOps(db, editorId, [makeTaskOp(newListId, taskId, Date.now(), {})]);
+    expect(res.rejected).toEqual([]);
+  });
+
+  it('動的共有：既存リストをフォルダへ移動すると、既存タスクごとeditorが編集可能になる', () => {
+    setup();
+    const otherListId = uuidv7();
+    applySyncOps(db, ownerId, [
+      { op_id: uuidv7(), table: 'lists', id: otherListId, op: 'upsert', updated_at: Date.now(), fields: { name: '元々別の場所', sort_order: 3 } },
+    ]);
+    const existingTaskId = uuidv7();
+    applySyncOps(db, ownerId, [makeTaskOp(otherListId, existingTaskId, Date.now(), { title: '移動前から存在' })]);
+
+    const share = inviteToFolder(db, ownerId, folderId, `${editorId}@example.com`);
+    acceptFolderShare(db, editorId, share.id);
+
+    // フォルダへ移動
+    applySyncOps(db, ownerId, [
+      { op_id: uuidv7(), table: 'lists', id: otherListId, op: 'upsert', updated_at: Date.now(), fields: { folder_id: folderId } },
+    ]);
+
+    // 移動前から存在した既存タスクもeditorへ複製されている
+    const replicated = db
+      .prepare(`SELECT 1 FROM shared_row_changes WHERE user_id = ? AND table_name = 'tasks' AND row_id = ?`)
+      .get(editorId, existingTaskId);
+    expect(replicated).toBeTruthy();
+
+    // 移動後は編集もできる
+    const res = applySyncOps(db, editorId, [
+      { op_id: uuidv7(), table: 'tasks', id: existingTaskId, op: 'upsert', updated_at: Date.now(), fields: { title: '移動後に編集' } },
+    ]);
+    expect(res.rejected).toEqual([]);
+  });
+
+  it('フォルダ共有を解除すると以後editorは書き込めなくなる', () => {
+    setup();
+    const share = inviteToFolder(db, ownerId, folderId, `${editorId}@example.com`);
+    acceptFolderShare(db, editorId, share.id);
+    revokeFolderShare(db, ownerId, share.id);
+
+    const taskId = uuidv7();
+    const res = applySyncOps(db, editorId, [makeTaskOp(listId, taskId, Date.now(), {})]);
+    expect(res.rejected).toEqual([{ op_id: expect.any(String), reason: 'forbidden' }]);
+  });
+
+  it('フォルダ共有されていないユーザーは書き込めない', () => {
+    setup();
+    const taskId = uuidv7();
+    const res = applySyncOps(db, editorId, [makeTaskOp(listId, taskId, Date.now(), {})]);
+    expect(res.rejected).toEqual([{ op_id: expect.any(String), reason: 'forbidden' }]);
   });
 });

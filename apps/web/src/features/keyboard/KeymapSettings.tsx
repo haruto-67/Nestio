@@ -7,7 +7,8 @@ import { sendTestPush } from '../../api/push.js';
 import { createCalendarFeed, listCalendarFeeds, revokeCalendarFeed, type CalendarFeed } from '../../api/calendar.js';
 import { listApiKeys, createApiKey, revokeApiKey } from '../../api/api-keys.js';
 import { listIncomingShares, revokeListShare } from '../../api/list-shares.js';
-import type { ApiKeyRow, IncomingListShareView } from '@nestio/shared';
+import { listIncomingFolderShares, revokeFolderShare } from '../../api/folder-shares.js';
+import type { ApiKeyRow, IncomingListShareView, IncomingFolderShareView } from '@nestio/shared';
 import { exportAllData, importAllData } from '../../api/export.js';
 import { listSessions, revokeSession, type SessionInfo } from '../../api/sessions.js';
 import { formatDateTimeJst } from '../../lib/datetime.js';
@@ -49,6 +50,8 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
   // 「共有リスト」機能（改修22回目）：自分が招待された（受信した）共有の一覧。承諾するとそのリストの
   // タスクを編集できるようになる。招待する側（送信）はSidebarのリスト行「共有」ボタンから行う
   const [incomingShares, setIncomingShares] = useState<IncomingListShareView[]>([]);
+  // フォルダ共有版（改修22回目フォローアップ）。リスト版と同じ役割分担
+  const [incomingFolderShares, setIncomingFolderShares] = useState<IncomingFolderShareView[]>([]);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [processingShareIds, setProcessingShareIds] = useState<Set<string>>(new Set());
 
@@ -60,6 +63,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
     listSessions().then(setSessions).catch(() => {});
     listApiKeys().then(setApiKeys).catch(() => {});
     listIncomingShares().then(setIncomingShares).catch(() => {});
+    listIncomingFolderShares().then(setIncomingFolderShares).catch(() => {});
   }, []);
 
   const handleRevokeSession = async (id: string) => {
@@ -172,6 +176,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
   };
 
   const acceptedShares = incomingShares.filter((s) => s.status === 'accepted');
+  const acceptedFolderShares = incomingFolderShares.filter((s) => s.status === 'accepted');
 
   const handleLeaveShare = async (id: string) => {
     if (processingShareIds.has(id)) return;
@@ -179,6 +184,24 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
     try {
       await revokeListShare(id);
       setIncomingShares((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      console.error(err);
+      setShareStatus('離脱に失敗しました');
+    } finally {
+      setProcessingShareIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const handleLeaveFolderShare = async (id: string) => {
+    if (processingShareIds.has(id)) return;
+    setProcessingShareIds((prev) => new Set(prev).add(id));
+    try {
+      await revokeFolderShare(id);
+      setIncomingFolderShares((prev) => prev.filter((s) => s.id !== id));
     } catch (err) {
       console.error(err);
       setShareStatus('離脱に失敗しました');
@@ -388,6 +411,36 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
               </ul>
             )}
             {shareStatus && <p className="mt-1 text-xs text-neutral-400">{shareStatus}</p>}
+          </CollapsibleSection>
+        </div>
+
+        <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          {/* フォルダ共有版（改修22回目フォローアップ）。参加すると、以後そのフォルダへ
+              追加/移動されたリストも自動的に編集できるようになる */}
+          <CollapsibleSection
+            title={`参加中の共有フォルダ${acceptedFolderShares.length > 0 ? `（${acceptedFolderShares.length}件）` : ''}`}
+          >
+            {acceptedFolderShares.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-400">参加中の共有フォルダはありません</p>
+            ) : (
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {acceptedFolderShares.map((s) => (
+                  <li key={s.id} className="flex items-center justify-between text-xs">
+                    <div className="min-w-0 flex-1 truncate text-muted">
+                      {s.folder_name}
+                      <span className="ml-1 text-[10px] text-neutral-400">{s.owner_email}</span>
+                    </div>
+                    <button
+                      onClick={() => handleLeaveFolderShare(s.id)}
+                      disabled={processingShareIds.has(s.id)}
+                      className="ml-2 shrink-0 text-red-500 hover:text-red-600 disabled:opacity-40"
+                    >
+                      {processingShareIds.has(s.id) ? '処理中…' : '離脱'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </CollapsibleSection>
         </div>
 

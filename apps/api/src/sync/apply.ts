@@ -12,7 +12,7 @@ import { wouldCreateCycle, hasIncompleteDescendant, repairAncestorsCompletion } 
 import { rescheduleDueReminder } from '../push/scheduler.js';
 import { detectTaskEvent, detectListAllCompleted } from '../hatch/event-detector.js';
 import { resolveEditableListOwner, findListOwnerId } from '../shares/list-shares.js';
-import { replicateToSharedEditors } from '../shares/replication.js';
+import { replicateToSharedEditors, replicateFolderToSharedEditors, replicateAllTasksInList } from '../shares/replication.js';
 
 type ApplyResult = { ok: true } | { ok: false; reason: SyncRejectReason };
 type Row = Record<string, unknown>;
@@ -242,9 +242,11 @@ function applyUpsert(
     ];
     const placeholders = cols.map(() => '?').join(', ');
     db.prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`).run(...values);
-    // リスト共有（改修22回目）：リスト自体が新規作成された直後に共有されていることは
-    // あり得ないが、念のため他テーブルと同じ関数を通るlistsだけ一律で複製呼び出しを揃えておく
+    // リスト共有（改修22回目）：新規リストが最初から共有中フォルダに属して作られることも
+    // あるため（フォルダ共有＝以後追加されたリストも動的に共有対象になる、改修22回目
+    // フォローアップ）、新規作成時もlistShareEditorIds経由で判定して複製する
     if (table === 'lists') replicateToSharedEditors(db, op.id, 'lists', op.id);
+    if (table === 'folders') replicateFolderToSharedEditors(db, op.id);
     return { ok: true };
   }
 
@@ -262,7 +264,14 @@ function applyUpsert(
 
   // リスト自体の変更（名前・色等）を、共有している各editorのpullストリームにも反映する
   // （改修22回目：docs/sync-protocol.md 10章。中身のtasksだけでなくlists行自体も複製対象）
-  if (table === 'lists') replicateToSharedEditors(db, op.id, 'lists', op.id);
+  if (table === 'lists') {
+    replicateToSharedEditors(db, op.id, 'lists', op.id);
+    // フォルダ間移動（改修22回目フォローアップ：フォルダ共有）：folder_idが変わった場合、
+    // 既存タスクを新しい所属先の共有先へも複製する（旧フォルダの共有先へは複製し続けない
+    // だけで、既存の複製済みデータは残る。前述の「リスト間移動」と同じ簡略化）
+    if (fields.folder_id !== undefined) replicateAllTasksInList(db, op.id);
+  }
+  if (table === 'folders') replicateFolderToSharedEditors(db, op.id);
 
   return { ok: true };
 }

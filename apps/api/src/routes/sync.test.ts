@@ -7,6 +7,7 @@ import { loadEnv } from '../env.js';
 import { createLogger } from '../logger.js';
 import { subscribeSse } from '../sync/sse-hub.js';
 import { inviteToList, acceptShare } from '../shares/list-shares.js';
+import { inviteToFolder, acceptFolderShare } from '../shares/folder-shares.js';
 
 function setupApp(db: Database.Database) {
   const env = loadEnv({ NODE_ENV: 'test', LOG_LEVEL: 'error' } as unknown as NodeJS.ProcessEnv);
@@ -99,6 +100,52 @@ describe('sync routes: リスト共有時のSSE通知（改修22回目）', () =
         }),
       });
       expect(received).toHaveLength(0);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('フォルダ共有先のeditorが編集すると、owner側にもbumpが届く', async () => {
+    db = createTestDb();
+    const ownerId = uuidv7();
+    const editorId = uuidv7();
+    insertTestUser(db, ownerId);
+    insertTestUser(db, editorId);
+    const folderId = uuidv7();
+    db.prepare(
+      `INSERT INTO folders (id, user_id, name, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, 'フォルダ', 1, ?, ?, NULL, 1)`,
+    ).run(folderId, ownerId, Date.now(), Date.now());
+    const listId = insertTestList(db, ownerId);
+    db.prepare('UPDATE lists SET folder_id = ? WHERE id = ?').run(folderId, listId);
+    const share = inviteToFolder(db, ownerId, folderId, `${editorId}@example.com`);
+    acceptFolderShare(db, editorId, share.id);
+    const editorSession = insertSession(db, editorId);
+    const app = setupApp(db);
+
+    const received: string[] = [];
+    const unsubscribe = subscribeSse(ownerId, { push: (payload) => received.push(payload) });
+
+    try {
+      const res = await app.request('/api/v1/sync/push', {
+        method: 'POST',
+        headers: { Cookie: `nestio_session=${editorSession}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_id: uuidv7(),
+          ops: [
+            {
+              op_id: uuidv7(),
+              table: 'tasks',
+              id: uuidv7(),
+              op: 'upsert',
+              updated_at: Date.now(),
+              fields: { list_id: listId, title: 'フォルダ経由の編集', sort_order: 1 },
+            },
+          ],
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(received).toHaveLength(1);
     } finally {
       unsubscribe();
     }
