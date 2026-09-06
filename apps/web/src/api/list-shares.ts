@@ -1,4 +1,4 @@
-import type { ListShareRow } from '@nestio/shared';
+import type { ListShareRow, IncomingListShareView } from '@nestio/shared';
 import { apiClient } from './client.js';
 
 export function inviteToList(listId: string, invitedEmail: string): Promise<ListShareRow> {
@@ -9,7 +9,7 @@ export function listOutgoingShares(listId?: string): Promise<ListShareRow[]> {
   return apiClient.get(listId ? `/list-shares/outgoing?list_id=${listId}` : '/list-shares/outgoing');
 }
 
-export function listIncomingShares(): Promise<ListShareRow[]> {
+export function listIncomingShares(): Promise<IncomingListShareView[]> {
   return apiClient.get('/list-shares/incoming');
 }
 

@@ -34,6 +34,9 @@ import { useOutsideClick } from '../../lib/useOutsideClick.js';
 import { useSwipeAction } from '../../lib/useSwipeAction.js';
 import { EditableLabel, type EditableLabelHandle } from './EditableLabel.js';
 import { ListShareModal } from './ListShareModal.js';
+import { listIncomingShares, acceptListShare, revokeListShare } from '../../api/list-shares.js';
+import { syncNow } from '../../sync/engine.js';
+import type { IncomingListShareView } from '@nestio/shared';
 import type { ViewSelection } from '../../state/view.js';
 
 const LIST_DRAG_TYPE = 'text/nestio-list-id';
@@ -100,6 +103,56 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
   const [mouseDraggedListId, setMouseDraggedListId] = useState<string | null>(null);
   // 共有管理モーダル（改修22回目）：どのリストを共有しようとしているか
   const [shareModalList, setShareModalList] = useState<{ id: string; name: string } | null>(null);
+  // 受け取った招待（改修22回目フォローアップ：設定画面だと気付きにくいという指摘を受け、
+  // リスト一覧側に「どのリストを」「誰から」共有されたか出す。pendingのみここに表示し、
+  // 承諾済みの離脱は引き続き設定画面から行う）
+  const [pendingShares, setPendingShares] = useState<IncomingListShareView[]>([]);
+  const [processingShareIds, setProcessingShareIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    listIncomingShares()
+      .then((shares) => setPendingShares(shares.filter((s) => s.status === 'pending')))
+      .catch(() => {});
+  }, []);
+
+  const handleAcceptInvite = async (id: string) => {
+    if (processingShareIds.has(id)) return;
+    setProcessingShareIds((prev) => new Set(prev).add(id));
+    try {
+      await acceptListShare(id);
+      setPendingShares((prev) => prev.filter((s) => s.id !== id));
+      // 承諾直後は既存タスク・リスト自体の複製がまだローカルDBに無いため、すぐ同期を走らせる
+      await syncNow();
+      showToast('共有リストに参加しました');
+    } catch (err) {
+      console.error(err);
+      showToast('参加に失敗しました');
+    } finally {
+      setProcessingShareIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const handleDeclineInvite = async (id: string) => {
+    if (processingShareIds.has(id)) return;
+    setProcessingShareIds((prev) => new Set(prev).add(id));
+    try {
+      await revokeListShare(id);
+      setPendingShares((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      console.error(err);
+      showToast('辞退に失敗しました');
+    } finally {
+      setProcessingShareIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
 
   useEffect(() => subscribeCustomViews(() => setCustomViews(loadCustomViews())), []);
 
@@ -396,6 +449,41 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
           </div>
         ))}
       </div>
+
+      {/* リストの共有招待（改修22回目フォローアップ）：設定画面だと気付きにくいという指摘を
+          受け、リスト一覧の直前に「どのリストを」「誰(メールアドレス)から」共有されたか出す */}
+      {pendingShares.length > 0 && (
+        <div className="mt-2 flex flex-col gap-1 px-2">
+          <div className="px-1 text-xs font-semibold uppercase text-neutral-400">招待</div>
+          {pendingShares.map((s) => (
+            <div
+              key={s.id}
+              className="flex items-center justify-between gap-2 rounded-md bg-blue-50 px-2 py-1.5 dark:bg-blue-950/30"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{s.list_name}</div>
+                <div className="truncate text-[10px] text-neutral-400">{s.owner_email}から共有</div>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <button
+                  onClick={() => handleAcceptInvite(s.id)}
+                  disabled={processingShareIds.has(s.id)}
+                  className="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-600 disabled:opacity-40 dark:border-blue-700 dark:text-blue-300"
+                >
+                  承諾
+                </button>
+                <button
+                  onClick={() => handleDeclineInvite(s.id)}
+                  disabled={processingShareIds.has(s.id)}
+                  className="rounded-md px-2 py-1 text-xs text-neutral-400 hover:text-neutral-700 disabled:opacity-40 dark:hover:text-neutral-200"
+                >
+                  辞退
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="mt-2 flex items-center justify-between px-3 text-xs font-semibold uppercase text-neutral-400">
         <span>リスト</span>

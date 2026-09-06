@@ -6,9 +6,8 @@ import { enablePushNotifications, getPushSubscriptionState, type PushSubscriptio
 import { sendTestPush } from '../../api/push.js';
 import { createCalendarFeed, listCalendarFeeds, revokeCalendarFeed, type CalendarFeed } from '../../api/calendar.js';
 import { listApiKeys, createApiKey, revokeApiKey } from '../../api/api-keys.js';
-import { listIncomingShares, acceptListShare, revokeListShare } from '../../api/list-shares.js';
-import { syncNow } from '../../sync/engine.js';
-import type { ApiKeyRow, ListShareRow } from '@nestio/shared';
+import { listIncomingShares, revokeListShare } from '../../api/list-shares.js';
+import type { ApiKeyRow, IncomingListShareView } from '@nestio/shared';
 import { exportAllData, importAllData } from '../../api/export.js';
 import { listSessions, revokeSession, type SessionInfo } from '../../api/sessions.js';
 import { formatDateTimeJst } from '../../lib/datetime.js';
@@ -49,7 +48,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
   const [revokingApiKeyIds, setRevokingApiKeyIds] = useState<Set<string>>(new Set());
   // 「共有リスト」機能（改修22回目）：自分が招待された（受信した）共有の一覧。承諾するとそのリストの
   // タスクを編集できるようになる。招待する側（送信）はSidebarのリスト行「共有」ボタンから行う
-  const [incomingShares, setIncomingShares] = useState<ListShareRow[]>([]);
+  const [incomingShares, setIncomingShares] = useState<IncomingListShareView[]>([]);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [processingShareIds, setProcessingShareIds] = useState<Set<string>>(new Set());
 
@@ -172,26 +171,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
     }
   };
 
-  const handleAcceptShare = async (id: string) => {
-    if (processingShareIds.has(id)) return;
-    setProcessingShareIds((prev) => new Set(prev).add(id));
-    try {
-      const accepted = await acceptListShare(id);
-      setIncomingShares((prev) => prev.map((s) => (s.id === id ? accepted : s)));
-      // 承諾直後は既存タスク・リスト自体の複製がまだローカルDBに無いため、すぐ同期を走らせる
-      await syncNow();
-      setShareStatus('参加しました。共有されたリストが一覧に表示されます');
-    } catch (err) {
-      console.error(err);
-      setShareStatus('承諾に失敗しました');
-    } finally {
-      setProcessingShareIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
-  };
+  const acceptedShares = incomingShares.filter((s) => s.status === 'accepted');
 
   const handleLeaveShare = async (id: string) => {
     if (processingShareIds.has(id)) return;
@@ -380,40 +360,29 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
         </div>
 
         <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-          {/* 「共有リスト」機能（改修22回目）：自分が招待された共有の一覧。招待する側（送信）は
-              Sidebarのリスト行にある「共有」ボタンから行う */}
+          {/* 「共有リスト」機能（改修22回目）：参加中の共有リストからの離脱。招待の受信・承諾は
+              分かりにくいという指摘（改修22回目フォローアップ）を受けリスト一覧側（Sidebar）に
+              移した。ここには承諾済みのものだけを表示し、離脱操作のみ提供する */}
           <CollapsibleSection
-            title={`共有されたリスト${incomingShares.length > 0 ? `（${incomingShares.length}件）` : ''}`}
+            title={`参加中の共有リスト${acceptedShares.length > 0 ? `（${acceptedShares.length}件）` : ''}`}
           >
-            {incomingShares.length === 0 ? (
-              <p className="mt-2 text-xs text-neutral-400">招待されている共有リストはありません</p>
+            {acceptedShares.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-400">参加中の共有リストはありません</p>
             ) : (
               <ul className="mt-2 flex flex-col gap-1.5">
-                {incomingShares.map((s) => (
+                {acceptedShares.map((s) => (
                   <li key={s.id} className="flex items-center justify-between text-xs">
                     <div className="min-w-0 flex-1 truncate text-muted">
-                      <span className={s.status === 'accepted' ? 'text-emerald-500' : 'text-neutral-400'}>
-                        {s.status === 'accepted' ? '参加中' : '招待中'}
-                      </span>
+                      {s.list_name}
+                      <span className="ml-1 text-[10px] text-neutral-400">{s.owner_email}</span>
                     </div>
-                    <div className="ml-2 flex shrink-0 gap-2">
-                      {s.status === 'pending' && (
-                        <button
-                          onClick={() => handleAcceptShare(s.id)}
-                          disabled={processingShareIds.has(s.id)}
-                          className="text-blue-500 hover:text-blue-600 disabled:opacity-40"
-                        >
-                          承諾
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleLeaveShare(s.id)}
-                        disabled={processingShareIds.has(s.id)}
-                        className="text-red-500 hover:text-red-600 disabled:opacity-40"
-                      >
-                        {processingShareIds.has(s.id) ? '処理中…' : s.status === 'accepted' ? '離脱' : '辞退'}
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => handleLeaveShare(s.id)}
+                      disabled={processingShareIds.has(s.id)}
+                      className="ml-2 shrink-0 text-red-500 hover:text-red-600 disabled:opacity-40"
+                    >
+                      {processingShareIds.has(s.id) ? '処理中…' : '離脱'}
+                    </button>
                   </li>
                 ))}
               </ul>

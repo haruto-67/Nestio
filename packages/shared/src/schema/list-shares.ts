@@ -25,3 +25,15 @@ export const listShareCreateRequestSchema = z.object({
   invited_email: z.string().email(),
 });
 export type ListShareCreateRequest = z.infer<typeof listShareCreateRequestSchema>;
+
+/**
+ * 受け取った招待の一覧表示用（改修22回目フォローアップ：設定画面だと分かりにくいという
+ * フィードバックを受け、リスト一覧側に「どのリストを」「誰(メールアドレス)から」共有されたか
+ * 出す）。招待された側はacceptedになるまでlists行自体を持たないため、list_name/owner_emailは
+ * list_sharesのJOINでサーバー側が付与して返す
+ */
+export const incomingListShareViewSchema = listShareRowSchema.extend({
+  list_name: z.string(),
+  owner_email: z.string(),
+});
+export type IncomingListShareView = z.infer<typeof incomingListShareViewSchema>;

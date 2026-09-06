@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { uuidv7, type ListShareRow } from '@nestio/shared';
+import { uuidv7, type ListShareRow, type IncomingListShareView } from '@nestio/shared';
 import { findUserByEmail } from '../auth/users.js';
 import { replicateExistingListToNewEditor } from './replication.js';
 
@@ -73,13 +73,22 @@ export function listOutgoingShares(db: Database.Database, ownerId: string, listI
   return rows as ListShareRow[];
 }
 
-/** invitedUserIdが受け取った招待の一覧（pending/accepted両方） */
-export function listIncomingShares(db: Database.Database, invitedUserId: string): ListShareRow[] {
+/**
+ * invitedUserIdが受け取った招待の一覧（pending/accepted両方）。設定画面だと分かりにくいという
+ * フィードバックを受け（改修22回目フォローアップ）、リスト一覧側に「どのリストを」「誰から」
+ * 共有されたか表示できるよう、list_name・owner_emailを付けて返す
+ */
+export function listIncomingShares(db: Database.Database, invitedUserId: string): IncomingListShareView[] {
   return db
     .prepare(
-      `SELECT * FROM list_shares WHERE invited_user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC`,
+      `SELECT s.*, l.name AS list_name, u.email AS owner_email
+       FROM list_shares s
+       JOIN lists l ON l.id = s.list_id
+       JOIN users u ON u.id = s.owner_user_id
+       WHERE s.invited_user_id = ? AND s.deleted_at IS NULL
+       ORDER BY s.created_at DESC`,
     )
-    .all(invitedUserId) as ListShareRow[];
+    .all(invitedUserId) as IncomingListShareView[];
 }
 
 /** 招待された本人のみ承諾できる。承諾すると既存タスク・リスト自体がeditorへ複製される */
