@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
-import { purgeOldTombstones, purgeOldAppliedOps } from './tombstones.js';
+import { purgeOldTombstones, purgeOldAppliedOps, purgeOldSharedRowChanges } from './tombstones.js';
 import { purgeOrphanedAttachmentFiles } from './attachments.js';
 import { purgeOldTriggerRuns } from './trigger-runs.js';
 
@@ -11,11 +11,12 @@ const GC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export function runGc(db: Database.Database, env: Env, logger: Logger): void {
   const { deletedRows: deletedTombstones } = purgeOldTombstones(db, env.TOMBSTONE_RETENTION_DAYS);
   const { deletedRows: deletedAppliedOps } = purgeOldAppliedOps(db, env.TOMBSTONE_RETENTION_DAYS);
+  const { deletedRows: deletedSharedRowChanges } = purgeOldSharedRowChanges(db, env.TOMBSTONE_RETENTION_DAYS);
   const { deletedFiles } = purgeOrphanedAttachmentFiles(db, env.ATTACHMENT_DIR);
   const { deletedRows: deletedTriggerRuns } = purgeOldTriggerRuns(db, env.TOMBSTONE_RETENTION_DAYS);
 
   logger.info(
-    { scope: 'gc', deletedTombstones, deletedAppliedOps, deletedFiles, deletedTriggerRuns },
+    { scope: 'gc', deletedTombstones, deletedAppliedOps, deletedSharedRowChanges, deletedFiles, deletedTriggerRuns },
     'gc_completed',
   );
 }

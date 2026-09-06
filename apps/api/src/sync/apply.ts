@@ -11,6 +11,8 @@ import { bumpSeq, getLastSeq } from './seq.js';
 import { wouldCreateCycle, hasIncompleteDescendant, repairAncestorsCompletion } from './task-rules.js';
 import { rescheduleDueReminder } from '../push/scheduler.js';
 import { detectTaskEvent, detectListAllCompleted } from '../hatch/event-detector.js';
+import { resolveEditableListOwner, findListOwnerId } from '../shares/list-shares.js';
+import { replicateToSharedEditors } from '../shares/replication.js';
 
 type ApplyResult = { ok: true } | { ok: false; reason: SyncRejectReason };
 type Row = Record<string, unknown>;
@@ -75,8 +77,11 @@ function applyOneOp(db: Database.Database, userId: string, op: SyncOp, triggered
   if (op.op === 'delete') {
     const result = applyDelete(db, op.table, userId, op);
     if (result.ok && op.table === 'tasks') {
-      // 完了扱いのキャンセル呼び出し：新規予約はせず既存の未送信リマインダーだけ取り消す
-      rescheduleDueReminder(db, userId, op.id, '', null, null, Date.now());
+      // 完了扱いのキャンセル呼び出し：新規予約はせず既存の未送信リマインダーだけ取り消す。
+      // 共有リストのタスクをeditorが削除した場合もowner宛の予約を取り消す必要があるため、
+      // 呼び出し元のuserId（callerId）ではなく実際のタスクのowner_idを使う（改修22回目）
+      const ownerId = (fetchExisting(db, 'tasks', op.id)?.user_id as string | undefined) ?? userId;
+      rescheduleDueReminder(db, ownerId, op.id, '', null, null, Date.now());
     }
     return result;
   }
@@ -88,7 +93,7 @@ function applyOneOp(db: Database.Database, userId: string, op: SyncOp, triggered
       if (restored) {
         rescheduleDueReminder(
           db,
-          userId,
+          restored.user_id as string,
           op.id,
           restored.title as string,
           restored.due_at as number | null,
@@ -112,6 +117,24 @@ function applyOneOp(db: Database.Database, userId: string, op: SyncOp, triggered
   }
 
   return applyUpsert(db, op.table, userId, op, fields);
+}
+
+/**
+ * table行の書き込み可否を判定し、可能ならそのuser_id（＝seq採番先。共有リストのタスクなら
+ * ownerのuser_id）を返す。不可ならnull（改修22回目：リスト共有対応）。
+ * tasks以外のテーブルは共有非対応のため、callerId自身の行かどうかだけを見る
+ */
+function resolveOwnerForExisting(
+  db: Database.Database,
+  table: ImplementedSyncTable,
+  callerId: string,
+  existing: Row,
+): string | null {
+  const ownerId = existing.user_id as string;
+  if (ownerId === callerId) return ownerId;
+  if (table !== 'tasks') return null;
+  const resolved = resolveEditableListOwner(db, callerId, existing.list_id as string);
+  return resolved === ownerId ? ownerId : null;
 }
 
 function fetchExisting(db: Database.Database, table: string, id: string): Row | undefined {
@@ -153,10 +176,14 @@ function resolveFieldMergeConflict(db: Database.Database, op: SyncOp, fields: Ro
   return { ...fields, [fieldName]: merged };
 }
 
+/**
+ * ownerId：新規行のuser_id・既存行の所有権対象・seq採番先。tasks以外はcallerId自身と常に一致する。
+ * tasksの場合、共有リストへの書き込みではapplyTaskUpsertが解決した「そのタスクのowner」が渡される
+ */
 function applyUpsert(
   db: Database.Database,
   table: ImplementedSyncTable,
-  userId: string,
+  ownerId: string,
   op: SyncOp,
   fields: Row,
   existingOverride?: Row | undefined,
@@ -164,7 +191,7 @@ function applyUpsert(
   const def = SYNC_TABLES[table];
   const existing = existingOverride !== undefined ? existingOverride : fetchExisting(db, table, op.id);
 
-  if (existing && existing.user_id !== userId) {
+  if (existing && existing.user_id !== ownerId) {
     return { ok: false, reason: 'forbidden' };
   }
 
@@ -184,14 +211,14 @@ function applyUpsert(
     if (table === 'task_tags') {
       const conflict = db
         .prepare('SELECT * FROM task_tags WHERE user_id = ? AND task_id = ? AND tag_id = ?')
-        .get(userId, fields.task_id, fields.tag_id) as Row | undefined;
+        .get(ownerId, fields.task_id, fields.tag_id) as Row | undefined;
       if (conflict) {
         if (conflict.deleted_at === null) {
           // 既に同じペアが存在し削除もされていない＝意図は既に達成されている（冪等に許容）
           return { ok: true };
         }
         // 論理削除済みの行を復元する（新規idでのINSERTは諦め、既存idを蘇らせる）
-        const seq = bumpSeq(db, userId);
+        const seq = bumpSeq(db, ownerId);
         db.prepare(`UPDATE task_tags SET deleted_at = NULL, updated_at = ?, seq = ? WHERE id = ?`).run(
           op.updated_at,
           seq,
@@ -202,11 +229,11 @@ function applyUpsert(
     }
 
     const presentCols = def.columns.filter((c) => fields[c] !== undefined);
-    const seq = bumpSeq(db, userId);
+    const seq = bumpSeq(db, ownerId);
     const cols = ['id', 'user_id', ...presentCols, 'created_at', 'updated_at', 'deleted_at', 'seq'];
     const values: unknown[] = [
       op.id,
-      userId,
+      ownerId,
       ...presentCols.map((c) => fields[c]),
       op.updated_at,
       op.updated_at,
@@ -215,11 +242,14 @@ function applyUpsert(
     ];
     const placeholders = cols.map(() => '?').join(', ');
     db.prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`).run(...values);
+    // リスト共有（改修22回目）：リスト自体が新規作成された直後に共有されていることは
+    // あり得ないが、念のため他テーブルと同じ関数を通るlistsだけ一律で複製呼び出しを揃えておく
+    if (table === 'lists') replicateToSharedEditors(db, op.id, 'lists', op.id);
     return { ok: true };
   }
 
   const shouldApplyFields = op.updated_at >= (existing.updated_at as number);
-  const seq = bumpSeq(db, userId);
+  const seq = bumpSeq(db, ownerId);
 
   if (shouldApplyFields) {
     const presentCols = def.columns.filter((c) => fields[c] !== undefined);
@@ -230,13 +260,17 @@ function applyUpsert(
     db.prepare(`UPDATE ${table} SET seq = ? WHERE id = ?`).run(seq, op.id);
   }
 
+  // リスト自体の変更（名前・色等）を、共有している各editorのpullストリームにも反映する
+  // （改修22回目：docs/sync-protocol.md 10章。中身のtasksだけでなくlists行自体も複製対象）
+  if (table === 'lists') replicateToSharedEditors(db, op.id, 'lists', op.id);
+
   return { ok: true };
 }
 
 function applyDelete(
   db: Database.Database,
   table: ImplementedSyncTable,
-  userId: string,
+  callerId: string,
   op: SyncOp,
 ): ApplyResult {
   const existing = fetchExisting(db, table, op.id);
@@ -244,11 +278,12 @@ function applyDelete(
     // 存在しない行への削除は再送や順序ズレで起こり得るため無視（冪等）
     return { ok: true };
   }
-  if (existing.user_id !== userId) {
+  const ownerId = resolveOwnerForExisting(db, table, callerId, existing);
+  if (ownerId === null) {
     return { ok: false, reason: 'forbidden' };
   }
 
-  const seq = bumpSeq(db, userId);
+  const seq = bumpSeq(db, ownerId);
   if (op.updated_at >= (existing.updated_at as number)) {
     db.prepare(`UPDATE ${table} SET deleted_at = ?, updated_at = ?, seq = ? WHERE id = ?`).run(
       op.updated_at,
@@ -258,6 +293,9 @@ function applyDelete(
     );
   } else {
     db.prepare(`UPDATE ${table} SET seq = ? WHERE id = ?`).run(seq, op.id);
+  }
+  if (table === 'tasks') {
+    replicateToSharedEditors(db, existing.list_id as string, 'tasks', op.id);
   }
   return { ok: true };
 }
@@ -269,7 +307,7 @@ function applyDelete(
 function applyRestore(
   db: Database.Database,
   table: ImplementedSyncTable,
-  userId: string,
+  callerId: string,
   op: SyncOp,
 ): ApplyResult {
   const existing = fetchExisting(db, table, op.id);
@@ -277,7 +315,8 @@ function applyRestore(
     // 存在しない行の復元は無意味な操作
     return { ok: false, reason: 'validation_failed' };
   }
-  if (existing.user_id !== userId) {
+  const ownerId = resolveOwnerForExisting(db, table, callerId, existing);
+  if (ownerId === null) {
     return { ok: false, reason: 'forbidden' };
   }
   if (existing.deleted_at === null) {
@@ -285,7 +324,7 @@ function applyRestore(
     return { ok: true };
   }
 
-  const seq = bumpSeq(db, userId);
+  const seq = bumpSeq(db, ownerId);
   if (op.updated_at >= (existing.updated_at as number)) {
     db.prepare(`UPDATE ${table} SET deleted_at = NULL, updated_at = ?, seq = ? WHERE id = ?`).run(
       op.updated_at,
@@ -295,21 +334,47 @@ function applyRestore(
   } else {
     db.prepare(`UPDATE ${table} SET seq = ? WHERE id = ?`).run(seq, op.id);
   }
+  if (table === 'tasks') {
+    replicateToSharedEditors(db, existing.list_id as string, 'tasks', op.id);
+  }
   return { ok: true };
 }
 
 function applyTaskUpsert(
   db: Database.Database,
-  userId: string,
+  callerId: string,
   op: SyncOp,
   fields: Row,
   triggeredByHatch: boolean,
 ): ApplyResult {
   const existing = fetchExisting(db, 'tasks', op.id);
-  if (existing && existing.user_id !== userId) {
-    return { ok: false, reason: 'forbidden' };
-  }
   const isNewTask = !existing;
+
+  // リスト共有（改修22回目）：既存タスクならowner本人 or acceptedな共有editorか、
+  // 新規タスクなら送信先list_idのowner本人 or acceptedな共有editorかを確認し、
+  // 以後のseq採番・所有権判定に使う実際のowner user_idを決定する
+  let ownerId: string;
+  if (existing) {
+    const resolved = resolveOwnerForExisting(db, 'tasks', callerId, existing);
+    if (resolved === null) return { ok: false, reason: 'forbidden' };
+    ownerId = resolved;
+  } else {
+    const listId = fields.list_id as string | undefined;
+    if (!listId) return { ok: false, reason: 'validation_failed' };
+    const resolved = resolveEditableListOwner(db, callerId, listId);
+    if (resolved === null) return { ok: false, reason: 'forbidden' };
+    ownerId = resolved;
+  }
+
+  // リスト間移動時、移動先リストのownerが現在のタスクのownerと一致しない場合は拒否する
+  // （改修22回目：共有リストのタスクが別ownerのリストへ越境するのを防ぐ。ownerが自分の
+  // 別リストへ動かす操作は今まで通り許可される）
+  if (fields.list_id !== undefined && fields.list_id !== (existing?.list_id ?? undefined)) {
+    const targetListOwnerId = findListOwnerId(db, fields.list_id as string);
+    if (targetListOwnerId !== ownerId) {
+      return { ok: false, reason: 'forbidden' };
+    }
+  }
 
   const finalDueAt = 'due_at' in fields ? fields.due_at : (existing?.due_at ?? null);
   const finalDueDate = 'due_date' in fields ? fields.due_date : (existing?.due_date ?? null);
@@ -321,6 +386,12 @@ function applyTaskUpsert(
     if (wouldCreateCycle(db, op.id, fields.parent_id as string)) {
       return { ok: false, reason: 'cycle_detected' };
     }
+    // 親タスクのownerが自分たちのownerと一致するか確認する（改修22回目：他ownerのタスクを
+    // 親に指定できてしまう穴を防ぐ。共有導入前から潜在していたが顕在化しやすくなったため追加）
+    const parentOwnerId = fetchExisting(db, 'tasks', fields.parent_id as string)?.user_id as string | undefined;
+    if (parentOwnerId !== undefined && parentOwnerId !== ownerId) {
+      return { ok: false, reason: 'forbidden' };
+    }
   }
 
   if (fields.completed_at !== undefined && fields.completed_at !== null) {
@@ -329,8 +400,11 @@ function applyTaskUpsert(
     }
   }
 
-  const result = applyUpsert(db, 'tasks', userId, op, fields, existing);
+  const result = applyUpsert(db, 'tasks', ownerId, op, fields, existing);
   if (!result.ok) return result;
+
+  const finalListId = ('list_id' in fields ? fields.list_id : existing?.list_id) as string;
+  replicateToSharedEditors(db, finalListId, 'tasks', op.id);
 
   const previousCompletedAt = existing?.completed_at ?? null;
   const finalCompletedAt = 'completed_at' in fields ? fields.completed_at : previousCompletedAt;
@@ -341,14 +415,14 @@ function applyTaskUpsert(
   const becameIncompleteDescendant =
     finalCompletedAt === null && (isNewTask || previousCompletedAt !== null || parentChanged);
   if (becameIncompleteDescendant) {
-    repairAncestorsCompletion(db, userId, op.id);
+    repairAncestorsCompletion(db, ownerId, op.id);
   }
 
   if ('due_at' in fields || 'due_date' in fields || 'completed_at' in fields) {
     const finalTitle = ('title' in fields ? fields.title : existing?.title) as string;
     rescheduleDueReminder(
       db,
-      userId,
+      ownerId,
       op.id,
       finalTitle,
       finalDueAt as number | null,
@@ -357,20 +431,19 @@ function applyTaskUpsert(
     );
   }
 
-  const finalListId = ('list_id' in fields ? fields.list_id : existing?.list_id) as string;
   const finalPriority = ('priority' in fields ? fields.priority : (existing?.priority ?? 0)) as number;
   const taskContext = { id: op.id, list_id: finalListId, priority: finalPriority };
 
   if (isNewTask) {
-    detectTaskEvent(db, userId, 'task_created', taskContext, triggeredByHatch);
+    detectTaskEvent(db, ownerId, 'task_created', taskContext, triggeredByHatch);
   }
   const wasCompleting = (existing?.completed_at ?? null) === null && finalCompletedAt !== null;
   if (wasCompleting) {
-    detectTaskEvent(db, userId, 'task_completed', taskContext, triggeredByHatch);
-    detectListAllCompleted(db, userId, finalListId, triggeredByHatch);
+    detectTaskEvent(db, ownerId, 'task_completed', taskContext, triggeredByHatch);
+    detectListAllCompleted(db, ownerId, finalListId, triggeredByHatch);
   }
 
-  recordCompletionForStreak(db, userId, op.id, {
+  recordCompletionForStreak(db, ownerId, op.id, {
     isNewTask,
     wasCompleting,
     finalRrule: ('rrule' in fields ? fields.rrule : (existing?.rrule ?? null)) as string | null,

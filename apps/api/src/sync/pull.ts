@@ -4,6 +4,9 @@ import { isImplementedSyncTable } from './tables.js';
 import { getLastSeq, getGcBoundarySeq } from './seq.js';
 
 const ALL_TABLES = syncableTableSchema.options;
+// リスト共有（改修22回目）：この2テーブルだけ、自分がownerの行に加えて
+// shared_row_changes経由で複製された行もマージして返す（docs/sync-protocol.md 10章）
+const SHAREABLE_TABLES = new Set(['tasks', 'lists']);
 
 /**
  * 各テーブルごとに `seq > since` を limit 件まで取得する（sync-protocol.md 3章）。
@@ -41,9 +44,11 @@ export function pullChanges(
       continue;
     }
 
-    const rows = db
-      .prepare(`SELECT * FROM ${table} WHERE user_id = ? AND seq > ? ORDER BY seq LIMIT ?`)
-      .all(userId, since, limit) as Row[];
+    const rows = SHAREABLE_TABLES.has(table)
+      ? pullShareableTable(db, table, userId, since, limit)
+      : (db
+          .prepare(`SELECT * FROM ${table} WHERE user_id = ? AND seq > ? ORDER BY seq LIMIT ?`)
+          .all(userId, since, limit) as Row[]);
 
     changes[table] = rows;
 
@@ -59,6 +64,35 @@ export function pullChanges(
   const nextSeq = hasMore ? maxSeq : getLastSeq(db, userId);
 
   return { changes, next_seq: nextSeq, has_more: hasMore };
+}
+
+/**
+ * tasks/listsは「自分がownerの行」に加え、shared_row_changes経由で自分（editor）に
+ * 複製された行もマージしてseq昇順に返す。返す行のseqは、複製分だけ
+ * shared_row_changes.seq（＝自分自身の視点のseq）に差し替える（docs/sync-protocol.md 10章）。
+ * 同じ行が複数回複製されて重複しても、クライアントは冪等にUPSERTするだけなので実害はない
+ */
+function pullShareableTable(
+  db: Database.Database,
+  table: string,
+  userId: string,
+  since: number,
+  limit: number,
+): Row[] {
+  const ownRows = db
+    .prepare(`SELECT * FROM ${table} WHERE user_id = ? AND seq > ? ORDER BY seq LIMIT ?`)
+    .all(userId, since, limit) as Row[];
+
+  const sharedRows = db
+    .prepare(
+      `SELECT t.*, s.seq AS seq FROM shared_row_changes s
+       JOIN ${table} t ON t.id = s.row_id
+       WHERE s.user_id = ? AND s.table_name = ? AND s.seq > ?
+       ORDER BY s.seq LIMIT ?`,
+    )
+    .all(userId, table, since, limit) as Row[];
+
+  return [...ownRows, ...sharedRows].sort((a, b) => (a.seq as number) - (b.seq as number)).slice(0, limit);
 }
 
 type Row = Record<string, unknown>;

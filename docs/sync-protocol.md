@@ -216,7 +216,70 @@ data: {"seq": 1043, "origin_device": "01912f..."}
 - **順序が逆になると、メタデータだけあって実体がない状態が発生する**
 - バイナリは content-addressed で不変のため、衝突解決は不要
 
-## 10. テストで必ず確認すること
+## 10. リスト共有（改修22回目）
+
+リスト単位で他ユーザーに編集権限を付与する機能。**「1ユーザー1系列のseq」という2章の原則は変えない**。
+共有先（editor）も自分自身の`sync_state`だけを見て通常のpullを完結できるよう、
+owner側の変更を各editorの系列へ"複製"する方式にする。
+
+### 招待
+
+- `list_shares(id, list_id, owner_user_id, invited_user_id, invited_email, status, created_at, accepted_at, deleted_at)`
+- 招待は既存ユーザー（`email_verified`済みでNestioに登録済み）のメールアドレス指定のみ。新規ユーザー招待は非対応
+- `status`は`pending` → `accepted`。招待・承諾・解除は`/sync/push`を通さない専用CRUD API
+  （`calendar_feeds`と同じ扱い。頻度が低く、オフラインで行う必要がないため）
+- 権限は「編集権限のみ」（閲覧専用ロールは無い）。共有されたユーザーはそのリスト内のタスクを
+  ownerと同じように作成・編集・完了・削除できるが、**リスト自体の名前/色/削除、フォルダ、
+  タグの新規作成、Hatchトリガーはownerのみ**（このリリースのスコープ外）
+
+### 複製の仕組み：`shared_row_changes`
+
+```sql
+CREATE TABLE shared_row_changes (
+  id          TEXT    NOT NULL PRIMARY KEY,
+  user_id     TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,  -- 通知先(editor)
+  table_name  TEXT    NOT NULL,  -- 'tasks' | 'lists'
+  row_id      TEXT    NOT NULL,
+  seq         INTEGER NOT NULL,  -- user_id(editor)自身のsync_state系列のseq
+  created_at  INTEGER NOT NULL
+);
+```
+
+- `tasks`・`lists`の行が変化するたびに、そのリストを共有されている**各editor**について
+  `bumpSeq(db, editorUserId)`でeditor自身のseqを進め、`shared_row_changes`に
+  `(editorUserId, table_name, row_id, editorSeq)`を1行追記する
+  - 誰が変更したか（owner自身かeditorか）に関わらず、変更後の`tasks`/`lists`行は
+    常にownerの`user_id`のまま保存される（LWW・所有権チェックの一貫性を保つため）。
+    `shared_row_changes`はあくまで「このeditorにも見せる」というポインタでしかない
+  - 招待が`accepted`になった瞬間、その時点でリストに存在する全タスクについても
+    同様に`shared_row_changes`を作成し、招待前からあったタスクも見えるようにする
+- pull時、`tasks`と`lists`だけは「自分がownerの行」と「`shared_row_changes`経由で
+  複製された行」をUNIONしてseq昇順にマージする。返す行の`seq`フィールドは
+  `shared_row_changes.seq`（＝editor自身の視点のseq）に差し替える。
+  同じ行が複数回複製されて重複して返っても、クライアントは冪等にUPSERTするだけなので実害はない
+- **書き込みの所有権チェック**：対象行の`user_id`（owner）がリクエストしたユーザーと一致しない場合、
+  `list_shares`に`(list_id, owner_user_id, invited_user_id=リクエストユーザー, status='accepted')`
+  があるかを確認し、あれば許可する
+- **新規タスク作成時のuser_id**：`list_id`のownerを`lists.user_id`から引き、
+  リクエストユーザーが本人でなければ共有チェックを通した上で、新規行の`user_id`（＝seq採番先）を
+  そのownerにする
+- **リスト間移動の禁止**：`update_task`で`list_id`を変更する場合、移動先リストのownerが
+  現在のタスクのownerと一致しない場合はreject（別ownerのリストへタスクが越境するのを防ぐ）
+- タグ・添付ファイル・Hatchトリガーは共有タスクに対しても**このリリースでは対象外**
+  （`task_tags`等への書き込みはowner本人のみ許可のまま）
+
+### GC
+
+- `shared_row_changes`は`applied_ops`と同じ日数（`TOMBSTONE_RETENTION_DAYS`）で物理削除する。
+  削除前に`user_id`ごとの`MAX(seq)`を`sync_state.gc_boundary_seq`に記録し、
+  それより古い`since`でpullしてきたeditorには`full_resync_required`を返す（6章と同じ仕組み）
+
+### SSE
+
+- owner側の変更で共有先editorのseqも進むため、`broadcastBump`は変更を行ったuser_idだけでなく、
+  影響を受けた各editorのuser_idにも`bump`イベントを送る
+
+## 11. テストで必ず確認すること
 
 - [ ] 機内モードで作成 → 復帰 → 別デバイスに反映される
 - [ ] 同じ op を 2 回 push しても行が重複しない

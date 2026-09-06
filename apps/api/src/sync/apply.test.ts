@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import { uuidv7, type SyncOp } from '@nestio/shared';
 import { createTestDb, insertTestUser } from '../test-utils/db.js';
 import { applySyncOps } from './apply.js';
+import { inviteToList, acceptShare, revokeShare } from '../shares/list-shares.js';
 
 function makeListOp(userId: string, listId: string, updatedAt: number): SyncOp {
   return {
@@ -862,5 +863,160 @@ describe('Hatch event detection (apply.ts統合)', () => {
     applySyncOps(db, userId, [makeTaskOp(listId, taskId, Date.now(), { title: 'タスク' })]);
 
     expect(queuedRunsFor(db, triggerId)).toHaveLength(0);
+  });
+});
+
+describe('applySyncOps: リスト共有（改修22回目）', () => {
+  let db: Database.Database;
+  let ownerId: string;
+  let editorId: string;
+  let listId: string;
+
+  function setup() {
+    db = createTestDb();
+    ownerId = uuidv7();
+    editorId = uuidv7();
+    insertTestUser(db, ownerId);
+    insertTestUser(db, editorId);
+    listId = uuidv7();
+    applySyncOps(db, ownerId, [makeListOp(ownerId, listId, Date.now())]);
+  }
+
+  function shareAndAccept() {
+    const share = inviteToList(db, ownerId, listId, `${editorId}@example.com`);
+    acceptShare(db, editorId, share.id);
+    return share;
+  }
+
+  afterEach(() => db?.close());
+
+  it('acceptedな共有editorは共有リストへタスクを作成でき、user_idはownerのままになる', () => {
+    setup();
+    shareAndAccept();
+    const taskId = uuidv7();
+
+    const res = applySyncOps(db, editorId, [makeTaskOp(listId, taskId, Date.now(), { title: 'editor作成' })]);
+    expect(res.rejected).toEqual([]);
+
+    const row = db.prepare('SELECT user_id, title FROM tasks WHERE id = ?').get(taskId) as {
+      user_id: string;
+      title: string;
+    };
+    expect(row.user_id).toBe(ownerId);
+    expect(row.title).toBe('editor作成');
+  });
+
+  it('共有されていないユーザーは書き込めない（forbidden）', () => {
+    setup();
+    const taskId = uuidv7();
+
+    const res = applySyncOps(db, editorId, [makeTaskOp(listId, taskId, Date.now(), {})]);
+    expect(res.rejected).toEqual([{ op_id: expect.any(String), reason: 'forbidden' }]);
+  });
+
+  it('招待がpendingのままでは書き込めない', () => {
+    setup();
+    inviteToList(db, ownerId, listId, `${editorId}@example.com`);
+    const taskId = uuidv7();
+
+    const res = applySyncOps(db, editorId, [makeTaskOp(listId, taskId, Date.now(), {})]);
+    expect(res.rejected).toEqual([{ op_id: expect.any(String), reason: 'forbidden' }]);
+  });
+
+  it('editorは共有リストの既存タスクを編集・完了・削除・復元できる', () => {
+    setup();
+    const taskId = uuidv7();
+    applySyncOps(db, ownerId, [makeTaskOp(listId, taskId, Date.now(), { title: '元タイトル' })]);
+    shareAndAccept();
+
+    const updateRes = applySyncOps(db, editorId, [
+      { op_id: uuidv7(), table: 'tasks', id: taskId, op: 'upsert', updated_at: Date.now(), fields: { title: 'editorが編集' } },
+    ]);
+    expect(updateRes.rejected).toEqual([]);
+    expect((db.prepare('SELECT title FROM tasks WHERE id = ?').get(taskId) as { title: string }).title).toBe(
+      'editorが編集',
+    );
+
+    const deleteRes = applySyncOps(db, editorId, [
+      { op_id: uuidv7(), table: 'tasks', id: taskId, op: 'delete', updated_at: Date.now(), fields: {} },
+    ]);
+    expect(deleteRes.rejected).toEqual([]);
+
+    const restoreRes = applySyncOps(db, editorId, [
+      { op_id: uuidv7(), table: 'tasks', id: taskId, op: 'restore', updated_at: Date.now(), fields: {} },
+    ]);
+    expect(restoreRes.rejected).toEqual([]);
+  });
+
+  it('共有を解除すると以後editorは書き込めなくなる', () => {
+    setup();
+    const share = shareAndAccept();
+    revokeShare(db, ownerId, share.id);
+
+    const taskId = uuidv7();
+    const res = applySyncOps(db, editorId, [makeTaskOp(listId, taskId, Date.now(), {})]);
+    expect(res.rejected).toEqual([{ op_id: expect.any(String), reason: 'forbidden' }]);
+  });
+
+  it('共有リストのタスクを別owner（editor自身）のリストへ移動しようとするとforbidden', () => {
+    setup();
+    shareAndAccept();
+    const taskId = uuidv7();
+    applySyncOps(db, editorId, [makeTaskOp(listId, taskId, Date.now(), {})]);
+
+    const editorOwnListId = uuidv7();
+    applySyncOps(db, editorId, [makeListOp(editorId, editorOwnListId, Date.now())]);
+
+    const moveRes = applySyncOps(db, editorId, [
+      {
+        op_id: uuidv7(),
+        table: 'tasks',
+        id: taskId,
+        op: 'upsert',
+        updated_at: Date.now(),
+        fields: { list_id: editorOwnListId },
+      },
+    ]);
+    expect(moveRes.rejected).toEqual([{ op_id: expect.any(String), reason: 'forbidden' }]);
+  });
+
+  it('editorが共有タスクを完了させると、ownerのストリーク記録として残る', () => {
+    setup();
+    const taskId = uuidv7();
+    applySyncOps(db, ownerId, [makeTaskOp(listId, taskId, Date.now(), {})]);
+    shareAndAccept();
+
+    applySyncOps(db, editorId, [
+      { op_id: uuidv7(), table: 'tasks', id: taskId, op: 'upsert', updated_at: Date.now(), fields: { completed_at: Date.now() } },
+    ]);
+
+    const completion = db.prepare('SELECT user_id FROM task_completions WHERE task_id = ?').get(taskId) as
+      | { user_id: string }
+      | undefined;
+    expect(completion?.user_id).toBe(ownerId);
+  });
+
+  it('招待の承諾時、招待前から存在する既存タスクもeditorのpull対象として複製される', () => {
+    setup();
+    const taskId = uuidv7();
+    applySyncOps(db, ownerId, [makeTaskOp(listId, taskId, Date.now(), { title: '招待前タスク' })]);
+    shareAndAccept();
+
+    const replicated = db
+      .prepare(`SELECT 1 FROM shared_row_changes WHERE user_id = ? AND table_name = 'tasks' AND row_id = ?`)
+      .get(editorId, taskId);
+    expect(replicated).toBeTruthy();
+  });
+
+  it('editorによる変更は、そのeditor自身のsync_stateにshared_row_changesとして複製される', () => {
+    setup();
+    shareAndAccept();
+    const taskId = uuidv7();
+    applySyncOps(db, ownerId, [makeTaskOp(listId, taskId, Date.now(), { title: 'owner作成' })]);
+
+    const replicated = db
+      .prepare(`SELECT 1 FROM shared_row_changes WHERE user_id = ? AND table_name = 'tasks' AND row_id = ?`)
+      .get(editorId, taskId);
+    expect(replicated).toBeTruthy();
   });
 });

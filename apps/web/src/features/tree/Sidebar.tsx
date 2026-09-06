@@ -18,6 +18,7 @@ import {
   GripVertical,
   ClipboardCheck,
   Trash2,
+  Users,
 } from 'lucide-react';
 import type { ListRow } from '@nestio/shared';
 import { useApp } from '../../state/AppProvider.js';
@@ -32,6 +33,7 @@ import { isCoarsePointerDevice } from '../../lib/pointer.js';
 import { useOutsideClick } from '../../lib/useOutsideClick.js';
 import { useSwipeAction } from '../../lib/useSwipeAction.js';
 import { EditableLabel, type EditableLabelHandle } from './EditableLabel.js';
+import { ListShareModal } from './ListShareModal.js';
 import type { ViewSelection } from '../../state/view.js';
 
 const LIST_DRAG_TYPE = 'text/nestio-list-id';
@@ -96,6 +98,8 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
   // すぐ上・すぐ下（＝実質移動にならない位置）にも無条件に線が出てしまっていた
   // （改修21回目）。タッチのtouchDrag.draggedIdと合わせて集約する
   const [mouseDraggedListId, setMouseDraggedListId] = useState<string | null>(null);
+  // 共有管理モーダル（改修22回目）：どのリストを共有しようとしているか
+  const [shareModalList, setShareModalList] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => subscribeCustomViews(() => setCustomViews(loadCustomViews())), []);
 
@@ -441,6 +445,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 isDraggedSelf={draggedListId === l.id}
                 suppressEdgeBefore={isNextSibling}
                 suppressEdgeAfter={isPrevSibling}
+                onShare={() => setShareModalList({ id: l.id, name: l.name })}
               />
             );
           });
@@ -520,6 +525,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                         isDraggedSelf={draggedListId === l.id}
                         suppressEdgeBefore={isNextSibling}
                         suppressEdgeAfter={isPrevSibling}
+                        onShare={() => setShareModalList({ id: l.id, name: l.name })}
                       />
                     );
                   });
@@ -530,6 +536,13 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
           );
         })}
       </div>
+      {shareModalList && (
+        <ListShareModal
+          listId={shareModalList.id}
+          listName={shareModalList.name}
+          onClose={() => setShareModalList(null)}
+        />
+      )}
     </nav>
   );
 });
@@ -571,6 +584,7 @@ function ListRow({
   isDraggedSelf,
   suppressEdgeBefore,
   suppressEdgeAfter,
+  onShare,
 }: {
   listId: string;
   name: string;
@@ -596,6 +610,8 @@ function ListRow({
   suppressEdgeBefore: boolean;
   /** ドラッグ中のリストの直前（＝ここへ'after'で挿入しても実質移動にならない） */
   suppressEdgeAfter: boolean;
+  /** 共有管理モーダルを開く（改修22回目） */
+  onShare: () => void;
 }) {
   const labelRef = useRef<EditableLabelHandle | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -764,6 +780,17 @@ function ListRow({
           className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
         >
           <Pencil size={13} />
+        </button>
+        {/* リスト共有（改修22回目）：既存ユーザーを招待して一緒に編集できるようにする */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onShare();
+          }}
+          title="共有"
+          className="flex min-h-8 min-w-8 items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+        >
+          <Users size={13} />
         </button>
       </div>
     </div>

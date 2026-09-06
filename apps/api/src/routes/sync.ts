@@ -8,6 +8,9 @@ import { applySyncOps } from '../sync/apply.js';
 import { pullChanges } from '../sync/pull.js';
 import { subscribeSse, broadcastBump } from '../sync/sse-hub.js';
 import { detectClockSkewMs } from '../sync/clock-skew.js';
+import { getLastSeq } from '../sync/seq.js';
+import { findListOwnerId } from '../shares/list-shares.js';
+import { listShareEditorIds } from '../shares/replication.js';
 
 const SSE_KEEPALIVE_MS = 30_000;
 
@@ -34,6 +37,31 @@ syncRoute.post('/sync/push', async (c) => {
   }
   if (result.applied.length > 0) {
     broadcastBump(userId, result.next_seq, body.device_id);
+
+    // リスト共有（改修22回目）：applyされたtasks opsのlist_idから、共有関係にある
+    // owner・他editorを割り出し、それぞれ自身のseqでbumpを送る。誰が何を複製したかを
+    // 正確に追跡するより、対象リストの全関係者に一律送る方が単純で安全（bumpは合図のみで
+    // 実データを運ばないため、過剰通知しても実害はない）
+    const appliedTaskOpIds = new Set(result.applied);
+    const affectedListIds = new Set<string>();
+    for (const op of body.ops) {
+      if (op.table !== 'tasks' || !appliedTaskOpIds.has(op.op_id)) continue;
+      const row = db.prepare('SELECT list_id FROM tasks WHERE id = ?').get(op.id) as
+        | { list_id: string }
+        | undefined;
+      if (row) affectedListIds.add(row.list_id);
+    }
+    const notifyTargets = new Set<string>();
+    for (const listId of affectedListIds) {
+      const ownerId = findListOwnerId(db, listId);
+      if (ownerId && ownerId !== userId) notifyTargets.add(ownerId);
+      for (const editorId of listShareEditorIds(db, listId)) {
+        if (editorId !== userId) notifyTargets.add(editorId);
+      }
+    }
+    for (const target of notifyTargets) {
+      broadcastBump(target, getLastSeq(db, target), body.device_id);
+    }
   }
 
   return c.json(clockSkewMs !== undefined ? { ...result, clock_skew_ms: clockSkewMs } : result);

@@ -38,3 +38,30 @@ export function purgeOldAppliedOps(db: Database.Database, retentionDays: number)
   const result = db.prepare('DELETE FROM applied_ops WHERE applied_at < ?').run(cutoff);
   return { deletedRows: result.changes };
 }
+
+/**
+ * リスト共有（改修22回目）：shared_row_changesはapplied_opsと同じ「複製済みポインタの台帳」
+ * なので、同じ日数で物理削除する。削除前に各editor(user_id)のMAX(seq)をgc_boundary_seqへ
+ * 記録し、それより古いsinceでpullしてきたeditorにはfull_resync_requiredを返す
+ * （docs/sync-protocol.md 10章・6章と同じ仕組み）
+ */
+export function purgeOldSharedRowChanges(db: Database.Database, retentionDays: number): { deletedRows: number } {
+  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  let deletedRows = 0;
+
+  const run = db.transaction(() => {
+    const boundaries = db
+      .prepare('SELECT user_id, MAX(seq) as max_seq FROM shared_row_changes WHERE created_at < ? GROUP BY user_id')
+      .all(cutoff) as { user_id: string; max_seq: number }[];
+
+    for (const { user_id, max_seq } of boundaries) {
+      raiseGcBoundarySeq(db, user_id, max_seq);
+    }
+
+    const result = db.prepare('DELETE FROM shared_row_changes WHERE created_at < ?').run(cutoff);
+    deletedRows = result.changes;
+  });
+  run();
+
+  return { deletedRows };
+}

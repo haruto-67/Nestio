@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import { uuidv7 } from '@nestio/shared';
 import { createTestDb, insertTestUser, insertTestList } from '../test-utils/db.js';
 import { getGcBoundarySeq } from '../sync/seq.js';
-import { purgeOldTombstones, purgeOldAppliedOps } from './tombstones.js';
+import { purgeOldTombstones, purgeOldAppliedOps, purgeOldSharedRowChanges } from './tombstones.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -109,5 +109,53 @@ describe('purgeOldAppliedOps', () => {
 
     expect(deletedRows).toBe(1);
     expect(db.prepare('SELECT op_id FROM applied_ops').all()).toEqual([{ op_id: recentOpId }]);
+  });
+});
+
+describe('purgeOldSharedRowChanges（改修22回目：リスト共有）', () => {
+  let db: Database.Database;
+  let editorId: string;
+  let taskId: string;
+
+  afterEach(() => db?.close());
+
+  function setup() {
+    db = createTestDb();
+    const ownerId = uuidv7();
+    editorId = uuidv7();
+    insertTestUser(db, ownerId);
+    insertTestUser(db, editorId);
+    const listId = insertTestList(db, ownerId);
+    taskId = insertTask(db, ownerId, listId, 1, null);
+  }
+
+  function insertSharedRowChange(seq: number, createdAt: number): string {
+    const id = uuidv7();
+    db.prepare(
+      'INSERT INTO shared_row_changes (id, user_id, table_name, row_id, seq, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(id, editorId, 'tasks', taskId, seq, createdAt);
+    return id;
+  }
+
+  it('保持期間を過ぎたエントリを物理削除する', () => {
+    setup();
+    const oldId = insertSharedRowChange(5, Date.now() - 31 * DAY_MS);
+    insertSharedRowChange(6, Date.now() - 1 * DAY_MS); // 保持期間内
+
+    const { deletedRows } = purgeOldSharedRowChanges(db, 30);
+
+    expect(deletedRows).toBe(1);
+    expect(db.prepare('SELECT id FROM shared_row_changes WHERE id = ?').get(oldId)).toBeUndefined();
+    expect(db.prepare('SELECT COUNT(*) as c FROM shared_row_changes').get()).toEqual({ c: 1 });
+  });
+
+  it('物理削除した行の最大seqをgc_boundary_seqに記録する', () => {
+    setup();
+    insertSharedRowChange(5, Date.now() - 40 * DAY_MS);
+    insertSharedRowChange(8, Date.now() - 35 * DAY_MS);
+
+    purgeOldSharedRowChanges(db, 30);
+
+    expect(getGcBoundarySeq(db, editorId)).toBe(8);
   });
 });
