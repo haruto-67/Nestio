@@ -45,6 +45,11 @@ function detectDeviceLabel(): string {
  * 必ず呼び、キャッシュ済みIDがあればそれをdevice_idとして送って同じ端末行を再利用しつつ
  * 今のセッションへ紐付け直す
  */
+/** ネットワークに触れず、キャッシュ済みのdevice_idだけを読む（改修23回目：オフライン起動用） */
+export function getCachedDeviceId(): string | null {
+  return localStorage.getItem(DEVICE_ID_KEY);
+}
+
 export async function getOrCreateDeviceId(): Promise<string> {
   const cached = localStorage.getItem(DEVICE_ID_KEY) ?? undefined;
   const label = detectDeviceLabel();

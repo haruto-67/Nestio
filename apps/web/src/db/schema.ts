@@ -80,6 +80,9 @@ export const META_KEYS = {
   since: 'since',
   clockSkewMs: 'clock_skew_ms',
   deviceId: 'device_id',
+  // 回線の悪い場所での起動時、/auth/meがタイムアウトしてもオフラインで起動できるよう
+  // 直近ログイン成功時のユーザー情報をキャッシュしておく（改修23回目）
+  cachedMe: 'cached_me',
 } as const;
 
 export async function getMeta<T>(key: string, fallback: T): Promise<T> {

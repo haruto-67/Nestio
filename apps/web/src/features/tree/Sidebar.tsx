@@ -110,6 +110,9 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
   // 共有管理モーダル（改修22回目）：どのリスト/フォルダを共有しようとしているか
   const [shareModalList, setShareModalList] = useState<{ id: string; name: string } | null>(null);
   const [shareModalFolder, setShareModalFolder] = useState<{ id: string; name: string } | null>(null);
+  // 新規作成したリストは、どうせ名前を変えるはずなので作成直後から名前編集状態にする
+  // （改修23回目）。ListRow側のEditableLabelがマウントされたらstartEditingを呼んで消費する
+  const [autoEditListId, setAutoEditListId] = useState<string | null>(null);
   // 受け取った招待（改修22回目フォローアップ：設定画面だと気付きにくいという指摘を受け、
   // リスト一覧側に「どのリスト/フォルダを」「誰から」共有されたか出す。リスト招待とフォルダ招待を
   // 共通の表現にまとめて表示する。pendingのみここに表示し、承諾済みの離脱は設定画面から行う）
@@ -329,6 +332,8 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
     const siblings = listsByFolder.get(folderId) ?? [];
     upsertList(userId, id, { name: '新しいリスト', folder_id: folderId, sort_order: nextSortOrder(siblings) });
     onSelectView({ type: 'list', listId: id });
+    if (folderId) setOpenFolders((prev) => new Set(prev).add(folderId));
+    setAutoEditListId(id);
   };
 
   const renameFolder = (id: string, name: string) => upsertFolder(userId, id, { name });
@@ -560,6 +565,8 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                 suppressEdgeBefore={isNextSibling}
                 suppressEdgeAfter={isPrevSibling}
                 onShare={() => setShareModalList({ id: l.id, name: l.name })}
+                autoEdit={autoEditListId === l.id}
+                onAutoEditHandled={() => setAutoEditListId(null)}
               />
             );
           });
@@ -649,6 +656,8 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
                         suppressEdgeBefore={isNextSibling}
                         suppressEdgeAfter={isPrevSibling}
                         onShare={() => setShareModalList({ id: l.id, name: l.name })}
+                        autoEdit={autoEditListId === l.id}
+                        onAutoEditHandled={() => setAutoEditListId(null)}
                       />
                     );
                   });
@@ -715,6 +724,8 @@ function ListRow({
   suppressEdgeBefore,
   suppressEdgeAfter,
   onShare,
+  autoEdit,
+  onAutoEditHandled,
 }: {
   listId: string;
   name: string;
@@ -742,6 +753,10 @@ function ListRow({
   suppressEdgeAfter: boolean;
   /** 共有管理モーダルを開く（改修22回目） */
   onShare: () => void;
+  /** 作成直後のリストかどうか。trueならマウント時に名前編集状態へ入る（改修23回目） */
+  autoEdit: boolean;
+  /** autoEditを消費したことを親（Sidebar）へ伝え、以後の再レンダーで再発火しないようにする */
+  onAutoEditHandled: () => void;
 }) {
   const labelRef = useRef<EditableLabelHandle | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -770,6 +785,11 @@ function ListRow({
       if (window.confirm(`「${name}」を削除しますか？`)) onDelete();
     },
   });
+  useEffect(() => {
+    if (!autoEdit) return;
+    labelRef.current?.startEditing();
+    onAutoEditHandled();
+  }, [autoEdit]);
   return (
     <div className="relative overflow-hidden">
       {translateX < 0 && (

@@ -106,14 +106,28 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
     setIsEmpty((ref.current?.textContent?.trim() === '' && !ref.current.querySelector('img')) ?? true);
   };
 
-  // 画像クリックで拡大表示（改修16回目）。contentEditable内のクリックはカーソル配置と
-  // 編集開始（onFocus）も同時に起きるが、画像を拡大したいだけの操作なのでpreventDefaultで
-  // カーソル配置を止める（編集モード自体に入ることは実害が無いため許容する）
-  const handleClick = (e: MouseEvent<HTMLDivElement>) => {
+  // 画像クリックで拡大表示（改修16回目）・リンククリックで新しいタブを開く（改修23回目）。
+  // onClickではなくonMouseDownでpreventDefaultする：未編集状態からの最初のクリックは
+  // mousedown時点でフォーカスが入り、直後にeditingがtrueになってツールバーが上に出現し
+  // レイアウトが下へシフトする。onClickまで待つとその頃には座標がズレてしまい、
+  // まさにクリックした画像/リンクの上にツールバンのボタン等が来て意図しない要素に当たる
+  // ことがあるため、シフトが起きる前のmousedown時点で止める必要がある
+  //
+  // リンクは、contentEditable内の<a>は通常クリックでは遷移せずキャレット配置のみが起きるため、
+  // target/relを付けてリンク化しても（insertLink参照）実際にはクリックしても何も起きず
+  // 「リンク機能が使えない」状態になっていた。画像と同じ理由でpreventDefaultしキャレット配置・
+  // フォーカスを止め、代わりに明示的にwindow.openで遷移する
+  const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     const target = e.target;
     if (target instanceof HTMLImageElement) {
       e.preventDefault();
       setLightboxImage({ src: target.src, alt: target.alt });
+      return;
+    }
+    const link = target instanceof HTMLElement ? target.closest('a') : null;
+    if (link?.href) {
+      e.preventDefault();
+      window.open(link.href, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -315,7 +329,7 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           onDrop={handleDrop}
-          onClick={handleClick}
+          onMouseDown={handleMouseDown}
           style={{ minHeight }}
           data-markdown-field="true"
           className="w-full resize-y overflow-auto rounded-md border border-neutral-200 bg-transparent p-2 text-sm text-neutral-900 outline-none focus:border-blue-400 dark:border-neutral-700 dark:text-white [&_a]:text-blue-500 [&_a]:underline [&_code]:rounded [&_code]:bg-neutral-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[13px] dark:[&_code]:bg-neutral-800 [&_img]:my-1 [&_img]:max-w-full [&_img]:cursor-zoom-in [&_img]:rounded-md [&_ol]:ml-4 [&_ol]:list-decimal [&_ul]:ml-4 [&_ul]:list-disc"
