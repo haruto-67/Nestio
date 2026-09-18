@@ -202,7 +202,7 @@ export const TOOL_DEFS: ToolDef[] = [
         title: { type: 'string' },
         description: { type: 'string' },
         body: { type: 'string', description: MARKDOWN_FIELD_DESC },
-        category: { type: 'string', description: "'profile' | 'project' | 'topic' | 'person'" },
+        category: { type: 'string', description: "'profile' | 'project' | 'topic' | 'person' | 'decision'" },
         append: { type: 'boolean', description: 'trueならbodyを既存本文の末尾に追記する' },
       },
       required: ['title'],
@@ -1038,7 +1038,7 @@ export async function callTool(
       if (typeof args.description === 'string') fields.description = args.description;
       if (typeof args.category === 'string') {
         if (!knowledgeCategorySchema.safeParse(args.category).success) {
-          throw new ToolError("categoryは'profile' | 'project' | 'topic' | 'person'のいずれかである必要があります");
+          throw new ToolError("categoryは'profile' | 'project' | 'topic' | 'person' | 'decision'のいずれかである必要があります");
         }
         fields.category = args.category;
       }

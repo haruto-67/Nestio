@@ -118,4 +118,45 @@ describe('runMigrations', () => {
         .run('k3', 'u1', '重複タイトル', 'topic', now, now, 3),
     ).not.toThrow();
   });
+
+  it('categoryに"decision"を追加し、既存行・FTSインデックスを保持する（0016_knowledge_decision_category.sql）', () => {
+    db = new Database(':memory:');
+    runMigrations(db);
+
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO users (id, google_sub, email, display_name, created_at) VALUES (?, ?, ?, ?, ?)`,
+    ).run('u1', 'sub1', 'u1@example.com', 'ユーザー1', now);
+
+    // マイグレーション前から存在していたはずの行（他のcategoryテスト同様、直接INSERTして
+    // 「既存データがテーブル作り直し後も残り、FTSも新しいrowidに正しく対応する」ことを確認する
+    db.prepare(
+      `INSERT INTO knowledge (id, user_id, title, description, body, category, created_at, updated_at, seq)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run('k1', 'u1', '既存トピック', '説明', '本文キーワード', 'topic', now, now, 1);
+
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO knowledge (id, user_id, title, description, body, category, created_at, updated_at, seq)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run('k2', 'u1', 'DB選定の判断', '判断の記録', 'A案とB案', 'decision', now, now, 2),
+    ).not.toThrow();
+
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO knowledge (id, user_id, title, category, created_at, updated_at, seq)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run('k3', 'u1', '不正カテゴリ', 'invalid_category', now, now, 3),
+    ).toThrow();
+
+    const hit = db
+      .prepare(`SELECT knowledge.id as id FROM knowledge_fts JOIN knowledge ON knowledge.rowid = knowledge_fts.rowid
+                 WHERE knowledge_fts MATCH ?`)
+      .all('"本文キーワード"') as { id: string }[];
+    expect(hit.map((r) => r.id)).toEqual(['k1']);
+  });
 });

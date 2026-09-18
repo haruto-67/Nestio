@@ -8,7 +8,7 @@ const syncable = {
   seq: seqSchema,
 };
 
-export const knowledgeCategorySchema = z.enum(['profile', 'project', 'topic', 'person']);
+export const knowledgeCategorySchema = z.enum(['profile', 'project', 'topic', 'person', 'decision']);
 export type KnowledgeCategory = z.infer<typeof knowledgeCategorySchema>;
 
 export const knowledgeRowSchema = z.object({
