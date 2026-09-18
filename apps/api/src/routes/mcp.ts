@@ -168,15 +168,41 @@ function unauthorizedWithResourceMetadata(c: Context<{ Variables: AppVariables }
 
 mcpRoute.post('/mcp', async (c) => {
   const db = c.get('db');
+  const logger = c.get('logger');
   const authHeader = c.req.header('authorization');
   if (!authHeader?.startsWith('Bearer ')) {
     unauthorizedWithResourceMetadata(c);
   }
 
+  const authStartedAt = Date.now();
   const verified = verifyAccessToken(db, authHeader.slice('Bearer '.length));
+  const authMs = Date.now() - authStartedAt;
   if (!verified) throw new ApiError('unauthenticated', 'トークンが無効です');
 
   const body = jsonRpcRequestSchema.parse(await c.req.json());
-  const response = await handleMcpRequest(db, c.get('env'), c.get('logger'), verified, body as JsonRpcRequest);
-  return c.json(response);
+  const toolName =
+    body.method === 'tools/call' && typeof body.params?.name === 'string' ? body.params.name : undefined;
+
+  const handlerStartedAt = Date.now();
+  const response = await handleMcpRequest(db, c.get('env'), logger, verified, body as JsonRpcRequest);
+  const handlerMs = Date.now() - handlerStartedAt;
+
+  const serializeStartedAt = Date.now();
+  const payload = JSON.stringify(response);
+  const serializeMs = Date.now() - serializeStartedAt;
+
+  // MCP応答速度のボトルネック特定のための計測（改修24回目）。フェーズ別に内訳を残す
+  logger.info(
+    {
+      mcp_method: body.method,
+      tool_name: toolName,
+      auth_ms: authMs,
+      handler_ms: handlerMs,
+      serialize_ms: serializeMs,
+      response_bytes: Buffer.byteLength(payload),
+    },
+    'mcp_timing',
+  );
+
+  return c.body(payload, 200, { 'Content-Type': 'application/json; charset=UTF-8' });
 });
