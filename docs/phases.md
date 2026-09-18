@@ -1296,6 +1296,41 @@ curlで直接叩く、または(b)Caddyfileへの`log`ディレクティブ追�
 
 ---
 
+## 改修24回目フォローアップ：MCPサーバーの高速化（2026-09-18）
+
+前セッションの計測結果（認証0〜1ms・ハンドラ0〜5msでいずれもボトルネックでない一方、
+`tools/list`のペイロードが33ツールで15.8KBあり最大の`create_attachment_upload`が
+1,317バイト）を踏まえ、推測ではなく計測結果に基づいて優先順位を決めて着手した。
+
+- [x] **`tools/list`の軽量化**：`note`/`body`のMarkdown記法説明（4ツールで重複していた
+      約340バイトの説明文）と、添付系4ツール（`upload_attachment`・`get_attachment`・
+      `create_attachment_download`・`create_attachment_upload`）のcurl例・トークン仕様の
+      説明文を、既存パターン（改修20回目で導入したMCPリソース分離）に倣って新規リソース
+      `nestio://docs/markdown`（新設）と既存の`nestio://docs/attachments`へ移動し、
+      ツール本体のdescriptionは一言＋リソース参照に短縮した。結果、`tools/list`の
+      ペイロードは15,798バイト→11,644バイトへ約26%減少した
+- [x] **SQLiteの`mmap_size`設定**：`journal_mode=WAL`・`synchronous=NORMAL`は既に設定
+      済みだったため、未設定だった`mmap_size`（256MB）を`apps/api/src/db/client.ts`に追加。
+      `task_tags(task_id, tag_id)`のユニークインデックス等、頻出クエリに必要なインデックスは
+      既存で足りていることを`docs/schema.sql`で確認済み（インデックス追加は不要と判断）
+- [x] **N+1の解消**：`list_tasks`/`search_tasks`がタスク件数分`listTaskTags()`を個別呼び出し
+      していた箇所と、`list_notes`がメモ件数分添付を個別取得していた箇所を、それぞれ
+      `IN (...)`を使った1回のバッチクエリ（`listTaskTagsBatch`/`listAttachmentsBatch`）に
+      変更した。タグ・添付が他のタスク/メモへ混ざらないことを確認する回帰テストを追加した
+
+**今回やらなかったこと**：認証結果のメモリキャッシュ導入（計測上ボトルネックでないため
+見送り）。Caddy側のgzip/keep-alive等HTTPレイヤ調整（`/etc/caddy/Caddyfile`の確認・変更が
+このセッションからもガードレールでブロックされ着手不可。ユーザーの手による確認が必要）。
+未使用ツールの整理（使用状況を安全に判断する手段が無いため見送り）。トランスポートの
+streamable HTTP移行（確認したところ`/mcp`は元々SSEではなく単純なPOST/JSON応答だったため
+対応不要と判明）。
+
+**完了条件**：`pnpm typecheck` / `pnpm lint` / `pnpm test`（api 346件、新規2件含む）が全て
+通過。本番Piへデプロイ後、Nestio MCP接続で`tools/list`・`list_tasks`・`list_notes`が
+問題なく動作することを確認した（UIに変更はないためPlaywright e2eは対象外）。
+
+---
+
 ## 進捗管理
 
 - 完了した項目は `[x]` にしてコミットする

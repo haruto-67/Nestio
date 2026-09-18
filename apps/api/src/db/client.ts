@@ -10,5 +10,7 @@ export function createDbConnection(dbPath: string): Database.Database {
   db.pragma('busy_timeout = 5000');
   db.pragma('foreign_keys = ON');
   db.pragma('synchronous = NORMAL');
+  // ラズパイのストレージI/O負荷を減らすため、ページキャッシュに乗らない読み取りをmmap経由にする
+  db.pragma('mmap_size = 268435456');
   return db;
 }

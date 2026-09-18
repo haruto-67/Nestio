@@ -6,6 +6,7 @@ export interface ResourceDef {
 }
 
 const ATTACHMENTS_GUIDE_URI = 'nestio://docs/attachments';
+const MARKDOWN_GUIDE_URI = 'nestio://docs/markdown';
 
 /**
  * MCPリソース一覧（改修20回目）。ツールのdescriptionは会話の毎ターンにコンテキストへ常駐する
@@ -20,6 +21,12 @@ export const RESOURCE_DEFS: ResourceDef[] = [
     description:
       'タスク/メモへの画像添付の実践ガイド。create_attachment_upload・create_attachment_download・' +
       'get_attachment・upload_attachmentを使う前、またはこれらでエラーが出た時に読むこと',
+    mimeType: 'text/markdown',
+  },
+  {
+    uri: MARKDOWN_GUIDE_URI,
+    name: 'markdown-guide',
+    description: 'タスクのnote・メモのbodyで使えるMarkdown記法の一覧。書式を確認したい時に読むこと',
     mimeType: 'text/markdown',
   },
 ];
@@ -84,8 +91,29 @@ data_base64はLLMが1文字ずつ出力する必要があり、**長いほど確
 \`create_attachment_upload\`を優先すること。
 `;
 
+const MARKDOWN_GUIDE_CONTENT = `# Nestio Markdown記法ガイド
+
+タスクの\`note\`・メモの\`body\`で使える記法。
+
+- \`**太字**\` / \`*斜体*\` / \`\`\`コード\`\`\`
+- \`- 箇条書き\` / \`1. 番号付きリスト\`
+- \`[文字](https://...)\` リンク
+- \`![代替テキスト](url)\` 画像（空行区切りの段落）
+- 見出し（\`#\`）は太字の段落として表示される
+- HTMLタグはそのまま文字として表示され、解釈されない
+
+## 画像を貼る手順
+
+data:base64をここへ直接書かず、先に \`create_attachment_upload\`
+（コード実行環境からNestioへ直接HTTP通信できる場合。推奨）または \`upload_attachment\`
+（それ以外の場合のフォールバック。数KB程度まで）で画像をアップロードし、
+返ってきたurlを \`![代替テキスト](url)\` で使うこと。詳細はMCPリソース
+\`nestio://docs/attachments\` を参照。
+`;
+
 const RESOURCE_CONTENTS: Record<string, string> = {
   [ATTACHMENTS_GUIDE_URI]: ATTACHMENTS_GUIDE_CONTENT,
+  [MARKDOWN_GUIDE_URI]: MARKDOWN_GUIDE_CONTENT,
 };
 
 export function findResourceDef(uri: string): ResourceDef | undefined {

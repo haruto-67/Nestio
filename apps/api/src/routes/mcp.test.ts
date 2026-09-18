@@ -368,6 +368,44 @@ describe('MCP OAuth + tools', () => {
     expect(searchedTask?.tags.map((t) => t.name)).toEqual(['webPC使用時']);
   });
 
+  it('list_tasksは複数タスクのタグをバッチ取得しても他タスクへ混ざらない（改修24回目：N+1解消）', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const listId = uuidv7();
+    db.prepare(
+      `INSERT INTO lists (id, user_id, folder_id, name, color, sort_mode, sort_order, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, NULL, 'Inbox', '#888888', 'custom', 1, ?, ?, NULL, 1)`,
+    ).run(listId, userId, Date.now(), Date.now());
+
+    const taskA = (await callTool(app, accessToken, 'create_task', {
+      list_id: listId,
+      title: 'タグA',
+      tags: ['red'],
+    })) as { id: string };
+    const taskB = (await callTool(app, accessToken, 'create_task', {
+      list_id: listId,
+      title: 'タグB',
+      tags: ['blue', 'green'],
+    })) as { id: string };
+    const taskC = (await callTool(app, accessToken, 'create_task', {
+      list_id: listId,
+      title: 'タグ無し',
+    })) as { id: string };
+
+    const listed = (await callTool(app, accessToken, 'list_tasks', { list_id: listId })) as {
+      tasks: { id: string; tags: { name: string }[] }[];
+    };
+    const byId = (id: string) => listed.tasks.find((t) => t.id === id);
+    expect(byId(taskA.id)?.tags.map((t) => t.name)).toEqual(['red']);
+    expect(byId(taskB.id)?.tags.map((t) => t.name).sort()).toEqual(['blue', 'green']);
+    expect(byId(taskC.id)?.tags).toEqual([]);
+  });
+
   it('update_noteでメモの内容とpinnedを更新できる', async () => {
     db = createTestDb();
     const userId = uuidv7();
@@ -694,6 +732,40 @@ describe('MCP OAuth + tools', () => {
     };
     const foundNote = listed.notes.find((n) => n.id === note.id);
     expect(foundNote?.attachments.map((a) => a.filename)).toEqual(['note.png']);
+  });
+
+  it('list_notesは複数メモの添付をバッチ取得しても他メモへ混ざらない（改修24回目：N+1解消）', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const noteA = (await callTool(app, accessToken, 'create_note', { title: '添付ありA' })) as { id: string };
+    const noteB = (await callTool(app, accessToken, 'create_note', { title: '添付ありB' })) as { id: string };
+    const noteC = (await callTool(app, accessToken, 'create_note', { title: '添付無し' })) as { id: string };
+
+    await callTool(app, accessToken, 'upload_attachment', {
+      owner_type: 'note',
+      owner_id: noteA.id,
+      filename: 'a.png',
+      data_base64: TINY_PNG_BASE64,
+    });
+    await callTool(app, accessToken, 'upload_attachment', {
+      owner_type: 'note',
+      owner_id: noteB.id,
+      filename: 'b.png',
+      data_base64: TINY_PNG_BASE64,
+    });
+
+    const listed = (await callTool(app, accessToken, 'list_notes', {})) as unknown as {
+      notes: { id: string; attachments: { filename: string }[] }[];
+    };
+    const byId = (id: string) => listed.notes.find((n) => n.id === id);
+    expect(byId(noteA.id)?.attachments.map((a) => a.filename)).toEqual(['a.png']);
+    expect(byId(noteB.id)?.attachments.map((a) => a.filename)).toEqual(['b.png']);
+    expect(byId(noteC.id)?.attachments).toEqual([]);
   });
 
   it('upload_attachmentは壊れたPNGデータ（CRC不一致）を拒否する', async () => {

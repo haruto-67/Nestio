@@ -24,13 +24,7 @@ export interface ToolDef {
 }
 
 const MARKDOWN_FIELD_DESC =
-  '簡単なMarkdown記法が使える（**太字**、*斜体*、`コード`、- 箇条書き、1. 番号付きリスト、' +
-  '[文字](https://...)リンク、![代替テキスト](url)画像、空行区切りの段落）。' +
-  '見出し(#)は太字の段落として表示される。HTMLタグはそのまま書いても解釈されない（文字として表示される）。' +
-  '画像を貼りたい時は、data:base64をここへ直接書かず、先にcreate_attachment_upload（コード実行' +
-  '環境からNestioへ直接HTTP通信できる場合。推奨）またはupload_attachment（それ以外の場合の' +
-  'フォールバック。数KB程度まで）で画像をアップロードし、返ってきたurlを![代替テキスト](url)で' +
-  '使うこと';
+  '簡単なMarkdown記法が使える。詳細・画像添付の貼り方はMCPリソース nestio://docs/markdown を参照';
 
 // data_base64経由（LLMが1文字ずつトークン生成する必要がある）はサイズに応じて生成が破損・中断
 // しやすいため、上限を小さく絞る（改修17回目）。より大きな画像はcreate_attachment_uploadを使う
@@ -329,9 +323,7 @@ export const TOOL_DEFS: ToolDef[] = [
     scope: 'write',
     description:
       `画像をタスク/メモへの添付として保存し、そのURLを返す。data_base64は${UPLOAD_ATTACHMENT_INLINE_MAX_BYTES}` +
-      'バイト程度までを目安にすること。それを超える、またはコード実行環境からNestioへ直接HTTP通信' +
-      'できる場合はcreate_attachment_uploadを使う方が確実（base64を1文字ずつ生成する必要が無い）。' +
-      '詳しい前提条件・エラー対応表はMCPリソース nestio://docs/attachments を参照',
+      'バイト程度までを目安にすること。詳しい使い分け・エラー対応表はMCPリソース nestio://docs/attachments を参照',
     inputSchema: {
       type: 'object',
       properties: {
@@ -352,10 +344,8 @@ export const TOOL_DEFS: ToolDef[] = [
     scope: 'read',
     description:
       'get_task/list_notesが返すattachments[].urlに対応する画像本体を取得する。' +
-      'タスクやメモに添付された画像の中身を確認したい時に使う。' +
-      `${GET_ATTACHMENT_INLINE_MAX_BYTES}バイトを超える画像はbase64を返さず、too_large:trueとurlのみ返す` +
-      '（コード実行環境が使えるなら、その場合はcreate_attachment_downloadで直接curl取得する）。' +
-      '詳しい前提条件・エラー対応表はMCPリソース nestio://docs/attachments を参照',
+      `${GET_ATTACHMENT_INLINE_MAX_BYTES}バイトを超える画像はbase64を返さずtoo_large:trueとurlのみ返す。` +
+      '詳しい使い分け・エラー対応表はMCPリソース nestio://docs/attachments を参照',
     inputSchema: {
       type: 'object',
       properties: { sha256: { type: 'string', description: 'attachments[].url末尾のsha256（get_task/list_notesで取得）' } },
@@ -367,11 +357,8 @@ export const TOOL_DEFS: ToolDef[] = [
     scope: 'read',
     description:
       '添付画像を直接HTTPで取得するためのワンタイムトークン付きURLを発行する。get_attachmentが' +
-      `too_large:trueを返した（${GET_ATTACHMENT_INLINE_MAX_BYTES}バイト超）場合や、コード実行環境から` +
-      'Nestioへ直接HTTP通信できる場合はこちらを使うこと。返ってきたdownload_urlへ、ヘッダー ' +
-      'Authorization: Bearer <download_token> を付けてGETすると画像バイナリが返る（例: curl -o out.png ' +
-      '-H "Authorization: Bearer <download_token>" <download_url>）。トークンの有効期限は5分・1回のみ使用可能。' +
-      '詳しい前提条件・エラー対応表はMCPリソース nestio://docs/attachments を参照',
+      `too_large:trueを返した（${GET_ATTACHMENT_INLINE_MAX_BYTES}バイト超）場合に使う。` +
+      '使い方はMCPリソース nestio://docs/attachments を参照',
     inputSchema: {
       type: 'object',
       properties: { sha256: { type: 'string', description: 'attachments[].url末尾のsha256（get_task/list_notesで取得）' } },
@@ -383,17 +370,9 @@ export const TOOL_DEFS: ToolDef[] = [
     scope: 'write',
     description:
       '画像を直接HTTPでアップロードするためのワンタイムトークン付きURLを発行する。コード実行環境から' +
-      'Nestioへ直接HTTP通信できる場合はこちらを使うこと（upload_attachmentのdata_base64方式より確実・' +
-      '高速。base64を1文字ずつ生成する必要が無く、サイズに応じた破損・中断のリスクが無い）。' +
-      '呼び出し前に、アップロードするファイルのSHA-256（16進数64桁・小文字）をコード実行環境側で' +
-      '計算しておくこと。返ってきたupload_urlへ、ヘッダー Authorization: Bearer <upload_token> を' +
-      '付けて生バイナリをPOSTすると保存される（例: curl -X POST --data-binary @file.png ' +
-      '-H "Authorization: Bearer <upload_token>" <upload_url>）。POST成功後、noteやbodyでは' +
-      'upload_urlと同じパス（/api/v1/attachments/<sha256>）を![代替テキスト](url)として使えばよく、' +
-      '別途upload_attachmentを呼ぶ必要は無い。トークンの有効期限は5分。' +
-      '内容不一致等でPOSTが失敗しても、同じトークンで成功するまで3回まで再試行できる' +
-      '（4回目以降や期限切れ後はcreate_attachment_uploadを呼び直すこと）。' +
-      '詳しい前提条件・エラー対応表はMCPリソース nestio://docs/attachments を参照',
+      'Nestioへ直接HTTP通信できる場合はupload_attachmentよりこちらを優先すること。' +
+      '呼び出し前にアップロードするファイルのSHA-256（16進数64桁・小文字）を計算しておくこと。' +
+      '使い方（POST手順・note/bodyへの貼り方）・エラー対応表はMCPリソース nestio://docs/attachments を参照',
     inputSchema: {
       type: 'object',
       properties: {
@@ -557,6 +536,38 @@ function listTaskTags(db: Database.Database, userId: string, taskId: string): Ta
 }
 
 /**
+ * listTaskTagsのバッチ版（改修24回目：list_tasks/search_tasksがタスク件数分クエリを発行していた
+ * N+1を解消するため追加）。taskIdごとのタグ配列を1回のIN検索でまとめて取る
+ */
+function listTaskTagsBatch(
+  db: Database.Database,
+  userId: string,
+  taskIds: string[],
+): Map<string, TagSummary[]> {
+  const result = new Map<string, TagSummary[]>();
+  if (taskIds.length === 0) return result;
+
+  const placeholders = taskIds.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `SELECT task_tags.task_id as task_id, tags.id as id, tags.name as name, tags.color as color
+       FROM task_tags
+       JOIN tags ON tags.id = task_tags.tag_id
+       WHERE task_tags.task_id IN (${placeholders}) AND task_tags.user_id = ?
+         AND task_tags.deleted_at IS NULL AND tags.deleted_at IS NULL
+       ORDER BY tags.name`,
+    )
+    .all(...taskIds, userId) as (TagSummary & { task_id: string })[];
+
+  for (const { task_id, ...tag } of rows) {
+    const list = result.get(task_id);
+    if (list) list.push(tag);
+    else result.set(task_id, [tag]);
+  }
+  return result;
+}
+
+/**
  * タスク/メモに紐づく添付の一覧（改修16回目：MCP経由で添付画像を確認できるようにする要望への
  * 対応）。UI内部で使うサムネイル（`__thumb__`prefix、apps/web側で生成）は実装の詳細なので除く
  */
@@ -583,6 +594,47 @@ function listAttachments(
     sha256: string;
   }[];
   return rows.map(({ sha256, ...rest }) => ({ ...rest, url: `/api/v1/attachments/${sha256}` }));
+}
+
+/**
+ * listAttachmentsのバッチ版（改修24回目：list_notesがメモ件数分クエリを発行していたN+1を
+ * 解消するため追加）。ownerIdごとの添付配列を1回のIN検索でまとめて取る
+ */
+function listAttachmentsBatch(
+  db: Database.Database,
+  userId: string,
+  ownerType: 'task' | 'note',
+  ownerIds: string[],
+): Map<string, AttachmentSummary[]> {
+  const result = new Map<string, AttachmentSummary[]>();
+  if (ownerIds.length === 0) return result;
+
+  const placeholders = ownerIds.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `SELECT owner_id, id, filename, mime, bytes, width, height, sha256 FROM attachments
+       WHERE user_id = ? AND owner_type = ? AND owner_id IN (${placeholders}) AND deleted_at IS NULL
+       AND filename NOT LIKE '\\_\\_thumb\\_\\_%' ESCAPE '\\'
+       ORDER BY created_at`,
+    )
+    .all(userId, ownerType, ...ownerIds) as {
+    owner_id: string;
+    id: string;
+    filename: string;
+    mime: string;
+    bytes: number;
+    width: number | null;
+    height: number | null;
+    sha256: string;
+  }[];
+
+  for (const { owner_id, sha256, ...rest } of rows) {
+    const summary = { ...rest, url: `/api/v1/attachments/${sha256}` };
+    const list = result.get(owner_id);
+    if (list) list.push(summary);
+    else result.set(owner_id, [summary]);
+  }
+  return result;
 }
 
 function applyOneOpOrThrow(db: Database.Database, userId: string, op: SyncOp): void {
@@ -630,14 +682,16 @@ export async function callTool(
            WHERE ${conditions.join(' AND ')} ORDER BY sort_order LIMIT ?`,
         )
         .all(...params) as { id: string }[];
-      return { tasks: rows.map((t) => ({ ...t, tags: listTaskTags(db, userId, t.id) })) };
+      const tagsByTaskId = listTaskTagsBatch(db, userId, rows.map((t) => t.id));
+      return { tasks: rows.map((t) => ({ ...t, tags: tagsByTaskId.get(t.id) ?? [] })) };
     }
 
     case 'search_tasks': {
       const q = requireString(args, 'q');
       const limit = typeof args.limit === 'number' ? args.limit : 20;
       const results = searchTasks(db, userId, q, limit);
-      return { tasks: results.map((t) => ({ ...t, tags: listTaskTags(db, userId, t.id) })) };
+      const tagsByTaskId = listTaskTagsBatch(db, userId, results.map((t) => t.id));
+      return { tasks: results.map((t) => ({ ...t, tags: tagsByTaskId.get(t.id) ?? [] })) };
     }
 
     case 'get_task': {
@@ -657,7 +711,8 @@ export async function callTool(
            WHERE user_id = ? AND deleted_at IS NULL ORDER BY sort_order LIMIT ?`,
         )
         .all(userId, limit) as { id: string; title: string; body: string; pinned: number }[];
-      return { notes: rows.map((n) => ({ ...n, attachments: listAttachments(db, userId, 'note', n.id) })) };
+      const attachmentsByNoteId = listAttachmentsBatch(db, userId, 'note', rows.map((n) => n.id));
+      return { notes: rows.map((n) => ({ ...n, attachments: attachmentsByNoteId.get(n.id) ?? [] })) };
     }
 
     case 'create_task': {
