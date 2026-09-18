@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { uuidv7 } from '@nestio/shared';
-import { Menu, Search, Egg, Keyboard, Trash2, Settings, ShieldCheck, ListTodo, StickyNote } from 'lucide-react';
+import { Menu, Search, Egg, Keyboard, Trash2, Settings, ShieldCheck, ListTodo, StickyNote, BookOpen } from 'lucide-react';
 import { AppProvider, useApp } from './state/AppProvider.js';
 import { useTasks, useLists } from './db/queries.js';
 import { SMART_LISTS } from './lib/task-views.js';
@@ -24,6 +24,7 @@ import { KeymapSettings } from './features/keyboard/KeymapSettings.js';
 import { SearchModal } from './features/search/SearchModal.js';
 import { NotesScreen, type NotesScreenHandle } from './features/notes/NotesScreen.js';
 import { NotesColorFilter } from './features/notes/NotesColorFilter.js';
+import { KnowledgeScreen, type KnowledgeScreenHandle } from './features/knowledge/KnowledgeScreen.js';
 import { PomodoroTimer } from './features/pomodoro/PomodoroTimer.js';
 import { PomodoroHeaderButton } from './features/pomodoro/PomodoroHeaderButton.js';
 import { HatchSettings } from './features/hatch/HatchSettings.js';
@@ -38,14 +39,21 @@ import { setTaskCollapsed, isTaskCollapsed } from './lib/collapsed-tasks.js';
 import { listHatchRuns } from './api/hatch.js';
 import { SyncStatusIndicator } from './ui/SyncStatusIndicator.js';
 
-type Screen = 'tasks' | 'notes';
+type Screen = 'tasks' | 'notes' | 'knowledge';
 
 const LAST_SCREEN_KEY = 'nestio_last_screen';
 const LAST_VIEW_KEY = 'nestio_last_view';
 
 function loadInitialScreen(): Screen {
   const stored = localStorage.getItem(LAST_SCREEN_KEY);
-  return stored === 'notes' ? 'notes' : 'tasks';
+  return stored === 'notes' || stored === 'knowledge' ? stored : 'tasks';
+}
+
+/** タスク→メモ→ナレッジ→タスクの3値サイクル（改修24回目フォローアップ：switch_screenを拡張） */
+function nextScreen(current: Screen): Screen {
+  if (current === 'tasks') return 'notes';
+  if (current === 'notes') return 'knowledge';
+  return 'tasks';
 }
 
 function loadInitialView(): ViewSelection {
@@ -107,6 +115,10 @@ function MainLayout() {
       document.title = 'Nestio - メモ';
       return;
     }
+    if (screen === 'knowledge') {
+      document.title = 'Nestio - ナレッジ';
+      return;
+    }
     let label = '';
     if (view.type === 'smart') label = SMART_LISTS.find((s) => s.key === view.key)?.label ?? '';
     else if (view.type === 'list') label = lists.find((l) => l.id === view.listId)?.name ?? '';
@@ -144,8 +156,11 @@ function MainLayout() {
   // メモ詳細(NoteEditor)が開いているか。NotesScreen内部で管理しているselectedNoteIdを
   // Escの一括クローズ処理から参照するために持つ（改修11回目）
   const [notesEditorOpen, setNotesEditorOpen] = useState(false);
+  // ナレッジ詳細(KnowledgeEditor)が開いているか。notesEditorOpenと同じ扱い（改修24回目フォローアップ）
+  const [knowledgeEditorOpen, setKnowledgeEditorOpen] = useState(false);
   const sidebarRef = useRef<SidebarHandle>(null);
   const notesRef = useRef<NotesScreenHandle>(null);
+  const knowledgeRef = useRef<KnowledgeScreenHandle>(null);
   const { theme, toggleTheme } = useTheme();
   const { keymap } = useKeymap();
   const sidebarResize = useResizableWidth('nestio_sidebar_width', 256, 160, 900);
@@ -364,9 +379,12 @@ function MainLayout() {
         // そこからj/kで移動を再開できるようにする。完全な選択解除は2段階目のEscで行う
         if (detailOpen) return setDetailOpen(false);
         if (selectedTaskId) return setSelectedTaskId(null);
-      } else {
+      } else if (screen === 'notes') {
         // メモ詳細も同様に、Escでは閉じるだけでメモ一覧のカーソル位置は維持する（改修11回目）
         if (notesEditorOpen) return notesRef.current?.closeEditor();
+      } else {
+        // ナレッジ詳細も同様（改修24回目フォローアップ）
+        if (knowledgeEditorOpen) return knowledgeRef.current?.closeEditor();
       }
     }
     window.addEventListener('keydown', onKeyDown);
@@ -385,6 +403,7 @@ function MainLayout() {
     detailOpen,
     selectedTaskId,
     notesEditorOpen,
+    knowledgeEditorOpen,
     screen,
   ]);
 
@@ -506,11 +525,13 @@ function MainLayout() {
       onMoveUp: () => {
         if (sidebarFocused) return sidebarRef.current?.moveCursor(-1);
         if (screen === 'notes') return notesRef.current?.moveCursor(-1);
+        if (screen === 'knowledge') return knowledgeRef.current?.moveCursor(-1);
         moveSelection(-1);
       },
       onMoveDown: () => {
         if (sidebarFocused) return sidebarRef.current?.moveCursor(1);
         if (screen === 'notes') return notesRef.current?.moveCursor(1);
+        if (screen === 'knowledge') return knowledgeRef.current?.moveCursor(1);
         moveSelection(1);
       },
       onIndent: indentSelected,
@@ -523,13 +544,14 @@ function MainLayout() {
       onActivate: () => {
         if (sidebarFocused) return sidebarRef.current?.activateCursor();
         if (screen === 'notes') return notesRef.current?.activateCursor();
+        if (screen === 'knowledge') return knowledgeRef.current?.activateCursor();
         // detailOpenがfalse（一覧のみ表示中）だとパネル自体が閉じているため、単に
         // focusTitleTaskIdをセットするだけでは何も起きない。selectAndFocusTitleで
         // detailOpenをtrueにしつつタイトル欄へフォーカスする
         if (selectedTaskId) selectAndFocusTitle(selectedTaskId);
       },
       onToggleCollapse: () => {
-        if (sidebarFocused || screen === 'notes') return;
+        if (sidebarFocused || screen !== 'tasks') return;
         toggleSelectedCollapse();
       },
       onFocusSelectedTitle: () => {
@@ -541,25 +563,31 @@ function MainLayout() {
         if (screen !== 'tasks') return;
         setSidebarFocused(true);
       },
-      // タスク/メモ画面切り替え（改修11回目）。切り替え後は前の画面のサイドバーフォーカスを
-      // 引きずらないようリセットする
+      // タスク→メモ→ナレッジの3値サイクル切り替え（改修11回目、改修24回目フォローアップで
+      // ナレッジを追加）。切り替え後は前の画面のサイドバーフォーカスを引きずらないようリセットする
       onSwitchScreen: () => {
-        setScreen(screen === 'tasks' ? 'notes' : 'tasks');
+        setScreen(nextScreen(screen));
         setSidebarFocused(false);
       },
+      // ナレッジ画面にいる時だけ有効。他画面ではknowledgeRefが未マウントのため無視される
+      // （quick_addがタスク画面専用なのと同じ設計。改修24回目フォローアップ）
+      onNewKnowledge: () => knowledgeRef.current?.createNew(),
       onGotoFirst: () => {
         if (sidebarFocused) return sidebarRef.current?.gotoFirst();
         if (screen === 'notes') return notesRef.current?.gotoFirst();
+        if (screen === 'knowledge') return knowledgeRef.current?.gotoFirst();
         gotoFirstTask();
       },
       onGotoLast: () => {
         if (sidebarFocused) return sidebarRef.current?.gotoLast();
         if (screen === 'notes') return notesRef.current?.gotoLast();
+        if (screen === 'knowledge') return knowledgeRef.current?.gotoLast();
         gotoLastTask();
       },
       onTypeahead: (char) => {
         if (sidebarFocused) return sidebarRef.current?.typeahead(char);
         if (screen === 'notes') return notesRef.current?.typeahead(char);
+        if (screen === 'knowledge') return knowledgeRef.current?.typeahead(char);
         typeaheadTask(char);
       },
     },
@@ -704,6 +732,12 @@ function MainLayout() {
             >
               メモ
             </button>
+            <button
+              onClick={() => setScreen('knowledge')}
+              className={`flex-1 py-2 ${screen === 'knowledge' ? 'border-b-2 border-blue-500 font-medium' : 'text-neutral-400'}`}
+            >
+              ナレッジ
+            </button>
           </div>
           <div className="flex justify-center border-b border-neutral-200 py-1 dark:border-neutral-800">
             <SyncStatusIndicator />
@@ -762,6 +796,12 @@ function MainLayout() {
                   className={`flex-1 py-2 ${screen === 'notes' ? 'border-b-2 border-blue-500 font-medium' : 'text-neutral-400'}`}
                 >
                   メモ
+                </button>
+                <button
+                  onClick={() => setScreen('knowledge')}
+                  className={`flex-1 py-2 ${screen === 'knowledge' ? 'border-b-2 border-blue-500 font-medium' : 'text-neutral-400'}`}
+                >
+                  ナレッジ
                 </button>
                 <button
                   onClick={() => setShowTrash(true)}
@@ -835,12 +875,14 @@ function MainLayout() {
                 onTitleFocused={() => setFocusTitleTaskId(null)}
               />
             </>
-          ) : (
+          ) : screen === 'notes' ? (
             <NotesScreen
               ref={notesRef}
               colorFilter={notesColorFilter}
               onEditorOpenChange={setNotesEditorOpen}
             />
+          ) : (
+            <KnowledgeScreen ref={knowledgeRef} onEditorOpenChange={setKnowledgeEditorOpen} />
           )}
         </div>
       </div>
@@ -869,6 +911,15 @@ function MainLayout() {
         >
           <StickyNote size={20} />
           メモ
+        </button>
+        <button
+          onClick={() => setScreen('knowledge')}
+          className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-xs ${
+            screen === 'knowledge' ? 'text-blue-500' : 'text-neutral-400'
+          }`}
+        >
+          <BookOpen size={20} />
+          ナレッジ
         </button>
       </nav>
 

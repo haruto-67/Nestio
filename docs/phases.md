@@ -1453,6 +1453,72 @@ individually取得」の2段構成でMCPツールを実装した。ツール数�
 
 ---
 
+## 改修24回目フォローアップ：ナレッジUI（タスク/メモに並ぶ第3の切り替え）（2026-09-19）
+
+推奨順序の6番目。実装前にユーザーへ方針（変更ファイル一覧・スコープ調整）を提示して承認を
+得てから着手した。既存のメモ機能（`NotesScreen`/`NoteEditor`/`MarkdownField`）のパターンを
+そのまま踏襲し、タスク/メモに並ぶ3つ目の画面としてナレッジを追加した。
+
+**バックエンドの前提整備**（UI実装に必要だった分）：
+- [x] `knowledge_tags`を`syncableTableSchema`/`SYNC_TABLES`に登録し、`task_tags`と同じ
+      UNIQUE制約対応（`apps/api/src/sync/apply.ts`）を`knowledge_tags`にも展開した。
+      これによりUIからのタグ付けが既存の`/sync/push`経由でそのまま動く
+- [x] `/search`のレスポンスに`knowledge`（FTS5・スニペット付き）を追加
+- [x] `knowledge.title`のユーザー内一意制約に対する安全対策を`apply.ts`に追加：既存の別
+      ノートと同じタイトルへ変更/新規作成しようとすると、生のSQLite UNIQUE制約違反で
+      リクエスト全体がクラッシュする代わりに`validation_failed`で拒否するようにした
+      （human がUIでタイトルを自由に変更できるようになったことで踏みやすくなったため）
+- [x] `parseLinkedTitles`を`apps/api/src/knowledge/links.ts`から`packages/shared`
+      （`wiki-links.ts`）へ移し、サーバー側（knowledge_links反映）とクライアント側
+      （バックリンクのローカル計算）で共用できるようにした
+
+**フロントエンド**：
+- [x] Dexieスキーマ（`apps/web/src/db/schema.ts`）をversion 3に上げ`knowledge_tags`を追加。
+      `merge.ts`/`local-mutations.ts`/`queries.ts`（`useKnowledgeList`/`useKnowledgeItem`/
+      `useDeletedKnowledge`/`useKnowledgeTags`）を対応させた
+- [x] `state/actions.ts`に`upsertKnowledge`/`deleteKnowledge`/`restoreKnowledge`/
+      `attachKnowledgeTag`/`deleteKnowledgeTag`を追加（task_tags版と同じ「論理削除済み行の
+      restore優先」パターン）
+- [x] `features/knowledge/`を新設：`KnowledgeScreen.tsx`（一覧。category別グルーピングを
+      固定順（プロフィール→プロジェクト→トピック→人物）で表示し、各グループ内を
+      更新日順/タイトル順でソート。タグ絞り込み・`/search`を使った検索バーを実装）、
+      `KnowledgeEditor.tsx`（詳細/編集。タイトル・説明（別入力）・カテゴリ・本文
+      （`MarkdownField`流用）・タグ・バックリンクを編集）、`KnowledgeFilterMenu.tsx`
+      （タグ絞り込みポップオーバー、`TaskListFilterMenu`の簡易版）、`categories.ts`
+      （カテゴリ定義とバックリンク計算）
+- [x] **バックリンクはサーバー同期に乗せずクライアント側だけで計算**：ローカルIndexedDBに
+      ある全ナレッジのbodyを`parseLinkedTitles`でその都度パースし、対象タイトルを含むものを
+      抽出する方式にした（絶対原則4「UIはIndexedDBだけを読む」を厳密に守り、
+      `knowledge_links`テーブルの同期対応という追加作業を避けるため）
+- [x] `MarkdownField.tsx`に`[[`入力時のタイトル補完を追加（`wikiLinkTitles`props、
+      ナレッジ編集時のみ有効）。矢印キーで候補選択、Enter/Tabで確定。ナレッジは添付
+      テーブルのCHECK制約（`'task'|'note'`のみ）対象外のため画像添付は明示的に無効化した
+- [x] `App.tsx`：`Screen`型に`'knowledge'`を追加し、タブ3箇所（デスクトップ・モバイル
+      ドロワー・モバイル下部タブ）に追加。`switch_screen`をタスク→メモ→ナレッジの
+      3値サイクルに拡張し、新しいキーマップアクション`new_knowledge`
+      （デフォルト`Ctrl+Shift+g`）を追加した
+- [x] `TrashView.tsx`に削除済みナレッジの一覧・復元を追加（タスク/メモと同じ30日ゴミ箱）
+
+**実装中に見つけて直したバグ**：`ui/CollapsibleSection.tsx`の`defaultOpen`が初回マウント時
+にしか効かず、`useLiveQuery`の非同期解決が間に合わない場合（例：ナレッジ詳細を開いた瞬間は
+バックリンク一覧がまだ空で、直後に正しいデータが届く）に「本来開いているべきセクションが
+閉じたまま」になる不具合を、dev環境での実機確認中に発見した。`defaultOpen`がfalse→trueに
+変わった時だけ追従するuseEffectを追加して修正（true→falseには追従しないため、ユーザーが
+手動で閉じた状態を上書きしない）。既存のタスク詳細パネルのタグ欄にも同じ改善が及ぶ
+
+**今回やらなかったこと**：`[[タイトル|表示名]]`の表示名を使ったUI表示（パース自体は前回対応
+済み）、未解決リンクの薄い色表示・クリックでの新規ノート作成、タイトル変更（リネーム）時の
+参照元一括置換（要件メモに明記の通り後回しで可）。
+
+**完了条件**：`pnpm typecheck` / `pnpm lint` / `pnpm test`（api 364件、web既存25件）が全て
+通過。開発サーバー（`pnpm dev`）+ Playwrightで実機確認：3画面タブ切り替え、ナレッジの
+新規作成・タイトル/説明/カテゴリ/本文編集、`[[`補完でのリンク挿入、バックリンクの表示、
+本文からリンクを消すとバックリンクからも消えること、カテゴリ別グルーピング、タイトル重複時に
+トーストで拒否されリネームがロールバックされること、削除（論理削除）が確認できた。
+検証用に作成したテストデータ・セッションはテスト後に削除済み。
+
+---
+
 ## 進捗管理
 
 - 完了した項目は `[x]` にしてコミットする

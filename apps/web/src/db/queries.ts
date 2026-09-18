@@ -9,6 +9,8 @@ import type {
   NoteRow,
   AttachmentRow,
   TriggerRow,
+  KnowledgeRow,
+  KnowledgeTagRow,
 } from '@nestio/shared';
 import { db } from './schema.js';
 
@@ -83,4 +85,21 @@ export function useAttachmentsFor(ownerType: 'task' | 'note', ownerId: string | 
  */
 export function usePendingAttachmentBlob(sha256: string): Blob | null {
   return useLiveQuery(async () => (await db.pendingAttachmentBlobs.get(sha256))?.blob ?? null, [sha256], null);
+}
+
+export function useKnowledgeList(): KnowledgeRow[] {
+  return useLiveQuery(() => db.knowledge.filter((k) => k.deleted_at === null).toArray(), [], []) ?? [];
+}
+
+/** ゴミ箱ビュー用：論理削除されたナレッジ一覧 */
+export function useDeletedKnowledge(): KnowledgeRow[] {
+  return useLiveQuery(() => db.knowledge.filter((k) => k.deleted_at !== null).toArray(), [], []) ?? [];
+}
+
+export function useKnowledgeItem(id: string | null): KnowledgeRow | undefined {
+  return useLiveQuery(() => (id ? db.knowledge.get(id) : undefined), [id], undefined);
+}
+
+export function useKnowledgeTags(): KnowledgeTagRow[] {
+  return useLiveQuery(() => db.knowledge_tags.filter((t) => t.deleted_at === null).toArray(), [], []) ?? [];
 }

@@ -28,8 +28,10 @@ export interface ShortcutHandlers {
   onFocusSelectedTitle: () => void;
   /** 左側エリア（サイドバーのフォルダ/リストツリー）へキーボードフォーカスを移す（改修10回目） */
   onFocusSidebar: () => void;
-  /** タスク画面/メモ画面を切り替える（改修11回目） */
+  /** タスク画面/メモ画面/ナレッジ画面を切り替える（改修11回目、改修24回目フォローアップ） */
   onSwitchScreen: () => void;
+  /** ナレッジを新規作成する（改修24回目フォローアップ） */
+  onNewKnowledge: () => void;
   /** カーソルのあるエリアの先頭/末尾の項目へ移動する（改修11回目） */
   onGotoFirst: () => void;
   onGotoLast: () => void;
@@ -79,6 +81,7 @@ const ACTION_HANDLER_KEYS: Record<KeymapAction, NoArgHandlerKey> = {
   toggle_collapse: 'onToggleCollapse',
   goto_first: 'onGotoFirst',
   goto_last: 'onGotoLast',
+  new_knowledge: 'onNewKnowledge',
 };
 
 /**

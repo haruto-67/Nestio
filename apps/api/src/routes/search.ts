@@ -3,7 +3,7 @@ import { searchQuerySchema, type SearchResponse } from '@nestio/shared';
 import type { AppVariables } from '../middleware/request-context.js';
 import { requireAuth } from '../middleware/auth.js';
 import { ApiError } from '../errors.js';
-import { searchTasks, searchNotes } from '../search/query.js';
+import { searchTasks, searchNotes, searchKnowledge } from '../search/query.js';
 
 export const searchRoute = new Hono<{ Variables: AppVariables }>();
 
@@ -19,6 +19,7 @@ searchRoute.get('/search', (c) => {
   const response: SearchResponse = {
     tasks: searchTasks(db, userId, query.q, query.limit),
     notes: searchNotes(db, userId, query.q, query.limit),
+    knowledge: searchKnowledge(db, userId, query.q, query.limit),
   };
   return c.json(response);
 });

@@ -52,12 +52,13 @@
 
 | メソッド | パス | 内容 |
 |---|---|---|
-| GET | `/search?q=&limit=` | タスクとメモを横断検索 |
+| GET | `/search?q=&limit=` | タスク・メモ・ナレッジを横断検索 |
 
 ```jsonc
 {
   "tasks": [ { "id": "...", "title": "...", "snippet": "...", "list_id": "..." } ],
-  "notes": [ { "id": "...", "title": "...", "snippet": "..." } ]
+  "notes": [ { "id": "...", "title": "...", "snippet": "..." } ],
+  "knowledge": [ { "id": "...", "title": "...", "snippet": "..." } ]
 }
 ```
 

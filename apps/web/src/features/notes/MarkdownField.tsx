@@ -63,23 +63,48 @@ export function sanitizeHtml(html: string): string {
 interface MarkdownFieldProps {
   value: string;
   onSave: (next: string) => void;
-  ownerType: 'task' | 'note';
+  ownerType: 'task' | 'note' | 'knowledge';
   ownerId: string;
   userId: string;
   placeholder?: string;
   minHeight?: number;
+  /**
+   * [[ を入力した時にタイトル補完を出す候補一覧（ナレッジ本文編集時のみ渡す。改修24回目
+   * フォローアップ）。渡さなければ補完機能自体が無効になる
+   */
+  wikiLinkTitles?: string[];
 }
+
+interface LinkSuggestionState {
+  matches: string[];
+  /** contentEditable要素内での相対位置（同じ要素内をスクロールしても追従するように親要素基準で持つ） */
+  top: number;
+  left: number;
+}
+
+const MAX_LINK_SUGGESTIONS = 8;
 
 /**
  * contentEditableベースのリッチテキスト編集。閲覧時と編集時で同じDOM要素を使うため
  * 編集開始時にボックスが縮む/被る問題が構造的に起きない。保存形式はサニタイズ済みHTML
  * （schema上はTEXT列のまま。Markdown記法へのパースは行わず、見たまま編集・見たまま表示にする）
  */
-export function MarkdownField({ value, onSave, ownerType, ownerId, userId, placeholder, minHeight = 96 }: MarkdownFieldProps) {
+export function MarkdownField({
+  value,
+  onSave,
+  ownerType,
+  ownerId,
+  userId,
+  placeholder,
+  minHeight = 96,
+  wikiLinkTitles,
+}: MarkdownFieldProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [editing, setEditing] = useState(false);
   const [isEmpty, setIsEmpty] = useState(value.trim() === '');
   const [lightboxImage, setLightboxImage] = useState<{ src: string; alt: string } | null>(null);
+  const [linkSuggestion, setLinkSuggestion] = useState<LinkSuggestionState | null>(null);
+  const [linkHighlight, setLinkHighlight] = useState(0);
 
   // 外部からvalueが変わった時だけDOMへ反映する（自分の入力中に書き換えるとカーソル位置が飛ぶため）
   useEffect(() => {
@@ -91,6 +116,7 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
 
   const commit = () => {
     setEditing(false);
+    setLinkSuggestion(null);
     const el = ref.current;
     if (!el) return;
     const clean = sanitizeHtml(el.innerHTML);
@@ -102,8 +128,81 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
     requestAnimationFrame(() => ref.current?.focus());
   };
 
+  /** キャレット直前の"[[部分入力"を検出し、一致するタイトル候補があれば補完ドロップダウンを出す
+   * （改修24回目フォローアップ：[[リンク]]のパースとバックリンク）。ownerType='knowledge'かつ
+   * wikiLinkTitlesが渡された時のみ有効 */
+  const updateLinkSuggestion = () => {
+    if (!wikiLinkTitles || wikiLinkTitles.length === 0) {
+      setLinkSuggestion(null);
+      return;
+    }
+    const el = ref.current;
+    const sel = window.getSelection();
+    if (!el || !sel || sel.rangeCount === 0 || !sel.isCollapsed) {
+      setLinkSuggestion(null);
+      return;
+    }
+    const node = sel.anchorNode;
+    if (!node || node.nodeType !== Node.TEXT_NODE || !el.contains(node)) {
+      setLinkSuggestion(null);
+      return;
+    }
+    const text = node.textContent ?? '';
+    const offset = sel.anchorOffset;
+    const match = /\[\[([^[\]]*)$/.exec(text.slice(0, offset));
+    if (!match) {
+      setLinkSuggestion(null);
+      return;
+    }
+    const query = (match[1] ?? '').toLowerCase();
+    const matches = wikiLinkTitles.filter((t) => t.toLowerCase().includes(query)).slice(0, MAX_LINK_SUGGESTIONS);
+    if (matches.length === 0) {
+      setLinkSuggestion(null);
+      return;
+    }
+    const range = sel.getRangeAt(0).cloneRange();
+    const caretRect = range.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    setLinkHighlight(0);
+    setLinkSuggestion({
+      matches,
+      top: caretRect.bottom - elRect.top + el.scrollTop,
+      left: caretRect.left - elRect.left + el.scrollLeft,
+    });
+  };
+
+  const acceptLinkSuggestion = (title: string) => {
+    const el = ref.current;
+    const sel = window.getSelection();
+    if (!el || !sel || sel.rangeCount === 0) return;
+    const node = sel.anchorNode;
+    if (!node || node.nodeType !== Node.TEXT_NODE) return;
+    const text = node.textContent ?? '';
+    const offset = sel.anchorOffset;
+    const match = /\[\[([^[\]]*)$/.exec(text.slice(0, offset));
+    if (!match || match.index === undefined) return;
+
+    const range = document.createRange();
+    range.setStart(node, match.index + 2);
+    range.setEnd(node, offset);
+    range.deleteContents();
+    const textNode = document.createTextNode(`${title}]]`);
+    range.insertNode(textNode);
+
+    const newRange = document.createRange();
+    newRange.setStartAfter(textNode);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+
+    setLinkSuggestion(null);
+    el.focus();
+    handleInput();
+  };
+
   const handleInput = () => {
     setIsEmpty((ref.current?.textContent?.trim() === '' && !ref.current.querySelector('img')) ?? true);
+    updateLinkSuggestion();
   };
 
   // 画像クリックで拡大表示（改修16回目）・リンククリックで新しいタブを開く（改修23回目）。
@@ -144,6 +243,11 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
   };
 
   const handleImageFile = async (file: File) => {
+    // ナレッジは添付テーブルのowner_type CHECK制約（'task'|'note'のみ）の対象外のため未対応
+    if (ownerType === 'knowledge') {
+      showToast('ナレッジへの画像添付は未対応です');
+      return;
+    }
     const processed = await processImageFile(file);
     await createAttachment(userId, ownerType, ownerId, processed, file.name);
     insertImage(attachmentUrl(processed.sha256), file.name);
@@ -224,6 +328,30 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (linkSuggestion) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setLinkSuggestion(null);
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setLinkHighlight((i) => (i + 1) % linkSuggestion.matches.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setLinkHighlight((i) => (i - 1 + linkSuggestion.matches.length) % linkSuggestion.matches.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const title = linkSuggestion.matches[linkHighlight] ?? linkSuggestion.matches[0];
+        if (title) acceptLinkSuggestion(title);
+        return;
+      }
+    }
+
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
     // 箇条書き/番号付きリストはGoogle Docs等でおなじみのCtrl/Cmd+Shift+8/7。数字キーは
@@ -334,6 +462,25 @@ export function MarkdownField({ value, onSave, ownerType, ownerId, userId, place
           data-markdown-field="true"
           className="w-full resize-y overflow-auto rounded-md border border-neutral-200 bg-transparent p-2 text-sm text-neutral-900 outline-none focus:border-blue-400 dark:border-neutral-700 dark:text-white [&_a]:text-blue-500 [&_a]:underline [&_code]:rounded [&_code]:bg-neutral-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[13px] dark:[&_code]:bg-neutral-800 [&_img]:my-1 [&_img]:max-w-full [&_img]:cursor-zoom-in [&_img]:rounded-md [&_ol]:ml-4 [&_ol]:list-decimal [&_ul]:ml-4 [&_ul]:list-disc"
         />
+        {linkSuggestion && (
+          <div
+            style={{ top: linkSuggestion.top, left: linkSuggestion.left }}
+            className="absolute z-20 mt-1 max-h-48 w-56 overflow-y-auto rounded-md border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+          >
+            {linkSuggestion.matches.map((title, i) => (
+              <button
+                key={title}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => acceptLinkSuggestion(title)}
+                className={`block w-full truncate px-2 py-1 text-left text-xs ${
+                  i === linkHighlight ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300' : ''
+                }`}
+              >
+                {title}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {lightboxImage && (
         <ImageLightbox src={lightboxImage.src} alt={lightboxImage.alt} onClose={() => setLightboxImage(null)} />

@@ -195,6 +195,20 @@ function applyUpsert(
     return { ok: false, reason: 'forbidden' };
   }
 
+  // knowledge.title はユーザー内で一意（[[リンク]]解決のキーのため、docs/schema.sql の部分
+  // ユニークインデックス）。既存の別ノートと同じtitleへ変更/新規作成しようとすると生のSQLite
+  // UNIQUE制約違反でリクエスト全体が落ちてしまうため、事前にチェックして安全に拒否する
+  // （改修24回目フォローアップ：ナレッジUI追加に伴い、人間が編集画面でタイトルを変更する
+  // 経路が増えたことで踏みやすくなったため対応）
+  if (table === 'knowledge' && typeof fields.title === 'string') {
+    const conflict = db
+      .prepare('SELECT id FROM knowledge WHERE user_id = ? AND title = ? AND deleted_at IS NULL AND id != ?')
+      .get(ownerId, fields.title, op.id) as { id: string } | undefined;
+    if (conflict) {
+      return { ok: false, reason: 'validation_failed' };
+    }
+  }
+
   if (!existing) {
     for (const requiredCol of def.requiredOnInsert) {
       if (fields[requiredCol] === undefined) {
@@ -202,16 +216,19 @@ function applyUpsert(
       }
     }
 
-    // task_tags(task_id, tag_id)には論理削除を無視したUNIQUE制約(docs/schema.sql)があり、
-    // 同じペアへ別idで新規INSERTしようとすると生のSQLite例外でリクエスト全体が落ちてしまう。
-    // クライアント側（apps/web/src/state/actions.ts）・MCP側（apps/api/src/mcp/tools.ts）は
-    // 修正済みだが、既にoutboxに積まれた古いクライアントのop（＝この状況）や他経路からの
-    // 重複要求に対してもサーバー側で必ず安全に倒せるようにする（改修21回目、本番ログで
-    // 実際にUNIQUE constraint failedが繰り返し発生しoutboxが詰まっていたことが発覚）
-    if (table === 'task_tags') {
+    // task_tags(task_id, tag_id)・knowledge_tags(knowledge_id, tag_id)には論理削除を無視した
+    // UNIQUE制約(docs/schema.sql)があり、同じペアへ別idで新規INSERTしようとすると生のSQLite
+    // 例外でリクエスト全体が落ちてしまう。クライアント側（apps/web/src/state/actions.ts）・
+    // MCP側（apps/api/src/mcp/tools.ts）は修正済みだが、既にoutboxに積まれた古いクライアントの
+    // op（＝この状況）や他経路からの重複要求に対してもサーバー側で必ず安全に倒せるようにする
+    // （改修21回目、本番ログで実際にUNIQUE constraint failedが繰り返し発生しoutboxが詰まって
+    // いたことが発覚。改修24回目フォローアップ：knowledge_tagsにも同じ制約があるため展開）
+    const pairColumns = table === 'task_tags' ? (['task_id', 'tag_id'] as const) : table === 'knowledge_tags' ? (['knowledge_id', 'tag_id'] as const) : null;
+    if (pairColumns) {
+      const [colA, colB] = pairColumns;
       const conflict = db
-        .prepare('SELECT * FROM task_tags WHERE user_id = ? AND task_id = ? AND tag_id = ?')
-        .get(ownerId, fields.task_id, fields.tag_id) as Row | undefined;
+        .prepare(`SELECT * FROM ${table} WHERE user_id = ? AND ${colA} = ? AND ${colB} = ?`)
+        .get(ownerId, fields[colA], fields[colB]) as Row | undefined;
       if (conflict) {
         if (conflict.deleted_at === null) {
           // 既に同じペアが存在し削除もされていない＝意図は既に達成されている（冪等に許容）
@@ -219,7 +236,7 @@ function applyUpsert(
         }
         // 論理削除済みの行を復元する（新規idでのINSERTは諦め、既存idを蘇らせる）
         const seq = bumpSeq(db, ownerId);
-        db.prepare(`UPDATE task_tags SET deleted_at = NULL, updated_at = ?, seq = ? WHERE id = ?`).run(
+        db.prepare(`UPDATE ${table} SET deleted_at = NULL, updated_at = ?, seq = ? WHERE id = ?`).run(
           op.updated_at,
           seq,
           conflict.id,

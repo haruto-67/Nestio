@@ -53,6 +53,15 @@ function insertNote(db: Database.Database, userId: string, title: string, body =
   return noteId;
 }
 
+function insertKnowledge(db: Database.Database, userId: string, title: string, description = '', body = ''): string {
+  const id = uuidv7();
+  db.prepare(
+    `INSERT INTO knowledge (id, user_id, title, description, body, category, created_at, updated_at, deleted_at, seq)
+     VALUES (?, ?, ?, ?, ?, 'topic', ?, ?, NULL, 1)`,
+  ).run(id, userId, title, description, body, Date.now(), Date.now());
+  return id;
+}
+
 describe('GET /api/v1/search', () => {
   let db: Database.Database;
 
@@ -110,6 +119,23 @@ describe('GET /api/v1/search', () => {
     });
     const body = (await res.json()) as { tasks: { id: string }[] };
     expect(body.tasks).toHaveLength(0);
+  });
+
+  it('ナレッジもタスク・メモと横断でFTS5ヒットする（改修24回目フォローアップ）', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const knowledgeId = insertKnowledge(db, userId, 'ラズベリーパイの構成', '本番サーバーの構成メモ');
+
+    const app = setupApp(db);
+    const res = await app.request('/api/v1/search?q=ラズベリー', {
+      headers: { Cookie: `nestio_session=${sessionId}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { knowledge: { id: string }[] };
+    expect(body.knowledge.map((k) => k.id)).toContain(knowledgeId);
   });
 
   it('未認証は401', async () => {

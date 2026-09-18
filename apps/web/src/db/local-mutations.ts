@@ -30,6 +30,7 @@ const TABLE_MAP: Record<NonUserSettingsTable, Table<Row, string>> = {
   attachments: db.attachments as unknown as Table<Row, string>,
   triggers: db.triggers as unknown as Table<Row, string>,
   knowledge: db.knowledge as unknown as Table<Row, string>,
+  knowledge_tags: db.knowledge_tags as unknown as Table<Row, string>,
 };
 
 /** docs/schema.sql のDEFAULT値をローカルの新規行にも反映する */
@@ -51,6 +52,7 @@ const NEW_ROW_DEFAULTS: Record<NonUserSettingsTable, Row> = {
   attachments: { width: null, height: null },
   triggers: { condition_json: '{}', params_json: '{}', enabled: 1 },
   knowledge: { description: '', body: '', category: 'topic' },
+  knowledge_tags: {},
 };
 
 /** IndexedDBへ即時反映（楽観的更新）しつつ、outboxに積んでサーバーへの送信を予約する */

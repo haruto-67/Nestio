@@ -38,6 +38,7 @@ export const KEYMAP_ACTIONS = [
   'toggle_collapse',
   'goto_first',
   'goto_last',
+  'new_knowledge',
 ] as const;
 
 export type KeymapAction = (typeof KEYMAP_ACTIONS)[number];
@@ -67,6 +68,7 @@ export const DEFAULT_KEYMAP: Record<KeymapAction, string> = {
   toggle_collapse: 'Shift+Enter',
   goto_first: 'Home',
   goto_last: 'End',
+  new_knowledge: 'Ctrl+Shift+g',
 };
 
 export const KEYMAP_ACTION_LABELS: Record<KeymapAction, string> = {
@@ -82,7 +84,7 @@ export const KEYMAP_ACTION_LABELS: Record<KeymapAction, string> = {
   show_help: 'ショートカット一覧を表示',
   add_subtask: '選択中タスクにサブタスクを追加',
   add_sibling_subtask: '選択中タスクと同じ階層にタスクを追加',
-  switch_screen: 'タスク/メモ画面を切り替え',
+  switch_screen: 'タスク/メモ/ナレッジ画面を切り替え',
   goto_today: '「今日」ビューへ',
   priority_none: '優先度をなしに変更',
   priority_low: '優先度を低に変更',
@@ -94,6 +96,7 @@ export const KEYMAP_ACTION_LABELS: Record<KeymapAction, string> = {
   toggle_collapse: '選択中タスクのサブタスク折りたたみ切替',
   goto_first: '先頭の項目へ移動',
   goto_last: '末尾の項目へ移動',
+  new_knowledge: 'ナレッジを新規作成（ナレッジ画面表示中のみ）',
 };
 
 /**

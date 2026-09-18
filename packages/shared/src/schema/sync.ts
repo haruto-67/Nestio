@@ -21,6 +21,7 @@ export const syncableTableSchema = z.enum([
   'triggers',
   'user_settings',
   'knowledge',
+  'knowledge_tags',
 ]);
 export type SyncableTable = z.infer<typeof syncableTableSchema>;
 

@@ -10,6 +10,7 @@ import type {
   TriggerRow,
   UserSettingsRow,
   KnowledgeRow,
+  KnowledgeTagRow,
   SyncOp,
 } from '@nestio/shared';
 
@@ -53,6 +54,7 @@ export class NestioDb extends Dexie {
   triggers!: Table<TriggerRow, string>;
   user_settings!: Table<UserSettingsRow, string>;
   knowledge!: Table<KnowledgeRow, string>;
+  knowledge_tags!: Table<KnowledgeTagRow, string>;
   outbox!: Table<OutboxEntry, number>;
   meta!: Table<MetaEntry, string>;
   pendingAttachmentBlobs!: Table<PendingAttachmentBlob, string>;
@@ -85,6 +87,23 @@ export class NestioDb extends Dexie {
       triggers: 'id, event, deleted_at',
       user_settings: 'user_id',
       knowledge: 'id, title, category, deleted_at',
+      outbox: '++id, createdAt',
+      meta: 'key',
+      pendingAttachmentBlobs: 'sha256, createdAt',
+    });
+    // ナレッジUI（改修24回目フォローアップ）：タグ絞り込みのためknowledge_tagsを追加
+    this.version(3).stores({
+      folders: 'id, sort_order, deleted_at',
+      lists: 'id, folder_id, sort_order, deleted_at',
+      tasks: 'id, list_id, parent_id, due_at, due_date, completed_at, sort_order, deleted_at',
+      tags: 'id, name, deleted_at',
+      task_tags: 'id, task_id, tag_id, deleted_at',
+      notes: 'id, pinned, sort_order, deleted_at',
+      attachments: 'id, owner_type, owner_id, deleted_at',
+      triggers: 'id, event, deleted_at',
+      user_settings: 'user_id',
+      knowledge: 'id, title, category, deleted_at',
+      knowledge_tags: 'id, knowledge_id, tag_id, deleted_at',
       outbox: '++id, createdAt',
       meta: 'key',
       pendingAttachmentBlobs: 'sha256, createdAt',
@@ -127,6 +146,7 @@ export async function resetLocalDataKeepingOutbox(): Promise<void> {
       db.triggers,
       db.user_settings,
       db.knowledge,
+      db.knowledge_tags,
       db.meta,
     ],
     async () => {
@@ -141,6 +161,7 @@ export async function resetLocalDataKeepingOutbox(): Promise<void> {
         db.triggers.clear(),
         db.user_settings.clear(),
         db.knowledge.clear(),
+        db.knowledge_tags.clear(),
       ]);
       await setMeta(META_KEYS.since, 0);
     },

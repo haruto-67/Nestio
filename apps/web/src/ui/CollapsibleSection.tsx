@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { ChevronRight } from 'lucide-react';
 
 interface CollapsibleSectionProps {
@@ -16,6 +16,13 @@ interface CollapsibleSectionProps {
  */
 export function CollapsibleSection({ title, defaultOpen = false, action, children }: CollapsibleSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
+  // defaultOpenの元になるデータ（タグ・バックリンク等）がuseLiveQueryの非同期解決で
+  // マウント直後には間に合わず、後から届くことがある。その場合でも自動で開けるよう、
+  // defaultOpenがfalse→trueに変わった時だけ追従する（ユーザーが手動で閉じた後に
+  // 再び閉じられてしまわないよう、true→falseでは追従しない。改修24回目フォローアップで発覚）
+  useEffect(() => {
+    if (defaultOpen) setOpen(true);
+  }, [defaultOpen]);
   return (
     <div className="flex flex-col gap-1 text-xs text-neutral-500">
       <div className="flex items-center justify-between">

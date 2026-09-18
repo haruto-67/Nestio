@@ -3,7 +3,7 @@ import type { SearchResponse } from '@nestio/shared';
 import { search } from '../../api/search.js';
 import { useLists } from '../../db/queries.js';
 
-const EMPTY_RESULTS: SearchResponse = { tasks: [], notes: [] };
+const EMPTY_RESULTS: SearchResponse = { tasks: [], notes: [], knowledge: [] };
 const DEBOUNCE_MS = 200;
 
 interface SearchModalProps {

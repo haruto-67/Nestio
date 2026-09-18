@@ -1,18 +1,20 @@
 import { RotateCcw } from 'lucide-react';
-import { useDeletedTasks, useDeletedNotes } from '../../db/queries.js';
-import { restoreTask, restoreNote } from '../../state/actions.js';
+import { useDeletedTasks, useDeletedNotes, useDeletedKnowledge } from '../../db/queries.js';
+import { restoreTask, restoreNote, restoreKnowledge } from '../../state/actions.js';
 
 /**
- * 論理削除(deleted_at)されたタスク・メモの一覧。復元(deleted_at=null)のみを提供し、
+ * 論理削除(deleted_at)されたタスク・メモ・ナレッジの一覧。復元(deleted_at=null)のみを提供し、
  * 物理削除はGCワーカーに委ねる（CLAUDE.md「絶対に守ること」5.論理削除のみ）。
  * 30日経過すると自動的に物理削除される（docs/sync-protocol.md）。
  */
 export function TrashView({ onClose }: { onClose: () => void }) {
   const deletedTasks = useDeletedTasks();
   const deletedNotes = useDeletedNotes();
+  const deletedKnowledge = useDeletedKnowledge();
 
   const sortedTasks = [...deletedTasks].sort((a, b) => (b.deleted_at ?? 0) - (a.deleted_at ?? 0));
   const sortedNotes = [...deletedNotes].sort((a, b) => (b.deleted_at ?? 0) - (a.deleted_at ?? 0));
+  const sortedKnowledge = [...deletedKnowledge].sort((a, b) => (b.deleted_at ?? 0) - (a.deleted_at ?? 0));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 nestio-overlay" onClick={onClose}>
@@ -62,6 +64,27 @@ export function TrashView({ onClose }: { onClose: () => void }) {
                   </span>
                   <button
                     onClick={() => restoreNote(n.id)}
+                    title="復元"
+                    className="flex min-h-8 min-w-8 items-center justify-center gap-1 text-xs text-blue-500"
+                  >
+                    <RotateCcw size={13} />
+                    復元
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <h3 className="mb-1 text-xs font-semibold text-neutral-500">ナレッジ</h3>
+          {sortedKnowledge.length === 0 ? (
+            <p className="text-xs text-neutral-400">削除済みのナレッジはありません</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {sortedKnowledge.map((k) => (
+                <li key={k.id} className="flex items-center justify-between gap-2 rounded-md px-1 py-1 text-sm">
+                  <span className="min-w-0 flex-1 truncate text-muted">{k.title || '無題'}</span>
+                  <button
+                    onClick={() => restoreKnowledge(k.id)}
                     title="復元"
                     className="flex min-h-8 min-w-8 items-center justify-center gap-1 text-xs text-blue-500"
                   >

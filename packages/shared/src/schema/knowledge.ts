@@ -27,6 +27,19 @@ export const knowledgeWritableFields = knowledgeRowSchema
   .partial();
 export type KnowledgeWritableFields = z.infer<typeof knowledgeWritableFields>;
 
+/** タグは既存のtagsテーブルをタスクと共用する（task_tagsと同型の中間テーブル） */
+export const knowledgeTagRowSchema = z.object({
+  id: idSchema,
+  user_id: idSchema,
+  knowledge_id: idSchema,
+  tag_id: idSchema,
+  ...syncable,
+});
+export type KnowledgeTagRow = z.infer<typeof knowledgeTagRowSchema>;
+
+export const knowledgeTagWritableFields = z.object({ knowledge_id: idSchema, tag_id: idSchema }).partial();
+export type KnowledgeTagWritableFields = z.infer<typeof knowledgeTagWritableFields>;
+
 /** [[タイトル]]によるノート間リンク。to_idはリンク先がまだ存在しない場合null（改修24回目フォローアップで解決ロジックを実装予定） */
 export const knowledgeLinkRowSchema = z.object({
   id: idSchema,
