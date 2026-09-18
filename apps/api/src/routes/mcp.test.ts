@@ -894,21 +894,81 @@ describe('MCP OAuth + tools', () => {
     };
     expect(emptyResult.backlinks).toEqual([]);
 
-    // [[リンク]]のパース自体は次のサブタスクで実装するため、ここではknowledge_linksへ
-    // 直接INSERTしてget_backlinksの読み取りだけを検証する
+    // upsert_knowledgeのbodyに[[リンク先ノート]]と書くと自動でknowledge_linksへ反映される
+    // （改修24回目フォローアップ：[[リンク]]のパースとバックリンク）
     const fromNote = await callTool(app, accessToken, 'upsert_knowledge', {
       title: 'リンク元ノート',
       description: 'from側',
+      body: '[[リンク先ノート]]を参照',
     });
-    db.prepare(
-      `INSERT INTO knowledge_links (id, user_id, from_id, to_title, to_id, created_at, updated_at, deleted_at, seq)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 999)`,
-    ).run(uuidv7(), userId, fromNote.id as string, 'リンク先ノート', target.id, Date.now(), Date.now());
 
     const result = (await callTool(app, accessToken, 'get_backlinks', { title: 'リンク先ノート' })) as {
       backlinks: { id: string; title: string }[];
     };
     expect(result.backlinks).toEqual([{ id: fromNote.id, title: 'リンク元ノート' }]);
+  });
+
+  it('upsert_knowledgeはbodyに書かれた[[リンク]]の削除・付け替えをget_backlinksに反映する', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const target = await callTool(app, accessToken, 'upsert_knowledge', {
+      title: 'リンク先ノート2',
+      description: 'バックリンクのテスト対象',
+    });
+    await callTool(app, accessToken, 'upsert_knowledge', {
+      title: 'リンク元ノート2',
+      description: 'from側',
+      body: '[[リンク先ノート2]]',
+    });
+
+    const linked = (await callTool(app, accessToken, 'get_backlinks', { id: target.id })) as {
+      backlinks: { title: string }[];
+    };
+    expect(linked.backlinks.map((b) => b.title)).toEqual(['リンク元ノート2']);
+
+    // bodyを全文書き換え（append無し）でリンクを消すと、get_backlinksからも消える
+    await callTool(app, accessToken, 'upsert_knowledge', { title: 'リンク元ノート2', body: 'リンクを消した' });
+
+    const unlinked = (await callTool(app, accessToken, 'get_backlinks', { id: target.id })) as {
+      backlinks: unknown[];
+    };
+    expect(unlinked.backlinks).toEqual([]);
+  });
+
+  it('upsert_knowledgeはリンク先がまだ無い[[リンク]]を未解決のまま記録し、後から作成すると解決される', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    await callTool(app, accessToken, 'upsert_knowledge', {
+      title: '未解決リンク元',
+      description: 'from側',
+      body: '[[まだ無いノート]]',
+    });
+
+    const beforeCreate = (await callTool(app, accessToken, 'get_backlinks', { title: 'まだ無いノート' })) as {
+      backlinks: { title: string }[];
+    };
+    expect(beforeCreate.backlinks.map((b) => b.title)).toEqual(['未解決リンク元']);
+
+    // まだ無いノートを後から作成すると、既存の未解決リンクが解決される
+    const created = await callTool(app, accessToken, 'upsert_knowledge', {
+      title: 'まだ無いノート',
+      description: '後から作った',
+    });
+
+    const afterCreate = (await callTool(app, accessToken, 'get_backlinks', { id: created.id as string })) as {
+      backlinks: { title: string }[];
+    };
+    expect(afterCreate.backlinks.map((b) => b.title)).toEqual(['未解決リンク元']);
   });
 
   it('upload_attachmentは壊れたPNGデータ（CRC不一致）を拒否する', async () => {

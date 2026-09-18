@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { uuidv7, markdownToSafeHtml, sha256Schema, knowledgeCategorySchema, type SyncOp } from '@nestio/shared';
 import { applySyncOps } from '../sync/apply.js';
 import { searchTasks, searchKnowledge } from '../search/query.js';
+import { syncKnowledgeLinks, resolveIncomingLinks } from '../knowledge/links.js';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import { detectImageMime, verifyImageIntegrity } from '../attachments/magic-bytes.js';
@@ -1055,6 +1056,16 @@ export async function callTool(
         updated_at: Date.now(),
         fields,
       });
+
+      // bodyが変わった時だけ再パースする（改修24回目フォローアップ：[[リンク]]のパースとバックリンク）
+      if (typeof fields.body === 'string') {
+        syncKnowledgeLinks(db, userId, id, fields.body);
+      }
+      // 新規作成時は、このタイトルを指していた未解決リンクを解決する
+      if (!existing) {
+        resolveIncomingLinks(db, userId, title, id);
+      }
+
       return { id, title, created: !existing };
     }
 
