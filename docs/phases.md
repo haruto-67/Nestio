@@ -1331,6 +1331,44 @@ streamable HTTP移行（確認したところ`/mcp`は元々SSEではなく単�
 
 ---
 
+## 改修24回目フォローアップ：ナレッジのDBスキーマとFTS5（2026-09-18）
+
+推奨順序の3番目。UIより先に仕様を固める方針に従い、まずデータモデルとFTS5だけを
+`apps/api/src/db/migrations/0015_knowledge.sql`として追加した（API/MCPツール/UIの実装は
+それぞれ別サブタスクに委ねる。今回は追加のみで既存のtasks/notesの挙動には影響しない）。
+
+- [x] **`knowledge`テーブル**：`title`（`user_id`内で一意。`[[リンク]]`解決のキーになるため
+      `deleted_at IS NULL`の部分ユニークインデックスとし、論理削除後の再利用は許可）・
+      `description`（1行要約、MCP索引レスポンス用）・`body`（markdown）・`category`
+      （`profile`/`project`/`topic`/`person`のCHECK制約）を持たせた。既存のsync対象テーブルと
+      同じく`created_at`/`updated_at`/`deleted_at`/`seq`を備える
+- [x] **`knowledge_tags`テーブル**：既存の`tags`テーブルをタスクと共用するための中間テーブル。
+      `task_tags`と同型（`(knowledge_id, tag_id)`のユニークインデックス）
+- [x] **`knowledge_links`テーブル**：`[[タイトル]]`リンクとバックリンク用。`to_title`で
+      未解決リンク（まだ存在しないノートへのリンク）も保持し、対象タイトルのノートが後から
+      作られた時に`to_id`を解決できるよう`(user_id, to_title)`の索引を用意した。
+      `(from_id, to_title)`をユニークにして同一ノートからの重複リンクを1行に集約している
+- [x] **`knowledge_fts`（FTS5）**：既存の`tasks_fts`/`notes_fts`と同じ方式（`content='knowledge'`
+      の外部コンテンツ・`tokenize='trigram'`・INSERT/DELETE/UPDATEの3トリガーで追随）を
+      `title`/`description`/`body`に対して設定した
+- [x] **テスト追加**：`apps/api/src/db/migrate.test.ts`に、対象テーブルが作られること、
+      `knowledge`へのINSERT/UPDATE/DELETEが`knowledge_fts`に正しく反映されること（trigramは
+      3文字未満にヒットしないため検索語は3文字以上にした）、title一意制約と論理削除後の
+      再利用を確認するテストを追加した
+
+**今回やらなかったこと**：APIルート・MCPツール・sync/push適用ロジック・UIは対象外
+（それぞれ後続のサブタスク「ナレッジ用MCPツール」「`[[リンク]]`のパースとバックリンク」
+「ナレッジUI」で実装する）。そのため`knowledge_links.to_id`の解決処理や
+`shared_row_changes`/共有機能との連携は未着手。`docs/schema.sql`（確定版DDL）は既存の
+運用（0009番以降のマイグレーションと同様、確定版には反映せずマイグレーション番号を進める
+形）に倣い変更していない。
+
+**完了条件**：`pnpm typecheck` / `pnpm lint` / `pnpm test`（api 349件、新規4件含む）が全て
+通過。マイグレーションが空DBに対して冪等に適用されることを確認した（UI/API変更はないため
+本番デプロイ後の動作確認は「起動時にschema_migrationsへ0015が記録されること」の確認のみ）。
+
+---
+
 ## 進捗管理
 
 - 完了した項目は `[x]` にしてコミットする
