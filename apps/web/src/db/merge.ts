@@ -8,6 +8,7 @@ import {
   attachmentRowSchema,
   triggerRowSchema,
   userSettingsRowSchema,
+  knowledgeRowSchema,
   type SyncPullResponse,
 } from '@nestio/shared';
 import { db } from './schema.js';
@@ -30,6 +31,7 @@ export async function applyPullResponse(response: SyncPullResponse): Promise<voi
       db.attachments,
       db.triggers,
       db.user_settings,
+      db.knowledge,
     ],
     async () => {
       const folders = (response.changes.folders ?? []).map((r) => folderRowSchema.parse(r));
@@ -58,6 +60,9 @@ export async function applyPullResponse(response: SyncPullResponse): Promise<voi
 
       const userSettings = (response.changes.user_settings ?? []).map((r) => userSettingsRowSchema.parse(r));
       if (userSettings.length) await db.user_settings.bulkPut(userSettings);
+
+      const knowledge = (response.changes.knowledge ?? []).map((r) => knowledgeRowSchema.parse(r));
+      if (knowledge.length) await db.knowledge.bulkPut(knowledge);
     },
   );
 }

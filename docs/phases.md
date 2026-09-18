@@ -1356,6 +1356,52 @@ streamable HTTP移行（確認したところ`/mcp`は元々SSEではなく単�
       3文字未満にヒットしないため検索語は3文字以上にした）、title一意制約と論理削除後の
       再利用を確認するテストを追加した
 
+---
+
+## 改修24回目フォローアップ：ナレッジ用MCPツール（索引→本文の2段構成）（2026-09-18）
+
+推奨順序の4番目。前セッションで追加した`knowledge`テーブルに対し、要件定義通り
+「索引（title/description/category/tags/updated_at）を1リクエストで取得→必要な本文だけ
+individually取得」の2段構成でMCPツールを実装した。ツール数を増やしすぎないよう、
+要件定義に書かれた5つに絞った。
+
+- [x] **書き込み経路を`/sync/push`に一本化**：`knowledge`テーブルを
+      `packages/shared/src/schema/sync.ts`の`syncableTableSchema`と
+      `apps/api/src/sync/tables.ts`の`SYNC_TABLES`に登録した（絶対原則2）。
+      これにより`applySyncOps`（既存の汎用UPSERT/DELETEロジック）がそのまま使え、
+      `/sync/pull`も自動的に`knowledge`を返すようになった。あわせて、この変更で
+      IndexedDB側の型（`apps/web/src/db/schema.ts`のDexieスキーマ・`local-mutations.ts`・
+      `merge.ts`）も整合させる必要があったため、Dexieのバージョンを2に上げて
+      `knowledge`ストアを追加した（UI画面自体は次の「ナレッジUI」サブタスクで作る。
+      今回はタスク/メモ用の同期パイプラインが型エラーなく`knowledge`を素通りできる
+      ところまで）
+- [x] **`get_knowledge_index`**：`body`を含まない索引を1クエリで返す。タグは
+      `listTaskTagsBatch`と同型の`listKnowledgeTagsBatch`で`IN`検索1回にまとめた
+      （現状`knowledge_tags`への書き込みツールはまだ無いため常に空配列だが、
+      将来タグ付けが増えても壊れない形にしてある）
+- [x] **`get_knowledge`**：`titles`/`ids`を配列で受け取り、複数件を1往復で返す
+- [x] **`upsert_knowledge`**：`title`をキーに検索し、無ければ新規作成・あれば更新する。
+      新規作成時は`description`（1行要約）を必須にした（要件定義3章の「descriptionを
+      必ず持つ」を作成時点で強制する）。`append: true`で`body`を末尾に追記できる
+      （`markdownToSafeHtml`変換後の文字列を連結。既存ノートが無い場合は通常の新規作成に
+      フォールバック）
+- [x] **`search_knowledge`**：`tasks_fts`/`notes_fts`と同じtrigram FTS5方式で
+      `knowledge_fts`を検索し、スニペット付きで返す（`searchKnowledge`を
+      `apps/api/src/search/query.ts`に追加）
+- [x] **`get_backlinks`**：`id`または`title`を受け取り`knowledge_links`から逆引きする。
+      `[[リンク]]`のパース自体は次のサブタスクで実装するため、今回は読み取りのみ
+      （テストでは`knowledge_links`に直接INSERTして検証した）
+
+**今回やらなかったこと**：`knowledge_tags`への書き込み（タグ付け）ツールは要件定義の
+5ツールに含まれていないため未実装。`[[リンク]]`のパースによる`knowledge_links`の
+自動生成・`to_id`解決は次のサブタスク「`[[リンク]]`のパースとバックリンク」に委ねる。
+ナレッジの一覧・編集画面（UI）は「ナレッジUI」サブタスクに委ねる。
+
+**完了条件**：`pnpm typecheck` / `pnpm lint` / `pnpm test`（api 354件、新規6件含む）が
+全て通過。本番Piへデプロイ後、Nestio MCP接続で`get_knowledge_index`が空配列を含む
+正常なレスポンスを返すことを確認する（新規ツール追加によるMCP再接続が必要なため、
+反映確認は次セッション冒頭で行う）。
+
 **今回やらなかったこと**：APIルート・MCPツール・sync/push適用ロジック・UIは対象外
 （それぞれ後続のサブタスク「ナレッジ用MCPツール」「`[[リンク]]`のパースとバックリンク」
 「ナレッジUI」で実装する）。そのため`knowledge_links.to_id`の解決処理や

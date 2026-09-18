@@ -206,6 +206,11 @@
 | `create_trigger` | write | Hatchトリガー新規作成 |
 | `update_trigger` | write | Hatchトリガー更新（有効/無効の切り替えを含む） |
 | `delete_trigger` | write | Hatchトリガーを論理削除 |
+| `get_knowledge_index` | read | 全ナレッジの索引（`title`/`description`/`category`/`tags`/`updated_at`）を1リクエストで返す。`body`は含まない（改修24回目） |
+| `get_knowledge` | read | ナレッジの本文を取得（`titles`/`ids`どちらも配列で複数指定可） |
+| `upsert_knowledge` | write | `title`をキーに作成/更新。新規作成時は`description`必須。`append: true`で本文末尾に追記 |
+| `search_knowledge` | read | ナレッジをタイトル・説明・本文で全文検索（スニペット付き） |
+| `get_backlinks` | read | 指定ナレッジ（`id`または`title`）への`[[リンク]]`元一覧を返す |
 
 - 書き込みは内部で `/sync/push` と同じ適用ロジックを通す（seq 採番と検証を共有するため）。
   `update_task` の `parent_id` 付け替えも同じ循環参照チェック（`wouldCreateCycle`）を通る

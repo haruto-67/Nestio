@@ -15,3 +15,4 @@ export * from './folder-shares.js';
 export * from './errors.js';
 export * from './client-logs.js';
 export * from './search.js';
+export * from './knowledge.js';

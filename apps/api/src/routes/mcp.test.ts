@@ -768,6 +768,149 @@ describe('MCP OAuth + tools', () => {
     expect(byId(noteC.id)?.attachments).toEqual([]);
   });
 
+  it('upsert_knowledgeは新規作成時にdescription必須で、titleをキーに冪等に更新できる（改修24回目）', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    await expect(
+      callTool(app, accessToken, 'upsert_knowledge', { title: '記憶規約' }),
+    ).rejects.toThrow('description');
+
+    const created = await callTool(app, accessToken, 'upsert_knowledge', {
+      title: '記憶規約',
+      description: 'ナレッジの書き方規約',
+      body: '本文1',
+      category: 'topic',
+    });
+    expect(created.created).toBe(true);
+
+    const updated = await callTool(app, accessToken, 'upsert_knowledge', {
+      title: '記憶規約',
+      body: '本文2',
+    });
+    expect(updated.created).toBe(false);
+    expect(updated.id).toBe(created.id);
+
+    const fetched = (await callTool(app, accessToken, 'get_knowledge', { titles: ['記憶規約'] })) as {
+      knowledge: { id: string; body: string; description: string }[];
+    };
+    expect(fetched.knowledge).toHaveLength(1);
+    expect(fetched.knowledge[0]?.body).toBe('<p>本文2</p>');
+    expect(fetched.knowledge[0]?.description).toBe('ナレッジの書き方規約');
+  });
+
+  it('upsert_knowledgeはappend: trueで既存本文の末尾に追記する', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    await callTool(app, accessToken, 'upsert_knowledge', {
+      title: '育てるノート',
+      description: '追記テスト用',
+      body: '最初の行',
+    });
+    await callTool(app, accessToken, 'upsert_knowledge', { title: '育てるノート', body: '追記した行', append: true });
+
+    const fetched = (await callTool(app, accessToken, 'get_knowledge', { titles: ['育てるノート'] })) as {
+      knowledge: { body: string }[];
+    };
+    expect(fetched.knowledge[0]?.body).toContain('最初の行');
+    expect(fetched.knowledge[0]?.body).toContain('追記した行');
+  });
+
+  it('get_knowledge_indexはbodyを含まず索引（title/description/category/tags/updated_at）だけを1リクエストで返す', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    await callTool(app, accessToken, 'upsert_knowledge', {
+      title: '索引テスト',
+      description: '索引に出るはず',
+      body: '本文はここに入っているが索引には出ない',
+      category: 'project',
+    });
+
+    const index = (await callTool(app, accessToken, 'get_knowledge_index', {})) as {
+      knowledge: { title: string; description: string; category: string; tags: unknown[]; body?: string }[];
+    };
+    const entry = index.knowledge.find((k) => k.title === '索引テスト');
+    expect(entry).toBeDefined();
+    expect(entry?.description).toBe('索引に出るはず');
+    expect(entry?.category).toBe('project');
+    expect(entry?.tags).toEqual([]);
+    expect(entry?.body).toBeUndefined();
+  });
+
+  it('search_knowledgeはタイトル・説明・本文を横断検索しスニペットを返す', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    await callTool(app, accessToken, 'upsert_knowledge', {
+      title: 'ラズベリーパイの構成',
+      description: '本番サーバーの構成メモ',
+      body: 'Dockerで稼働している',
+    });
+    await callTool(app, accessToken, 'upsert_knowledge', {
+      title: '無関係なノート',
+      description: '関係ない話',
+      body: '関係ない本文',
+    });
+
+    const result = (await callTool(app, accessToken, 'search_knowledge', { q: 'ラズベリー' })) as {
+      knowledge: { title: string; snippet: string }[];
+    };
+    expect(result.knowledge.map((k) => k.title)).toEqual(['ラズベリーパイの構成']);
+  });
+
+  it('get_backlinksはknowledge_linksを引いてリンク元一覧を返す（未リンク状態では空配列）', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const target = await callTool(app, accessToken, 'upsert_knowledge', {
+      title: 'リンク先ノート',
+      description: 'バックリンクのテスト対象',
+    });
+
+    const emptyResult = (await callTool(app, accessToken, 'get_backlinks', { id: target.id })) as {
+      backlinks: unknown[];
+    };
+    expect(emptyResult.backlinks).toEqual([]);
+
+    // [[リンク]]のパース自体は次のサブタスクで実装するため、ここではknowledge_linksへ
+    // 直接INSERTしてget_backlinksの読み取りだけを検証する
+    const fromNote = await callTool(app, accessToken, 'upsert_knowledge', {
+      title: 'リンク元ノート',
+      description: 'from側',
+    });
+    db.prepare(
+      `INSERT INTO knowledge_links (id, user_id, from_id, to_title, to_id, created_at, updated_at, deleted_at, seq)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 999)`,
+    ).run(uuidv7(), userId, fromNote.id as string, 'リンク先ノート', target.id, Date.now(), Date.now());
+
+    const result = (await callTool(app, accessToken, 'get_backlinks', { title: 'リンク先ノート' })) as {
+      backlinks: { id: string; title: string }[];
+    };
+    expect(result.backlinks).toEqual([{ id: fromNote.id, title: 'リンク元ノート' }]);
+  });
+
   it('upload_attachmentは壊れたPNGデータ（CRC不一致）を拒否する', async () => {
     db = createTestDb();
     const userId = uuidv7();

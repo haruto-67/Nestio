@@ -27,3 +27,10 @@ export const searchResponseSchema = z.object({
   notes: z.array(searchNoteResultSchema),
 });
 export type SearchResponse = z.infer<typeof searchResponseSchema>;
+
+export const searchKnowledgeResultSchema = z.object({
+  id: idSchema,
+  title: z.string(),
+  snippet: z.string(),
+});
+export type SearchKnowledgeResult = z.infer<typeof searchKnowledgeResultSchema>;

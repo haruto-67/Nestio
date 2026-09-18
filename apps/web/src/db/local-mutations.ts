@@ -10,7 +10,11 @@ type Row = Record<string, unknown>;
 type NonUserSettingsTable = Exclude<SyncableTable, 'user_settings'>;
 
 /** テーブルごとの「本文」フィールド。フィールド単位マージ（改修5回目）の対象はここだけ */
-const MERGEABLE_FIELD: Partial<Record<NonUserSettingsTable, string>> = { tasks: 'note', notes: 'body' };
+const MERGEABLE_FIELD: Partial<Record<NonUserSettingsTable, string>> = {
+  tasks: 'note',
+  notes: 'body',
+  knowledge: 'body',
+};
 interface MutationOptions {
   /** undo/redoの巻き戻し処理自身から呼ぶ時はtrue（自分自身をundoスタックに積まないようにする） */
   skipUndo?: boolean;
@@ -25,6 +29,7 @@ const TABLE_MAP: Record<NonUserSettingsTable, Table<Row, string>> = {
   notes: db.notes as unknown as Table<Row, string>,
   attachments: db.attachments as unknown as Table<Row, string>,
   triggers: db.triggers as unknown as Table<Row, string>,
+  knowledge: db.knowledge as unknown as Table<Row, string>,
 };
 
 /** docs/schema.sql のDEFAULT値をローカルの新規行にも反映する */
@@ -45,6 +50,7 @@ const NEW_ROW_DEFAULTS: Record<NonUserSettingsTable, Row> = {
   notes: { title: '', body: '', color: '#FFF7C0', pinned: 0 },
   attachments: { width: null, height: null },
   triggers: { condition_json: '{}', params_json: '{}', enabled: 1 },
+  knowledge: { description: '', body: '', category: 'topic' },
 };
 
 /** IndexedDBへ即時反映（楽観的更新）しつつ、outboxに積んでサーバーへの送信を予約する */
