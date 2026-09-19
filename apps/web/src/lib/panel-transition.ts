@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DURATION_BASE_MS } from './motion.js';
 
 /**
- * 詳細パネル（タスク/メモ）の開閉アニメーション時間。CSS側（index.cssの
+ * 詳細パネル（タスク/付箋）の開閉アニメーション時間。CSS側（index.cssの
  * nestio-panel-slide-in/out）のanimation durationと一致させる必要がある（改修12回目：
  * 280msは遅いとのフィードバックで200msへ短縮）。一覧側の非表示化タイミング
  * （useDelayedHide）もこの値に揃える必要がある。値自体はCSS変数
@@ -11,7 +11,7 @@ import { DURATION_BASE_MS } from './motion.js';
 export const PANEL_TRANSITION_MS = DURATION_BASE_MS;
 
 /**
- * activeId（選択中のタスク/メモID）の変化から、パネルに表示すべきID・閉じるアニメーション中か・
+ * activeId（選択中のタスク/付箋ID）の変化から、パネルに表示すべきID・閉じるアニメーション中か・
  * 再マウント用の世代番号を導出する。閉じる時はactiveIdがnullになった直後もPANEL_TRANSITION_MSの間
  * displayedIdを保持してスライドアウトさせてからnullにする。非表示→表示の遷移でのみ世代番号を
  * 上げ、それをkeyに使うことでCSSアニメーションを確実に再生させる（TaskDetailAreaの元実装を

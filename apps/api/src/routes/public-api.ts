@@ -89,7 +89,7 @@ publicApiRoute.post(
   toolRoute('restore_task', (c) => ({ id: c.req.param('id') })),
 );
 
-// ---- メモ ----
+// ---- 付箋 ----
 publicApiRoute.get('/public/notes', toolRoute('list_notes', (c) => ({ limit: numberQuery(c, 'limit') })));
 publicApiRoute.post('/public/notes', toolRoute('create_note', async (c) => await c.req.json()));
 publicApiRoute.patch(

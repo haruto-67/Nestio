@@ -23,7 +23,7 @@ export async function exportAllData(): Promise<void> {
 /**
  * インポート対象テーブルと書き込み可能フィールド（apps/api/src/sync/tables.ts のcolumnsと対応）。
  * 添付ファイルの実体（画像バイナリ）はエクスポートに含まれないため、attachmentsは対象外。
- * 依存関係の順（フォルダ→リスト→タグ→タスク→タスクタグ→メモ→トリガー）で取り込む
+ * 依存関係の順（フォルダ→リスト→タグ→タスク→タスクタグ→付箋→トリガー）で取り込む
  */
 const IMPORT_TABLES: { table: SyncableTable; fields: readonly string[] }[] = [
   { table: 'folders', fields: ['name', 'sort_order'] },

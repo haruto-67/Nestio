@@ -19,7 +19,7 @@ export interface ShortcutHandlers {
   onOutdent: () => void;
   onAddSubtask: () => void;
   onAddSiblingSubtask: () => void;
-  /** Enter：状況に応じて選択中タスクを開く（タイトル欄へフォーカス）/サイドバーでの選択/メモの選択を行う
+  /** Enter：状況に応じて選択中タスクを開く（タイトル欄へフォーカス）/サイドバーでの選択/付箋の選択を行う
    * （改修10回目で汎用化。改修11回目：タスク画面での挙動を折りたたみ切替から「開く」へ変更し、
    * 折りたたみはonToggleCollapse(Shift+Enter)へ分離） */
   onActivate: () => void;
@@ -28,7 +28,7 @@ export interface ShortcutHandlers {
   onFocusSelectedTitle: () => void;
   /** 左側エリア（サイドバーのフォルダ/リストツリー）へキーボードフォーカスを移す（改修10回目） */
   onFocusSidebar: () => void;
-  /** タスク画面/メモ画面/ナレッジ画面を切り替える（改修11回目、改修24回目フォローアップ） */
+  /** タスク画面/付箋画面/ナレッジ画面を切り替える（改修11回目、改修24回目フォローアップ） */
   onSwitchScreen: () => void;
   /** ナレッジを新規作成する（改修24回目フォローアップ） */
   onNewKnowledge: () => void;

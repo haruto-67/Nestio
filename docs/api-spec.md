@@ -52,7 +52,7 @@
 
 | メソッド | パス | 内容 |
 |---|---|---|
-| GET | `/search?q=&limit=` | タスク・メモ・ナレッジを横断検索 |
+| GET | `/search?q=&limit=` | タスク・付箋・ナレッジを横断検索 |
 
 ```jsonc
 {
@@ -131,7 +131,7 @@
 | `claude_prompt` | `template`, `output`(`note`/`push`) | 定型プロンプトを `claude -p` で実行 |
 | `claude_subtasks` | `max_count` | サブタスク案を生成して子タスクとして追加 |
 | `create_task` | `list_id`, `title_template`, `due_offset_days` | テンプレートからタスク生成 |
-| `create_note` | `title_template`, `body_template` | メモ生成 |
+| `create_note` | `title_template`, `body_template` | 付箋生成 |
 | `add_tag` | `tag_id` | タグ付与 |
 | `set_priority` | `priority` | 優先度変更 |
 | `move_to_list` | `list_id` | リスト移動 |
@@ -181,16 +181,16 @@
 | `list_tasks` | read | タスク一覧（既定は未完了のみ。`list_id`/`parent_id`/`include_completed`で絞り込み可） |
 | `search_tasks` | read | タスクをタイトル・本文で全文検索 |
 | `get_task` | read | タスクIDを指定して詳細取得 |
-| `list_notes` | read | メモ一覧 |
+| `list_notes` | read | 付箋一覧 |
 | `create_task` | write | タスク新規作成（`parent_id`でサブタスク化、`tags`でタグ付与） |
 | `update_task` | write | タスク更新（タイトル/本文/優先度/期限/リスト移動/親付け替え/タグ追加削除） |
 | `complete_task` | write | タスクを完了にする（繰り返しの次occurrence計算はしない） |
 | `delete_task` | write | タスクを論理削除（ゴミ箱） |
 | `restore_task` | write | 論理削除したタスクを復元 |
-| `create_note` | write | メモ新規作成 |
-| `update_note` | write | メモ更新（タイトル/本文/ピン留め） |
-| `delete_note` | write | メモを論理削除（ゴミ箱） |
-| `restore_note` | write | 論理削除したメモを復元 |
+| `create_note` | write | 付箋新規作成 |
+| `update_note` | write | 付箋更新（タイトル/本文/ピン留め） |
+| `delete_note` | write | 付箋を論理削除（ゴミ箱） |
+| `restore_note` | write | 論理削除した付箋を復元 |
 | `list_lists` | read | リスト一覧（id/name/folder_id/color/sort_mode） |
 | `create_list` | write | リスト新規作成 |
 | `update_list` | write | リストの名前/所属フォルダ/色を変更 |

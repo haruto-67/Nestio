@@ -7,7 +7,7 @@ interface ImageLightboxProps {
 }
 
 /**
- * タスク内メモ・メモ機能内の画像・添付画像をクリックした時の拡大表示（改修16回目）。
+ * タスク内メモ・付箋機能内の画像・添付画像をクリックした時の拡大表示（改修16回目）。
  * 背景クリックまたはEscで閉じる
  */
 export function ImageLightbox({ src, alt, onClose }: ImageLightboxProps) {

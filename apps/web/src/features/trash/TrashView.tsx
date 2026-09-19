@@ -3,7 +3,7 @@ import { useDeletedTasks, useDeletedNotes, useDeletedKnowledge } from '../../db/
 import { restoreTask, restoreNote, restoreKnowledge } from '../../state/actions.js';
 
 /**
- * 論理削除(deleted_at)されたタスク・メモ・ナレッジの一覧。復元(deleted_at=null)のみを提供し、
+ * 論理削除(deleted_at)されたタスク・付箋・ナレッジの一覧。復元(deleted_at=null)のみを提供し、
  * 物理削除はGCワーカーに委ねる（CLAUDE.md「絶対に守ること」5.論理削除のみ）。
  * 30日経過すると自動的に物理削除される（docs/sync-protocol.md）。
  */
@@ -52,9 +52,9 @@ export function TrashView({ onClose }: { onClose: () => void }) {
             </ul>
           )}
 
-          <h3 className="mb-1 text-xs font-semibold text-neutral-500">メモ</h3>
+          <h3 className="mb-1 text-xs font-semibold text-neutral-500">付箋</h3>
           {sortedNotes.length === 0 ? (
-            <p className="text-xs text-neutral-400">削除済みのメモはありません</p>
+            <p className="text-xs text-neutral-400">削除済みの付箋はありません</p>
           ) : (
             <ul className="flex flex-col gap-1">
               {sortedNotes.map((n) => (

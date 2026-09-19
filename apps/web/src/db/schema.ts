@@ -75,7 +75,7 @@ export class NestioDb extends Dexie {
       meta: 'key',
       pendingAttachmentBlobs: 'sha256, createdAt',
     });
-    // ナレッジ（改修24回目）：タスク/メモに並ぶ第3のエンティティを追加する新規ストア
+    // ナレッジ（改修24回目）：タスク/付箋に並ぶ第3のエンティティを追加する新規ストア
     this.version(2).stores({
       folders: 'id, sort_order, deleted_at',
       lists: 'id, folder_id, sort_order, deleted_at',

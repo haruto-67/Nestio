@@ -23,7 +23,7 @@ export interface NotesScreenHandle {
 
 export interface NotesScreenProps {
   colorFilter: string | null;
-  /** メモ詳細(NoteEditor)の開閉状態が変わった時に呼ばれる。Escでの一括クローズに使う（改修11回目） */
+  /** 付箋詳細(NoteEditor)の開閉状態が変わった時に呼ばれる。Escでの一括クローズに使う（改修11回目） */
   onEditorOpenChange?: (open: boolean) => void;
 }
 
@@ -44,7 +44,7 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
   const [viewMode, setViewMode] = useState<ViewMode>(
     () => (localStorage.getItem(VIEW_MODE_KEY) as ViewMode | null) ?? 'gallery',
   );
-  // j/k（move_up/move_down）でメモ一覧をカーソル移動できるようにする（改修10回目）。
+  // j/k（move_up/move_down）で付箋一覧をカーソル移動できるようにする（改修10回目）。
   // 選択中(selectedNoteId、エディタが開いているか)とは別に持ち、エディタを閉じてもカーソル位置を保つ
   const [cursorIndex, setCursorIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -93,7 +93,7 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
 
   const clampIndex = (i: number) => Math.min(Math.max(i, 0), Math.max(sorted.length - 1, 0));
 
-  // NoteEditorの開閉アニメーション管理（改修12回目：TaskDetailAreaと同じ仕組みをメモにも展開）。
+  // NoteEditorの開閉アニメーション管理（改修12回目：TaskDetailAreaと同じ仕組みを付箋にも展開）。
   // 一覧側の非表示化は、開いた瞬間ではなくスライドインが終わってから隠し、
   // 閉じる時は即座に一覧を戻す
   const {
@@ -147,8 +147,8 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
 
   return (
     <div className="flex h-full min-w-0 flex-1 overflow-hidden">
-      {/* メモ詳細が開いている間、モバイル幅では一覧を隠して詳細に画面を譲る
-          （改修11回目フォローアップ：TaskListView/TaskDetailAreaと同じ不具合がメモにもあった） */}
+      {/* 付箋詳細が開いている間、モバイル幅では一覧を隠して詳細に画面を譲る
+          （改修11回目フォローアップ：TaskListView/TaskDetailAreaと同じ不具合が付箋にもあった） */}
       <div
         ref={containerRef}
         // min-w-0が無いとflexアイテムは中身（本文プレビュー等）の幅ぶん縮まずに広がってしまい、
@@ -157,7 +157,7 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
       >
         <BackgroundMark className="pointer-events-none absolute right-6 bottom-6 z-0 h-48 w-48 opacity-40" />
         <div className="relative z-10 mb-4 flex items-center justify-between">
-          <h1 className="text-xl font-semibold">メモ</h1>
+          <h1 className="text-xl font-semibold">付箋</h1>
           <div className="flex items-center gap-2">
             <div className="flex rounded-md border border-surface-border">
               <button
@@ -180,14 +180,14 @@ export const NotesScreen = forwardRef<NotesScreenHandle, NotesScreenProps>(funct
               className="flex items-center gap-1 rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white dark:bg-white dark:text-neutral-900"
             >
               <Plus size={14} />
-              新規メモ
+              新規付箋
             </button>
           </div>
         </div>
 
         <div className="relative z-10">
           {sorted.length === 0 ? (
-            <p className="mt-10 text-center text-sm text-neutral-400">メモはまだありません</p>
+            <p className="mt-10 text-center text-sm text-neutral-400">付箋はまだありません</p>
           ) : viewMode === 'gallery' ? (
             <div ref={gridRef} className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
               {sorted.map((note, i) => (

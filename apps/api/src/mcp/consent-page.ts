@@ -24,7 +24,7 @@ export function renderConsentPage(clientName: string, params: ConsentPageParams)
 </head>
 <body>
   <h1>Nestio</h1>
-  <p>「${escapeHtml(clientName)}」がNestioのタスク・メモへのアクセスを求めています。</p>
+  <p>「${escapeHtml(clientName)}」がNestioのタスク・付箋へのアクセスを求めています。</p>
   <form method="POST" action="/api/v1/mcp/oauth/authorize">
     <input type="hidden" name="client_id" value="${escapeHtml(params.clientId)}">
     <input type="hidden" name="redirect_uri" value="${escapeHtml(params.redirectUri)}">

@@ -11,7 +11,7 @@ const MARKDOWN_GUIDE_URI = 'nestio://docs/markdown';
 /**
  * MCPリソース一覧（改修20回目）。ツールのdescriptionは会話の毎ターンにコンテキストへ常駐する
  * ため簡潔に留め、実践手順・エラー対応表・運用上の注意点のような長文はリソースとして分離し、
- * 必要な時だけresources/readで取得させる。以前はNestioのメモ機能に同内容を書いていたが、
+ * 必要な時だけresources/readで取得させる。以前はNestioの付箋機能に同内容を書いていたが、
  * list_notesで偶然見つけてもらう他なく発見性が低かった
  */
 export const RESOURCE_DEFS: ResourceDef[] = [
@@ -19,21 +19,21 @@ export const RESOURCE_DEFS: ResourceDef[] = [
     uri: ATTACHMENTS_GUIDE_URI,
     name: 'attachments-guide',
     description:
-      'タスク/メモへの画像添付の実践ガイド。create_attachment_upload・create_attachment_download・' +
+      'タスク/付箋への画像添付の実践ガイド。create_attachment_upload・create_attachment_download・' +
       'get_attachment・upload_attachmentを使う前、またはこれらでエラーが出た時に読むこと',
     mimeType: 'text/markdown',
   },
   {
     uri: MARKDOWN_GUIDE_URI,
     name: 'markdown-guide',
-    description: 'タスクのnote・メモのbodyで使えるMarkdown記法の一覧。書式を確認したい時に読むこと',
+    description: 'タスクのnote・付箋のbodyで使えるMarkdown記法の一覧。書式を確認したい時に読むこと',
     mimeType: 'text/markdown',
   },
 ];
 
 const ATTACHMENTS_GUIDE_CONTENT = `# Nestio 添付画像ガイド
 
-タスク・メモへ画像を添付する／添付画像を読み出す際の実践手順とトラブルシュート。
+タスク・付箋へ画像を添付する／添付画像を読み出す際の実践手順とトラブルシュート。
 各ツールのdescriptionだけでは分からない、運用上の注意点をまとめている。
 
 ## 前提
@@ -93,7 +93,7 @@ data_base64はLLMが1文字ずつ出力する必要があり、**長いほど確
 
 const MARKDOWN_GUIDE_CONTENT = `# Nestio Markdown記法ガイド
 
-タスクの\`note\`・メモの\`body\`で使える記法。
+タスクの\`note\`・付箋の\`body\`で使える記法。
 
 - \`**太字**\` / \`*斜体*\` / \`\`\`コード\`\`\`
 - \`- 箇条書き\` / \`1. 番号付きリスト\`

@@ -68,7 +68,7 @@ export function SearchModal({ onClose, onSelectTask }: SearchModalProps) {
           onKeyDown={(e) => {
             if (e.key === 'Escape') onClose();
           }}
-          placeholder="タスク・メモを検索"
+          placeholder="タスク・付箋を検索"
           className="w-full border-b border-neutral-200 bg-transparent pb-2 text-lg outline-none dark:border-neutral-700"
         />
 
@@ -101,7 +101,7 @@ export function SearchModal({ onClose, onSelectTask }: SearchModalProps) {
 
           {results.notes.length > 0 && (
             <div>
-              <h3 className="px-1 py-1 text-xs font-semibold text-neutral-400">メモ</h3>
+              <h3 className="px-1 py-1 text-xs font-semibold text-neutral-400">付箋</h3>
               {results.notes.map((n) => (
                 <div key={n.id} className="truncate px-2 py-1.5 text-sm text-muted">
                   {n.title}

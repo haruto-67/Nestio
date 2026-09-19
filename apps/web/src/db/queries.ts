@@ -55,7 +55,7 @@ export function useNotes(): NoteRow[] {
   return useLiveQuery(() => db.notes.filter((n) => n.deleted_at === null).toArray(), [], []) ?? [];
 }
 
-/** ゴミ箱ビュー用：論理削除されたメモ一覧 */
+/** ゴミ箱ビュー用：論理削除された付箋一覧 */
 export function useDeletedNotes(): NoteRow[] {
   return useLiveQuery(() => db.notes.filter((n) => n.deleted_at !== null).toArray(), [], []) ?? [];
 }

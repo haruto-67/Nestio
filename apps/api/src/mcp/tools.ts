@@ -71,7 +71,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: 'list_notes',
     scope: 'read',
-    description: 'メモの一覧を取得する',
+    description: '付箋の一覧を取得する',
     inputSchema: { type: 'object', properties: { limit: { type: 'number' } } },
   },
   {
@@ -135,7 +135,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: 'create_note',
     scope: 'write',
-    description: 'メモを新規作成する',
+    description: '付箋を新規作成する',
     inputSchema: {
       type: 'object',
       properties: { title: { type: 'string' }, body: { type: 'string', description: MARKDOWN_FIELD_DESC } },
@@ -145,7 +145,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: 'update_note',
     scope: 'write',
-    description: 'メモを更新する（タイトル・本文・ピン留め）',
+    description: '付箋を更新する（タイトル・本文・ピン留め）',
     inputSchema: {
       type: 'object',
       properties: {
@@ -160,13 +160,13 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: 'delete_note',
     scope: 'write',
-    description: 'メモを論理削除する（ゴミ箱に入る）',
+    description: '付箋を論理削除する（ゴミ箱に入る）',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   },
   {
     name: 'restore_note',
     scope: 'write',
-    description: '論理削除したメモをゴミ箱から復元する',
+    description: '論理削除した付箋をゴミ箱から復元する',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   },
   {
@@ -383,13 +383,13 @@ export const TOOL_DEFS: ToolDef[] = [
     name: 'upload_attachment',
     scope: 'write',
     description:
-      `画像をタスク/メモへの添付として保存し、そのURLを返す。data_base64は${UPLOAD_ATTACHMENT_INLINE_MAX_BYTES}` +
+      `画像をタスク/付箋への添付として保存し、そのURLを返す。data_base64は${UPLOAD_ATTACHMENT_INLINE_MAX_BYTES}` +
       'バイト程度までを目安にすること。詳しい使い分け・エラー対応表はMCPリソース nestio://docs/attachments を参照',
     inputSchema: {
       type: 'object',
       properties: {
         owner_type: { type: 'string', description: "'task' または 'note'" },
-        owner_id: { type: 'string', description: '添付先のタスクIDまたはメモID' },
+        owner_id: { type: 'string', description: '添付先のタスクIDまたは付箋ID' },
         filename: { type: 'string' },
         data_base64: { type: 'string', description: '画像データのbase64エンコード（data:...;base64,のprefixは付けない）' },
         sha256: {
@@ -438,7 +438,7 @@ export const TOOL_DEFS: ToolDef[] = [
       type: 'object',
       properties: {
         owner_type: { type: 'string', description: "'task' または 'note'" },
-        owner_id: { type: 'string', description: '添付先のタスクIDまたはメモID' },
+        owner_id: { type: 'string', description: '添付先のタスクIDまたは付箋ID' },
         filename: { type: 'string' },
         sha256: { type: 'string', description: 'アップロードするファイルのSHA-256（16進数64桁・小文字）' },
       },
@@ -660,7 +660,7 @@ function listKnowledgeTagsBatch(
 }
 
 /**
- * タスク/メモに紐づく添付の一覧（改修16回目：MCP経由で添付画像を確認できるようにする要望への
+ * タスク/付箋に紐づく添付の一覧（改修16回目：MCP経由で添付画像を確認できるようにする要望への
  * 対応）。UI内部で使うサムネイル（`__thumb__`prefix、apps/web側で生成）は実装の詳細なので除く
  */
 function listAttachments(
@@ -689,7 +689,7 @@ function listAttachments(
 }
 
 /**
- * listAttachmentsのバッチ版（改修24回目：list_notesがメモ件数分クエリを発行していたN+1を
+ * listAttachmentsのバッチ版（改修24回目：list_notesが付箋件数分クエリを発行していたN+1を
  * 解消するため追加）。ownerIdごとの添付配列を1回のIN検索でまとめて取る
  */
 function listAttachmentsBatch(

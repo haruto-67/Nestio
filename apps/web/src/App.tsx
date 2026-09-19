@@ -49,7 +49,7 @@ function loadInitialScreen(): Screen {
   return stored === 'notes' || stored === 'knowledge' ? stored : 'tasks';
 }
 
-/** タスク→メモ→ナレッジ→タスクの3値サイクル（改修24回目フォローアップ：switch_screenを拡張） */
+/** タスク→付箋→ナレッジ→タスクの3値サイクル（改修24回目フォローアップ：switch_screenを拡張） */
 function nextScreen(current: Screen): Screen {
   if (current === 'tasks') return 'notes';
   if (current === 'notes') return 'knowledge';
@@ -112,7 +112,7 @@ function MainLayout() {
   // ブラウザタブのタイトルを現在のビューに合わせて動的に更新する（改修6回目）
   useEffect(() => {
     if (screen === 'notes') {
-      document.title = 'Nestio - メモ';
+      document.title = 'Nestio - 付箋';
       return;
     }
     if (screen === 'knowledge') {
@@ -153,7 +153,7 @@ function MainLayout() {
   // 左側エリア（サイドバー）へキーボードフォーカスを移す機能（改修10回目）。
   // trueの間はj/k・Enterがタスク一覧ではなくサイドバーのツリー移動に使われる
   const [sidebarFocused, setSidebarFocused] = useState(false);
-  // メモ詳細(NoteEditor)が開いているか。NotesScreen内部で管理しているselectedNoteIdを
+  // 付箋詳細(NoteEditor)が開いているか。NotesScreen内部で管理しているselectedNoteIdを
   // Escの一括クローズ処理から参照するために持つ（改修11回目）
   const [notesEditorOpen, setNotesEditorOpen] = useState(false);
   // ナレッジ詳細(KnowledgeEditor)が開いているか。notesEditorOpenと同じ扱い（改修24回目フォローアップ）
@@ -370,17 +370,17 @@ function MainLayout() {
       if (showHelp) return setShowHelp(false);
       if (drawerOpen) return setDrawerOpen(false);
       if (sidebarFocused) return setSidebarFocused(false);
-      // selectedTaskId/detailOpenはタスク画面専用、notesEditorOpenはメモ画面専用の状態。
+      // selectedTaskId/detailOpenはタスク画面専用、notesEditorOpenは付箋画面専用の状態。
       // 画面を切り替えても値は保持される（カーソル位置を覚えておくため）ため、screenで
-      // 絞り込まないと「メモ画面にいるのにタスク画面の古い選択が先にEscを消費してしまい、
-      // メモ詳細が閉じない」不具合になる（改修11回目で発覚）
+      // 絞り込まないと「付箋画面にいるのにタスク画面の古い選択が先にEscを消費してしまい、
+      // 付箋詳細が閉じない」不具合になる（改修11回目で発覚）
       if (screen === 'tasks') {
         // 詳細パネルを閉じるだけの1段階目ではカーソル(selectedTaskId)は維持し、
         // そこからj/kで移動を再開できるようにする。完全な選択解除は2段階目のEscで行う
         if (detailOpen) return setDetailOpen(false);
         if (selectedTaskId) return setSelectedTaskId(null);
       } else if (screen === 'notes') {
-        // メモ詳細も同様に、Escでは閉じるだけでメモ一覧のカーソル位置は維持する（改修11回目）
+        // 付箋詳細も同様に、Escでは閉じるだけで付箋一覧のカーソル位置は維持する（改修11回目）
         if (notesEditorOpen) return notesRef.current?.closeEditor();
       } else {
         // ナレッジ詳細も同様（改修24回目フォローアップ）
@@ -520,7 +520,7 @@ function MainLayout() {
       onToggleTheme: toggleTheme,
       onShowHelp: () => setShowHelp(true),
       onGotoToday: () => selectView({ type: 'smart', key: 'today' }),
-      // フォーカスが左側のサイドバーにある間はj/kでツリーを移動し、メモ画面ではメモ一覧を移動する。
+      // フォーカスが左側のサイドバーにある間はj/kでツリーを移動し、付箋画面では付箋一覧を移動する。
       // それ以外（通常のタスク一覧）は従来通りタスクのカーソル移動（改修10回目）
       onMoveUp: () => {
         if (sidebarFocused) return sidebarRef.current?.moveCursor(-1);
@@ -557,13 +557,13 @@ function MainLayout() {
       onFocusSelectedTitle: () => {
         if (selectedTaskId) setFocusTitleTaskId(selectedTaskId);
       },
-      // hキー：左側エリア（サイドバー）へフォーカスを移す。メモ画面ではサイドバーが
+      // hキー：左側エリア（サイドバー）へフォーカスを移す。付箋画面ではサイドバーが
       // 表示されない（NotesColorFilterに差し替わる）ため無効（改修10回目）
       onFocusSidebar: () => {
         if (screen !== 'tasks') return;
         setSidebarFocused(true);
       },
-      // タスク→メモ→ナレッジの3値サイクル切り替え（改修11回目、改修24回目フォローアップで
+      // タスク→付箋→ナレッジの3値サイクル切り替え（改修11回目、改修24回目フォローアップで
       // ナレッジを追加）。切り替え後は前の画面のサイドバーフォーカスを引きずらないようリセットする
       onSwitchScreen: () => {
         setScreen(nextScreen(screen));
@@ -730,7 +730,7 @@ function MainLayout() {
               onClick={() => setScreen('notes')}
               className={`flex-1 py-2 ${screen === 'notes' ? 'border-b-2 border-blue-500 font-medium' : 'text-neutral-400'}`}
             >
-              メモ
+              付箋
             </button>
             <button
               onClick={() => setScreen('knowledge')}
@@ -795,7 +795,7 @@ function MainLayout() {
                   onClick={() => setScreen('notes')}
                   className={`flex-1 py-2 ${screen === 'notes' ? 'border-b-2 border-blue-500 font-medium' : 'text-neutral-400'}`}
                 >
-                  メモ
+                  付箋
                 </button>
                 <button
                   onClick={() => setScreen('knowledge')}
@@ -888,7 +888,7 @@ function MainLayout() {
       </div>
 
       {/* 画面下部の固定タブバー（改修21回目）。スマホでは画面下部が親指の届く範囲で
-          押しやすいため、タスク/メモの切替をここに集約する。メニューは下部タブに収まらず
+          押しやすいため、タスク/付箋の切替をここに集約する。メニューは下部タブに収まらず
           操作しづらいとのフィードバックで左上ハンバーガー（上記ヘッダー）に戻した
           （改修21回目フォローアップ）。fixed配置ではなく通常のflex項目にすることで、
           h-dvh flex-colの残り領域をTaskDetailArea等が正しく占有でき、
@@ -910,7 +910,7 @@ function MainLayout() {
           }`}
         >
           <StickyNote size={20} />
-          メモ
+          付箋
         </button>
         <button
           onClick={() => setScreen('knowledge')}

@@ -288,7 +288,7 @@ function ParamsFields({
               value={(params.output as string) ?? 'note'}
               onChange={(e) => set('output', e.target.value)}
             >
-              <option value="note">メモとして保存</option>
+              <option value="note">付箋として保存</option>
               <option value="push">Push通知で受け取る</option>
             </select>
           </div>

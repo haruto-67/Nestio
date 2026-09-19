@@ -26,7 +26,7 @@ export const HATCH_ACTION_LABELS: Record<HatchActionKey, string> = {
   claude_prompt: 'Claudeにプロンプトを実行させる',
   claude_subtasks: 'Claudeにサブタスクを提案させる',
   create_task: 'タスクを作成',
-  create_note: 'メモを作成',
+  create_note: '付箋を作成',
   add_tag: 'タグを付与',
   set_priority: '優先度を変更',
   move_to_list: 'リストへ移動',
