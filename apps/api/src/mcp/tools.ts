@@ -3,6 +3,7 @@ import { uuidv7, markdownToSafeHtml, sha256Schema, knowledgeCategorySchema, type
 import { applySyncOps } from '../sync/apply.js';
 import { searchTasks, searchKnowledge } from '../search/query.js';
 import { syncKnowledgeLinks, resolveIncomingLinks } from '../knowledge/links.js';
+import { checkExpectedSeq } from '../knowledge/optimistic-lock.js';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import { detectImageMime, verifyImageIntegrity } from '../attachments/magic-bytes.js';
@@ -195,7 +196,8 @@ export const TOOL_DEFS: ToolDef[] = [
     description:
       'titleをキーにナレッジを作成または更新する（同名タイトルが無ければ新規作成）。' +
       '新規作成時はdescription（AIが本文を読むか判断するための1行要約）が必須。' +
-      'append: trueでbody末尾に追記する（既存ノートがある場合のみ有効。無ければ通常の新規作成になる）',
+      'append: trueでbody末尾に追記する（既存ノートがある場合のみ有効。無ければ通常の新規作成になる）。' +
+      'expected_seqを渡すと楽観ロックになる（本文を全体置換する時は、get_knowledgeで読んだseqを渡すこと）。戻り値のseqを次回のexpected_seqに使える',
     inputSchema: {
       type: 'object',
       properties: {
@@ -204,6 +206,11 @@ export const TOOL_DEFS: ToolDef[] = [
         body: { type: 'string', description: MARKDOWN_FIELD_DESC },
         category: { type: 'string', description: "'profile' | 'project' | 'topic' | 'person' | 'decision'" },
         append: { type: 'boolean', description: 'trueならbodyを既存本文の末尾に追記する' },
+        expected_seq: {
+          type: 'number',
+          description:
+            'get_knowledgeで読んだ時点のseq。サーバー側の現在のseqと食い違ったら書き込まずエラーを返す（他セッションの更新を無言で上書きしないため）',
+        },
       },
       required: ['title'],
     },
@@ -1029,6 +1036,10 @@ export async function callTool(
         .prepare('SELECT * FROM knowledge WHERE user_id = ? AND title = ? AND deleted_at IS NULL')
         .get(userId, title) as Row | undefined;
 
+      // 楽観ロック（改修25回目：他セッションの追記を古い本文で上書きするlost update対策）
+      const conflict = checkExpectedSeq(title, existing ? (existing.seq as number) : null, args.expected_seq);
+      if (conflict) throw new ToolError(conflict);
+
       if (!existing && (typeof args.description !== 'string' || args.description.length === 0)) {
         throw new ToolError('新規作成時はdescription（1行要約）が必須です');
       }
@@ -1066,7 +1077,8 @@ export async function callTool(
         resolveIncomingLinks(db, userId, title, id);
       }
 
-      return { id, title, created: !existing };
+      const saved = db.prepare('SELECT seq FROM knowledge WHERE id = ?').get(id) as { seq: number } | undefined;
+      return { id, title, created: !existing, seq: saved?.seq ?? null };
     }
 
     case 'search_knowledge': {

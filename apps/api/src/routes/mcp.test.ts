@@ -825,6 +825,55 @@ describe('MCP OAuth + tools', () => {
     expect(fetched.knowledge[0]?.body).toContain('追記した行');
   });
 
+  it('upsert_knowledgeはexpected_seqが現在のseqと食い違うと上書きせずエラーにする（改修25回目）', async () => {
+    db = createTestDb();
+    const userId = uuidv7();
+    insertTestUser(db, userId);
+    const sessionId = insertSession(db, userId);
+    const app = setupApp(db);
+    const { accessToken } = await fullOAuthFlow(app, sessionId);
+
+    const created = await callTool(app, accessToken, 'upsert_knowledge', {
+      title: '競合ノート',
+      description: '楽観ロック',
+      body: '初版',
+    });
+    const seq1 = created.seq as number;
+    expect(typeof seq1).toBe('number');
+
+    // 別セッションの追記
+    const appended = await callTool(app, accessToken, 'upsert_knowledge', {
+      title: '競合ノート',
+      body: '他セッションの追記',
+      append: true,
+    });
+    expect(appended.seq as number).toBeGreaterThan(seq1);
+
+    // 追記前に読んだ古いseqで全体置換しようとすると拒否される
+    await expect(
+      callTool(app, accessToken, 'upsert_knowledge', { title: '競合ノート', body: '古い本文で上書き', expected_seq: seq1 }),
+    ).rejects.toThrow('競合');
+
+    const fetched = (await callTool(app, accessToken, 'get_knowledge', { titles: ['競合ノート'] })) as {
+      knowledge: { body: string; seq: number }[];
+    };
+    expect(fetched.knowledge[0]?.body).toContain('他セッションの追記');
+    expect(fetched.knowledge[0]?.body).not.toContain('古い本文で上書き');
+    expect(fetched.knowledge[0]?.seq).toBe(appended.seq);
+
+    // 最新のseqなら置換できる
+    const ok = await callTool(app, accessToken, 'upsert_knowledge', {
+      title: '競合ノート',
+      body: '最新から書き換え',
+      expected_seq: appended.seq,
+    });
+    expect(ok.created).toBe(false);
+
+    await expect(
+      callTool(app, accessToken, 'upsert_knowledge', { title: '無いノート', description: 'x', body: 'y', expected_seq: 1 }),
+    ).rejects.toThrow('存在しません');
+  });
+
   it('get_knowledge_indexはbodyを含まず索引（title/description/category/tags/updated_at）だけを1リクエストで返す', async () => {
     db = createTestDb();
     const userId = uuidv7();
