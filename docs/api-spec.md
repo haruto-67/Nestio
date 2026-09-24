@@ -52,13 +52,12 @@
 
 | メソッド | パス | 内容 |
 |---|---|---|
-| GET | `/search?q=&limit=` | タスク・付箋・ナレッジを横断検索 |
+| GET | `/search?q=&limit=` | タスク・付箋を横断検索（ナレッジは改修25回目から `/vault/search`） |
 
 ```jsonc
 {
   "tasks": [ { "id": "...", "title": "...", "snippet": "...", "list_id": "..." } ],
-  "notes": [ { "id": "...", "title": "...", "snippet": "..." } ],
-  "knowledge": [ { "id": "...", "title": "...", "snippet": "..." } ]
+  "notes": [ { "id": "...", "title": "...", "snippet": "..." } ]
 }
 ```
 

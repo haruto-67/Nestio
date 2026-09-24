@@ -10,8 +10,6 @@ import type {
   AttachmentWritableFields,
   TriggerWritableFields,
   TaskRow,
-  KnowledgeWritableFields,
-  KnowledgeTagWritableFields,
 } from '@nestio/shared';
 import { upsertLocal, deleteLocal, restoreLocal, upsertUserSettingsLocal, commitAndSync } from '../db/local-mutations.js';
 import { computeNextOccurrence } from '../lib/recurrence.js';
@@ -119,37 +117,6 @@ export function deleteNote(id: string): void {
 }
 export function restoreNote(id: string): void {
   commitAndSync(restoreLocal('notes', id));
-}
-
-export function upsertKnowledge(userId: string, id: string, fields: KnowledgeWritableFields): void {
-  commitAndSync(upsertLocal(userId, 'knowledge', id, fields));
-}
-export function deleteKnowledge(id: string): void {
-  commitAndSync(deleteLocal('knowledge', id));
-}
-export function restoreKnowledge(id: string): void {
-  commitAndSync(restoreLocal('knowledge', id));
-}
-
-export function upsertKnowledgeTag(userId: string, id: string, fields: KnowledgeTagWritableFields): void {
-  commitAndSync(upsertLocal(userId, 'knowledge_tags', id, fields));
-}
-export function deleteKnowledgeTag(id: string): void {
-  commitAndSync(deleteLocal('knowledge_tags', id));
-}
-
-/**
- * knowledge_tags(knowledge_id, tag_id)には論理削除を無視した一意制約があるため、以前付けて
- * 外したタグを再度付ける時は新規行をINSERTせず、既存の（論理削除済みも含む）行を探して
- * restoreする必要がある（attachTaskTagと同じパターン。改修24回目フォローアップ）
- */
-export async function attachKnowledgeTag(userId: string, knowledgeId: string, tagId: string): Promise<void> {
-  const existing = await db.knowledge_tags.filter((t) => t.knowledge_id === knowledgeId && t.tag_id === tagId).first();
-  if (existing) {
-    if (existing.deleted_at !== null) commitAndSync(restoreLocal('knowledge_tags', existing.id));
-    return;
-  }
-  commitAndSync(upsertLocal(userId, 'knowledge_tags', uuidv7(), { knowledge_id: knowledgeId, tag_id: tagId }));
 }
 
 export function upsertAttachment(userId: string, id: string, fields: AttachmentWritableFields): void {

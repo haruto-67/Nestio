@@ -156,7 +156,7 @@ function MainLayout() {
   // 付箋詳細(NoteEditor)が開いているか。NotesScreen内部で管理しているselectedNoteIdを
   // Escの一括クローズ処理から参照するために持つ（改修11回目）
   const [notesEditorOpen, setNotesEditorOpen] = useState(false);
-  // ナレッジ詳細(KnowledgeEditor)が開いているか。notesEditorOpenと同じ扱い（改修24回目フォローアップ）
+  // ナレッジのノート表示が開いているか。notesEditorOpenと同じ扱い（改修24回目フォローアップ、改修25回目でVault表示に置き換え）
   const [knowledgeEditorOpen, setKnowledgeEditorOpen] = useState(false);
   const sidebarRef = useRef<SidebarHandle>(null);
   const notesRef = useRef<NotesScreenHandle>(null);

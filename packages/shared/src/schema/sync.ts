@@ -20,10 +20,16 @@ export const syncableTableSchema = z.enum([
   'attachments',
   'triggers',
   'user_settings',
+  // 改修25回目でナレッジはObsidian形式のVaultへ移り/syncの対象外になった。更新前のクライアントの
+  // outboxに残ったopでpushリクエスト全体が検証エラーにならないよう、名前だけ残してサーバー側で
+  // op単位に拒否する（SYNC_TABLESに無いテーブルはvalidation_failed）
   'knowledge',
   'knowledge_tags',
 ]);
 export type SyncableTable = z.infer<typeof syncableTableSchema>;
+
+/** 改修25回目で/syncの対象外になったテーブル（ナレッジはVaultへ移行）。クライアントはもう書き込まない */
+export type RetiredSyncTable = 'knowledge' | 'knowledge_tags';
 
 export const syncOpSchema = z.object({
   op_id: idSchema,

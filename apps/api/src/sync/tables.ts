@@ -8,8 +8,6 @@ import {
   noteWritableFields,
   attachmentWritableFields,
   triggerWritableFields,
-  knowledgeWritableFields,
-  knowledgeTagWritableFields,
 } from '@nestio/shared';
 
 /**
@@ -69,16 +67,6 @@ export const SYNC_TABLES = {
     columns: ['name', 'event', 'condition_json', 'action_key', 'params_json', 'enabled'],
     requiredOnInsert: ['name', 'event', 'action_key'],
     writableSchema: triggerWritableFields,
-  },
-  knowledge: {
-    columns: ['title', 'description', 'body', 'category'],
-    requiredOnInsert: ['title'],
-    writableSchema: knowledgeWritableFields,
-  },
-  knowledge_tags: {
-    columns: ['knowledge_id', 'tag_id'],
-    requiredOnInsert: ['knowledge_id', 'tag_id'],
-    writableSchema: knowledgeTagWritableFields,
   },
 } as const satisfies Record<
   string,

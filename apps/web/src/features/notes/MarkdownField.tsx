@@ -63,7 +63,7 @@ export function sanitizeHtml(html: string): string {
 interface MarkdownFieldProps {
   value: string;
   onSave: (next: string) => void;
-  ownerType: 'task' | 'note' | 'knowledge';
+  ownerType: 'task' | 'note';
   ownerId: string;
   userId: string;
   placeholder?: string;
@@ -243,11 +243,6 @@ export function MarkdownField({
   };
 
   const handleImageFile = async (file: File) => {
-    // ナレッジは添付テーブルのowner_type CHECK制約（'task'|'note'のみ）の対象外のため未対応
-    if (ownerType === 'knowledge') {
-      showToast('ナレッジへの画像添付は未対応です');
-      return;
-    }
     const processed = await processImageFile(file);
     await createAttachment(userId, ownerType, ownerId, processed, file.name);
     insertImage(attachmentUrl(processed.sha256), file.name);

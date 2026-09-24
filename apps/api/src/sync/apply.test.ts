@@ -739,90 +739,27 @@ describe('applySyncOps', () => {
     expect(rows[0]?.deleted_at).toBeNull();
   });
 
-  it('knowledge_tagsで同じ(knowledge_id, tag_id)へ別idでupsertしても、UNIQUE制約違反でクラッシュせず冪等に成功する（改修24回目フォローアップ）', () => {
+  it('廃止したknowledge/knowledge_tagsへのopはop単位で拒否し、同じバッチの他のopは適用する（改修25回目）', () => {
     setup();
-    const knowledgeId = uuidv7();
-    applySyncOps(db, userId, [
-      {
-        op_id: uuidv7(),
-        table: 'knowledge',
-        id: knowledgeId,
-        op: 'upsert',
-        updated_at: Date.now(),
-        fields: { title: 'ナレッジ', description: '説明' },
-      },
-    ]);
-    const tagId = uuidv7();
-    applySyncOps(db, userId, [
-      { op_id: uuidv7(), table: 'tags', id: tagId, op: 'upsert', updated_at: Date.now(), fields: { name: 'urgent' } },
-    ]);
-
-    const first = applySyncOps(db, userId, [
-      {
-        op_id: uuidv7(),
-        table: 'knowledge_tags',
-        id: uuidv7(),
-        op: 'upsert',
-        updated_at: Date.now(),
-        fields: { knowledge_id: knowledgeId, tag_id: tagId },
-      },
-    ]);
-    expect(first.rejected).toEqual([]);
-
-    const second = applySyncOps(db, userId, [
-      {
-        op_id: uuidv7(),
-        table: 'knowledge_tags',
-        id: uuidv7(),
-        op: 'upsert',
-        updated_at: Date.now(),
-        fields: { knowledge_id: knowledgeId, tag_id: tagId },
-      },
-    ]);
-    expect(second.rejected).toEqual([]);
-
-    const rows = db
-      .prepare('SELECT * FROM knowledge_tags WHERE knowledge_id = ? AND tag_id = ? AND deleted_at IS NULL')
-      .all(knowledgeId, tagId);
-    expect(rows).toHaveLength(1);
-  });
-
-  it('knowledgeのtitleが既存の別ノートと重複する場合、クラッシュせずvalidation_failedで拒否する（改修24回目フォローアップ）', () => {
-    setup();
-    applySyncOps(db, userId, [
-      {
-        op_id: uuidv7(),
-        table: 'knowledge',
-        id: uuidv7(),
-        op: 'upsert',
-        updated_at: Date.now(),
-        fields: { title: '既存ノート', description: '' },
-      },
-    ]);
-
-    const secondId = uuidv7();
-    const createRes = applySyncOps(db, userId, [
-      {
-        op_id: uuidv7(),
-        table: 'knowledge',
-        id: secondId,
-        op: 'upsert',
-        updated_at: Date.now(),
-        fields: { title: '別ノート', description: '' },
-      },
-    ]);
-    expect(createRes.rejected).toEqual([]);
-
-    const renameOp: SyncOp = {
+    const staleKnowledgeOp: SyncOp = {
       op_id: uuidv7(),
       table: 'knowledge',
-      id: secondId,
+      id: uuidv7(),
       op: 'upsert',
       updated_at: Date.now(),
-      fields: { title: '既存ノート' },
+      fields: { title: '更新前クライアントのoutboxに残ったop' },
     };
-    const renameRes = applySyncOps(db, userId, [renameOp]);
-    expect(renameRes.rejected).toEqual([{ op_id: renameOp.op_id, reason: 'validation_failed' }]);
+    const taskOp: SyncOp = {
+      op_id: uuidv7(),
+      table: 'tasks',
+      id: uuidv7(),
+      op: 'upsert',
+      updated_at: Date.now(),
+      fields: { list_id: listId, title: '同じバッチのタスク', sort_order: 1 },
+    };
+    const res = applySyncOps(db, userId, [staleKnowledgeOp, taskOp]);
+    expect(res.rejected).toEqual([{ op_id: staleKnowledgeOp.op_id, reason: 'validation_failed' }]);
+    expect(res.applied).toEqual([taskOp.op_id]);
   });
 });
 

@@ -1,6 +1,6 @@
 import { apiClient } from './client.js';
 import { upsertLocal, commitAndSync } from '../db/local-mutations.js';
-import type { SyncableTable } from '@nestio/shared';
+import type { RetiredSyncTable, SyncableTable } from '@nestio/shared';
 
 interface ExportPayload {
   exported_at: number;
@@ -67,7 +67,7 @@ export async function importAllData(userId: string, file: File): Promise<number>
       for (const f of fields) {
         if (f in row) writable[f] = row[f];
       }
-      commitAndSync(upsertLocal(userId, table as Exclude<SyncableTable, 'user_settings'>, id, writable));
+      commitAndSync(upsertLocal(userId, table as Exclude<SyncableTable, 'user_settings' | RetiredSyncTable>, id, writable));
       count += 1;
     }
   }

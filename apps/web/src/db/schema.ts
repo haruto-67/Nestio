@@ -9,8 +9,6 @@ import type {
   AttachmentRow,
   TriggerRow,
   UserSettingsRow,
-  KnowledgeRow,
-  KnowledgeTagRow,
   SyncOp,
 } from '@nestio/shared';
 
@@ -53,8 +51,6 @@ export class NestioDb extends Dexie {
   attachments!: Table<AttachmentRow, string>;
   triggers!: Table<TriggerRow, string>;
   user_settings!: Table<UserSettingsRow, string>;
-  knowledge!: Table<KnowledgeRow, string>;
-  knowledge_tags!: Table<KnowledgeTagRow, string>;
   outbox!: Table<OutboxEntry, number>;
   meta!: Table<MetaEntry, string>;
   pendingAttachmentBlobs!: Table<PendingAttachmentBlob, string>;
@@ -108,6 +104,12 @@ export class NestioDb extends Dexie {
       meta: 'key',
       pendingAttachmentBlobs: 'sha256, createdAt',
     });
+    // 改修25回目：ナレッジはObsidian形式のVaultへ移り/syncの対象外になったため、ローカルのストアを削除する
+    // （outboxに残ったナレッジのopはサーバーがop単位で拒否し、応答後にoutboxから消える）
+    this.version(4).stores({
+      knowledge: null,
+      knowledge_tags: null,
+    });
   }
 }
 
@@ -145,8 +147,6 @@ export async function resetLocalDataKeepingOutbox(): Promise<void> {
       db.attachments,
       db.triggers,
       db.user_settings,
-      db.knowledge,
-      db.knowledge_tags,
       db.meta,
     ],
     async () => {
@@ -160,8 +160,6 @@ export async function resetLocalDataKeepingOutbox(): Promise<void> {
         db.attachments.clear(),
         db.triggers.clear(),
         db.user_settings.clear(),
-        db.knowledge.clear(),
-        db.knowledge_tags.clear(),
       ]);
       await setMeta(META_KEYS.since, 0);
     },

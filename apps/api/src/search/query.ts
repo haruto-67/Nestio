@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { SearchTaskResult, SearchNoteResult, SearchKnowledgeResult } from '@nestio/shared';
+import type { SearchTaskResult, SearchNoteResult } from '@nestio/shared';
 
 /** FTS5クエリの特殊文字（", *, ^等）をユーザー入力からエスケープするため常にフレーズ検索にする */
 function escapeFtsQuery(q: string): string {
@@ -57,34 +57,4 @@ export function searchNotes(db: Database.Database, userId: string, q: string, li
        LIMIT ?`,
     )
     .all(escapeFtsQuery(q), userId, limit) as SearchNoteResult[];
-}
-
-export function searchKnowledge(
-  db: Database.Database,
-  userId: string,
-  q: string,
-  limit: number,
-): SearchKnowledgeResult[] {
-  if (q.length < FTS_MIN_LENGTH) {
-    const like = `%${q}%`;
-    return db
-      .prepare(
-        `SELECT id, title, title as snippet
-         FROM knowledge
-         WHERE user_id = ? AND deleted_at IS NULL AND (title LIKE ? OR description LIKE ? OR body LIKE ?)
-         LIMIT ?`,
-      )
-      .all(userId, like, like, like, limit) as SearchKnowledgeResult[];
-  }
-
-  return db
-    .prepare(
-      `SELECT knowledge.id as id, knowledge.title as title,
-              snippet(knowledge_fts, -1, '', '', '...', 20) as snippet
-       FROM knowledge_fts
-       JOIN knowledge ON knowledge.rowid = knowledge_fts.rowid
-       WHERE knowledge_fts MATCH ? AND knowledge.user_id = ? AND knowledge.deleted_at IS NULL
-       LIMIT ?`,
-    )
-    .all(escapeFtsQuery(q), userId, limit) as SearchKnowledgeResult[];
 }

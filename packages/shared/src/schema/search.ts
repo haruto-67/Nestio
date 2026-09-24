@@ -22,16 +22,8 @@ export const searchNoteResultSchema = z.object({
 });
 export type SearchNoteResult = z.infer<typeof searchNoteResultSchema>;
 
-export const searchKnowledgeResultSchema = z.object({
-  id: idSchema,
-  title: z.string(),
-  snippet: z.string(),
-});
-export type SearchKnowledgeResult = z.infer<typeof searchKnowledgeResultSchema>;
-
 export const searchResponseSchema = z.object({
   tasks: z.array(searchTaskResultSchema),
   notes: z.array(searchNoteResultSchema),
-  knowledge: z.array(searchKnowledgeResultSchema),
 });
 export type SearchResponse = z.infer<typeof searchResponseSchema>;

@@ -195,20 +195,6 @@ function applyUpsert(
     return { ok: false, reason: 'forbidden' };
   }
 
-  // knowledge.title はユーザー内で一意（[[リンク]]解決のキーのため、docs/schema.sql の部分
-  // ユニークインデックス）。既存の別ノートと同じtitleへ変更/新規作成しようとすると生のSQLite
-  // UNIQUE制約違反でリクエスト全体が落ちてしまうため、事前にチェックして安全に拒否する
-  // （改修24回目フォローアップ：ナレッジUI追加に伴い、人間が編集画面でタイトルを変更する
-  // 経路が増えたことで踏みやすくなったため対応）
-  if (table === 'knowledge' && typeof fields.title === 'string') {
-    const conflict = db
-      .prepare('SELECT id FROM knowledge WHERE user_id = ? AND title = ? AND deleted_at IS NULL AND id != ?')
-      .get(ownerId, fields.title, op.id) as { id: string } | undefined;
-    if (conflict) {
-      return { ok: false, reason: 'validation_failed' };
-    }
-  }
-
   if (!existing) {
     for (const requiredCol of def.requiredOnInsert) {
       if (fields[requiredCol] === undefined) {
@@ -216,14 +202,14 @@ function applyUpsert(
       }
     }
 
-    // task_tags(task_id, tag_id)・knowledge_tags(knowledge_id, tag_id)には論理削除を無視した
+    // task_tags(task_id, tag_id)には論理削除を無視した
     // UNIQUE制約(docs/schema.sql)があり、同じペアへ別idで新規INSERTしようとすると生のSQLite
     // 例外でリクエスト全体が落ちてしまう。クライアント側（apps/web/src/state/actions.ts）・
     // MCP側（apps/api/src/mcp/tools.ts）は修正済みだが、既にoutboxに積まれた古いクライアントの
     // op（＝この状況）や他経路からの重複要求に対してもサーバー側で必ず安全に倒せるようにする
     // （改修21回目、本番ログで実際にUNIQUE constraint failedが繰り返し発生しoutboxが詰まって
-    // いたことが発覚。改修24回目フォローアップ：knowledge_tagsにも同じ制約があるため展開）
-    const pairColumns = table === 'task_tags' ? (['task_id', 'tag_id'] as const) : table === 'knowledge_tags' ? (['knowledge_id', 'tag_id'] as const) : null;
+    // いたことが発覚）
+    const pairColumns = table === 'task_tags' ? (['task_id', 'tag_id'] as const) : null;
     if (pairColumns) {
       const [colA, colB] = pairColumns;
       const conflict = db
