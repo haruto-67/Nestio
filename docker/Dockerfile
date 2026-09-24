@@ -50,7 +50,7 @@ COPY --from=build --chown=nestio:nestio /app/apps/web/dist ./web-dist
 # hatchはClaude Codeの作業ディレクトリ（--allowedToolsで許可した範囲以外へ書き込ませないための固定cwd）。
 # claude-homeはclaude CLIのログイン認証情報の保存先（$HOMEをここへ向ける。下記参照）。
 # 同じnamed volume配下に置くことで、コンテナを再ビルドしてもログイン状態が失われないようにする
-RUN mkdir -p /var/lib/nestio/attachments /var/lib/nestio/logs /var/lib/nestio/hatch /var/lib/nestio/claude-home \
+RUN mkdir -p /var/lib/nestio/attachments /var/lib/nestio/vault /var/lib/nestio/logs /var/lib/nestio/hatch /var/lib/nestio/claude-home \
     && chown -R nestio:nestio /var/lib/nestio
 
 USER nestio
@@ -59,6 +59,7 @@ ENV PORT=3000
 ENV WEB_DIST_DIR=/app/web-dist
 ENV DB_PATH=/var/lib/nestio/nestio.db
 ENV ATTACHMENT_DIR=/var/lib/nestio/attachments
+ENV VAULT_DIR=/var/lib/nestio/vault
 ENV LOG_DIR=/var/lib/nestio/logs
 ENV CLAUDE_BIN=/usr/local/bin/claude
 ENV CLAUDE_WORKDIR=/var/lib/nestio/hatch

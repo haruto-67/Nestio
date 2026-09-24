@@ -18,6 +18,7 @@ function setupApp(db: Database.Database) {
     NODE_ENV: 'test',
     LOG_LEVEL: 'error',
     ATTACHMENT_DIR: attachmentDir,
+    VAULT_DIR: path.join(attachmentDir, 'vault'),
   } as unknown as NodeJS.ProcessEnv);
   const logger = createLogger(env);
   return createApp(env, db, logger);
@@ -768,7 +769,7 @@ describe('MCP OAuth + tools', () => {
     expect(byId(noteC.id)?.attachments).toEqual([]);
   });
 
-  it('upsert_knowledgeは新規作成時にdescription必須で、titleをキーに冪等に更新できる（改修24回目）', async () => {
+  it('ナレッジツールはVaultのmdファイルを読み書きし、versionが食い違う更新を拒否する（改修25回目）', async () => {
     db = createTestDb();
     const userId = uuidv7();
     insertTestUser(db, userId);
@@ -776,131 +777,61 @@ describe('MCP OAuth + tools', () => {
     const app = setupApp(db);
     const { accessToken } = await fullOAuthFlow(app, sessionId);
 
+    await expect(callTool(app, accessToken, 'upsert_knowledge', { title: '記憶規約', category: 'topic' })).rejects.toThrow(
+      'description',
+    );
     await expect(
-      callTool(app, accessToken, 'upsert_knowledge', { title: '記憶規約' }),
-    ).rejects.toThrow('description');
+      callTool(app, accessToken, 'upsert_knowledge', { title: 'プロジェクト', description: 'x', category: 'project' }),
+    ).rejects.toThrow('path');
 
     const created = await callTool(app, accessToken, 'upsert_knowledge', {
-      title: '記憶規約',
-      description: 'ナレッジの書き方規約',
-      body: '本文1',
-      category: 'topic',
-    });
-    expect(created.created).toBe(true);
-
-    const updated = await callTool(app, accessToken, 'upsert_knowledge', {
-      title: '記憶規約',
-      body: '本文2',
-    });
-    expect(updated.created).toBe(false);
-    expect(updated.id).toBe(created.id);
-
-    const fetched = (await callTool(app, accessToken, 'get_knowledge', { titles: ['記憶規約'] })) as {
-      knowledge: { id: string; body: string; description: string }[];
-    };
-    expect(fetched.knowledge).toHaveLength(1);
-    expect(fetched.knowledge[0]?.body).toBe('<p>本文2</p>');
-    expect(fetched.knowledge[0]?.description).toBe('ナレッジの書き方規約');
-  });
-
-  it('upsert_knowledgeはappend: trueで既存本文の末尾に追記する', async () => {
-    db = createTestDb();
-    const userId = uuidv7();
-    insertTestUser(db, userId);
-    const sessionId = insertSession(db, userId);
-    const app = setupApp(db);
-    const { accessToken } = await fullOAuthFlow(app, sessionId);
-
-    await callTool(app, accessToken, 'upsert_knowledge', {
       title: '育てるノート',
       description: '追記テスト用',
-      body: '最初の行',
+      category: 'topic',
+      tags: ['メモ'],
+      body: '## 経緯\n最初の行\n\n## 現状\n今の状態',
     });
-    await callTool(app, accessToken, 'upsert_knowledge', { title: '育てるノート', body: '追記した行', append: true });
+    expect(created).toMatchObject({ path: 'topics/育てるノート.md', created: true });
+    const v1 = created.version as string;
 
-    const fetched = (await callTool(app, accessToken, 'get_knowledge', { titles: ['育てるノート'] })) as {
-      knowledge: { body: string }[];
-    };
-    expect(fetched.knowledge[0]?.body).toContain('最初の行');
-    expect(fetched.knowledge[0]?.body).toContain('追記した行');
-  });
-
-  it('upsert_knowledgeはexpected_seqが現在のseqと食い違うと上書きせずエラーにする（改修25回目）', async () => {
-    db = createTestDb();
-    const userId = uuidv7();
-    insertTestUser(db, userId);
-    const sessionId = insertSession(db, userId);
-    const app = setupApp(db);
-    const { accessToken } = await fullOAuthFlow(app, sessionId);
-
-    const created = await callTool(app, accessToken, 'upsert_knowledge', {
-      title: '競合ノート',
-      description: '楽観ロック',
-      body: '初版',
-    });
-    const seq1 = created.seq as number;
-    expect(typeof seq1).toBe('number');
-
-    // 別セッションの追記
+    // 別セッションの見出し単位の追記
     const appended = await callTool(app, accessToken, 'upsert_knowledge', {
-      title: '競合ノート',
-      body: '他セッションの追記',
+      title: '育てるノート',
+      body: '追記した行',
       append: true,
+      heading: '経緯',
     });
-    expect(appended.seq as number).toBeGreaterThan(seq1);
+    expect(appended.version).not.toBe(v1);
 
-    // 追記前に読んだ古いseqで全体置換しようとすると拒否される
+    // 追記前のversionで全体置換しようとすると拒否される
     await expect(
-      callTool(app, accessToken, 'upsert_knowledge', { title: '競合ノート', body: '古い本文で上書き', expected_seq: seq1 }),
+      callTool(app, accessToken, 'upsert_knowledge', { title: '育てるノート', body: '古い本文', expected_version: v1 }),
     ).rejects.toThrow('競合');
 
-    const fetched = (await callTool(app, accessToken, 'get_knowledge', { titles: ['競合ノート'] })) as {
-      knowledge: { body: string; seq: number }[];
+    const section = (await callTool(app, accessToken, 'get_knowledge', {
+      titles: ['育てるノート'],
+      heading: '経緯',
+    })) as { knowledge: { body: string; tags: string[] }[] };
+    expect(section.knowledge[0]?.body).toBe('## 経緯\n最初の行\n\n追記した行');
+    expect(section.knowledge[0]?.tags).toEqual(['メモ']);
+
+    const outline = (await callTool(app, accessToken, 'get_knowledge_outline', { target: '育てるノート' })) as {
+      headings: { level: number; text: string }[];
     };
-    expect(fetched.knowledge[0]?.body).toContain('他セッションの追記');
-    expect(fetched.knowledge[0]?.body).not.toContain('古い本文で上書き');
-    expect(fetched.knowledge[0]?.seq).toBe(appended.seq);
-
-    // 最新のseqなら置換できる
-    const ok = await callTool(app, accessToken, 'upsert_knowledge', {
-      title: '競合ノート',
-      body: '最新から書き換え',
-      expected_seq: appended.seq,
-    });
-    expect(ok.created).toBe(false);
-
-    await expect(
-      callTool(app, accessToken, 'upsert_knowledge', { title: '無いノート', description: 'x', body: 'y', expected_seq: 1 }),
-    ).rejects.toThrow('存在しません');
-  });
-
-  it('get_knowledge_indexはbodyを含まず索引（title/description/category/tags/updated_at）だけを1リクエストで返す', async () => {
-    db = createTestDb();
-    const userId = uuidv7();
-    insertTestUser(db, userId);
-    const sessionId = insertSession(db, userId);
-    const app = setupApp(db);
-    const { accessToken } = await fullOAuthFlow(app, sessionId);
-
-    await callTool(app, accessToken, 'upsert_knowledge', {
-      title: '索引テスト',
-      description: '索引に出るはず',
-      body: '本文はここに入っているが索引には出ない',
-      category: 'project',
-    });
+    expect(outline.headings).toEqual([
+      { level: 2, text: '経緯' },
+      { level: 2, text: '現状' },
+    ]);
 
     const index = (await callTool(app, accessToken, 'get_knowledge_index', {})) as {
-      knowledge: { title: string; description: string; category: string; tags: unknown[]; body?: string }[];
+      tree: Record<string, Record<string, unknown>[]>;
     };
-    const entry = index.knowledge.find((k) => k.title === '索引テスト');
-    expect(entry).toBeDefined();
-    expect(entry?.description).toBe('索引に出るはず');
-    expect(entry?.category).toBe('project');
-    expect(entry?.tags).toEqual([]);
-    expect(entry?.body).toBeUndefined();
+    expect(index.tree).toEqual({
+      topics: [{ title: '育てるノート', description: '追記テスト用', category: 'topic', tags: ['メモ'] }],
+    });
   });
 
-  it('search_knowledgeはタイトル・説明・本文を横断検索しスニペットを返す', async () => {
+  it('リンク・バックリンク・検索・移動がVault基準で動く（改修25回目）', async () => {
     db = createTestDb();
     const userId = uuidv7();
     insertTestUser(db, userId);
@@ -909,115 +840,49 @@ describe('MCP OAuth + tools', () => {
     const { accessToken } = await fullOAuthFlow(app, sessionId);
 
     await callTool(app, accessToken, 'upsert_knowledge', {
-      title: 'ラズベリーパイの構成',
-      description: '本番サーバーの構成メモ',
-      body: 'Dockerで稼働している',
+      path: 'projects/Nestio/Nestio.md',
+      description: 'ハブ',
+      category: 'project',
+      body: '子ノート: [[Nestioの要件]]',
     });
     await callTool(app, accessToken, 'upsert_knowledge', {
-      title: '無関係なノート',
-      description: '関係ない話',
-      body: '関係ない本文',
+      path: 'projects/Nestio/',
+      title: 'Nestioの要件',
+      description: '要件',
+      category: 'project',
+      body: 'オフライン同期が必要',
     });
 
-    const result = (await callTool(app, accessToken, 'search_knowledge', { q: 'ラズベリー' })) as {
+    const backlinks = (await callTool(app, accessToken, 'get_backlinks', { target: 'Nestioの要件' })) as {
+      backlinks: { title: string }[];
+    };
+    expect(backlinks.backlinks.map((b) => b.title)).toEqual(['Nestio']);
+
+    const search = (await callTool(app, accessToken, 'search_knowledge', { q: 'オフライン' })) as {
       knowledge: { title: string; snippet: string }[];
     };
-    expect(result.knowledge.map((k) => k.title)).toEqual(['ラズベリーパイの構成']);
-  });
+    expect(search.knowledge.map((k) => k.title)).toEqual(['Nestioの要件']);
 
-  it('get_backlinksはknowledge_linksを引いてリンク元一覧を返す（未リンク状態では空配列）', async () => {
-    db = createTestDb();
-    const userId = uuidv7();
-    insertTestUser(db, userId);
-    const sessionId = insertSession(db, userId);
-    const app = setupApp(db);
-    const { accessToken } = await fullOAuthFlow(app, sessionId);
-
-    const target = await callTool(app, accessToken, 'upsert_knowledge', {
-      title: 'リンク先ノート',
-      description: 'バックリンクのテスト対象',
+    const moved = await callTool(app, accessToken, 'move_knowledge', {
+      target: 'Nestioの要件',
+      to: 'projects/Nestio/Nestioの要件と方針.md',
     });
-
-    const emptyResult = (await callTool(app, accessToken, 'get_backlinks', { id: target.id })) as {
-      backlinks: unknown[];
+    expect(moved.rewritten_links_in).toEqual(['projects/Nestio/Nestio.md']);
+    const hub = (await callTool(app, accessToken, 'get_knowledge', { paths: ['projects/Nestio/Nestio.md'] })) as {
+      knowledge: { body: string }[];
     };
-    expect(emptyResult.backlinks).toEqual([]);
+    expect(hub.knowledge[0]?.body).toBe('子ノート: [[Nestioの要件と方針]]\n');
 
-    // upsert_knowledgeのbodyに[[リンク先ノート]]と書くと自動でknowledge_linksへ反映される
-    // （改修24回目フォローアップ：[[リンク]]のパースとバックリンク）
-    const fromNote = await callTool(app, accessToken, 'upsert_knowledge', {
-      title: 'リンク元ノート',
-      description: 'from側',
-      body: '[[リンク先ノート]]を参照',
-    });
-
-    const result = (await callTool(app, accessToken, 'get_backlinks', { title: 'リンク先ノート' })) as {
-      backlinks: { id: string; title: string }[];
+    const deleted = await callTool(app, accessToken, 'delete_knowledge', { target: 'Nestioの要件と方針' });
+    expect(deleted.trashed_to).toBe('.trash/Nestioの要件と方針.md');
+    const missing = (await callTool(app, accessToken, 'get_knowledge', { titles: ['Nestioの要件と方針'] })) as {
+      not_found: string[];
     };
-    expect(result.backlinks).toEqual([{ id: fromNote.id, title: 'リンク元ノート' }]);
-  });
+    expect(missing.not_found).toEqual(['Nestioの要件と方針']);
 
-  it('upsert_knowledgeはbodyに書かれた[[リンク]]の削除・付け替えをget_backlinksに反映する', async () => {
-    db = createTestDb();
-    const userId = uuidv7();
-    insertTestUser(db, userId);
-    const sessionId = insertSession(db, userId);
-    const app = setupApp(db);
-    const { accessToken } = await fullOAuthFlow(app, sessionId);
-
-    const target = await callTool(app, accessToken, 'upsert_knowledge', {
-      title: 'リンク先ノート2',
-      description: 'バックリンクのテスト対象',
-    });
-    await callTool(app, accessToken, 'upsert_knowledge', {
-      title: 'リンク元ノート2',
-      description: 'from側',
-      body: '[[リンク先ノート2]]',
-    });
-
-    const linked = (await callTool(app, accessToken, 'get_backlinks', { id: target.id })) as {
-      backlinks: { title: string }[];
-    };
-    expect(linked.backlinks.map((b) => b.title)).toEqual(['リンク元ノート2']);
-
-    // bodyを全文書き換え（append無し）でリンクを消すと、get_backlinksからも消える
-    await callTool(app, accessToken, 'upsert_knowledge', { title: 'リンク元ノート2', body: 'リンクを消した' });
-
-    const unlinked = (await callTool(app, accessToken, 'get_backlinks', { id: target.id })) as {
-      backlinks: unknown[];
-    };
-    expect(unlinked.backlinks).toEqual([]);
-  });
-
-  it('upsert_knowledgeはリンク先がまだ無い[[リンク]]を未解決のまま記録し、後から作成すると解決される', async () => {
-    db = createTestDb();
-    const userId = uuidv7();
-    insertTestUser(db, userId);
-    const sessionId = insertSession(db, userId);
-    const app = setupApp(db);
-    const { accessToken } = await fullOAuthFlow(app, sessionId);
-
-    await callTool(app, accessToken, 'upsert_knowledge', {
-      title: '未解決リンク元',
-      description: 'from側',
-      body: '[[まだ無いノート]]',
-    });
-
-    const beforeCreate = (await callTool(app, accessToken, 'get_backlinks', { title: 'まだ無いノート' })) as {
-      backlinks: { title: string }[];
-    };
-    expect(beforeCreate.backlinks.map((b) => b.title)).toEqual(['未解決リンク元']);
-
-    // まだ無いノートを後から作成すると、既存の未解決リンクが解決される
-    const created = await callTool(app, accessToken, 'upsert_knowledge', {
-      title: 'まだ無いノート',
-      description: '後から作った',
-    });
-
-    const afterCreate = (await callTool(app, accessToken, 'get_backlinks', { id: created.id as string })) as {
-      backlinks: { title: string }[];
-    };
-    expect(afterCreate.backlinks.map((b) => b.title)).toEqual(['未解決リンク元']);
+    await expect(
+      callTool(app, accessToken, 'upsert_knowledge', { path: '../外.md', description: 'x', category: 'topic' }),
+    ).rejects.toThrow('Vault外');
   });
 
   it('upload_attachmentは壊れたPNGデータ（CRC不一致）を拒否する', async () => {

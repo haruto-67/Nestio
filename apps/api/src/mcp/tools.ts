@@ -1,9 +1,8 @@
 import type Database from 'better-sqlite3';
-import { uuidv7, markdownToSafeHtml, sha256Schema, knowledgeCategorySchema, type SyncOp } from '@nestio/shared';
+import { uuidv7, markdownToSafeHtml, sha256Schema, type SyncOp } from '@nestio/shared';
 import { applySyncOps } from '../sync/apply.js';
-import { searchTasks, searchKnowledge } from '../search/query.js';
-import { syncKnowledgeLinks, resolveIncomingLinks } from '../knowledge/links.js';
-import { checkExpectedSeq } from '../knowledge/optimistic-lock.js';
+import { searchTasks } from '../search/query.js';
+import { KNOWLEDGE_TOOL_DEFS, KnowledgeToolError, callKnowledgeTool, isKnowledgeTool } from './knowledge-tools.js';
 import type { Env } from '../env.js';
 import type { Logger } from '../logger.js';
 import { detectImageMime, verifyImageIntegrity } from '../attachments/magic-bytes.js';
@@ -18,7 +17,6 @@ import {
 import { issueUploadToken } from '../attachments/upload-tokens.js';
 import { issueDownloadToken } from '../attachments/download-tokens.js';
 
-type Row = Record<string, unknown>;
 
 export interface ToolDef {
   name: string;
@@ -170,70 +168,7 @@ export const TOOL_DEFS: ToolDef[] = [
     description: '論理削除した付箋をゴミ箱から復元する',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   },
-  {
-    name: 'get_knowledge_index',
-    scope: 'read',
-    description:
-      '全ナレッジの索引（title / description / category / tags / updated_at）を1リクエストで返す。' +
-      '本文（body）は含まない。何があるか把握してから、必要なものだけget_knowledgeで本文を取りに行く',
-    inputSchema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'get_knowledge',
-    scope: 'read',
-    description: 'ナレッジの本文を取得する。titles/idsどちらも複数指定可（往復削減のため配列で渡せる）',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        titles: { type: 'array', items: { type: 'string' }, description: 'タイトルの配列' },
-        ids: { type: 'array', items: { type: 'string' }, description: 'IDの配列' },
-      },
-    },
-  },
-  {
-    name: 'upsert_knowledge',
-    scope: 'write',
-    description:
-      'titleをキーにナレッジを作成または更新する（同名タイトルが無ければ新規作成）。' +
-      '新規作成時はdescription（AIが本文を読むか判断するための1行要約）が必須。' +
-      'append: trueでbody末尾に追記する（既存ノートがある場合のみ有効。無ければ通常の新規作成になる）。' +
-      'expected_seqを渡すと楽観ロックになる（本文を全体置換する時は、get_knowledgeで読んだseqを渡すこと）。戻り値のseqを次回のexpected_seqに使える',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string' },
-        description: { type: 'string' },
-        body: { type: 'string', description: MARKDOWN_FIELD_DESC },
-        category: { type: 'string', description: "'profile' | 'project' | 'topic' | 'person' | 'decision'" },
-        append: { type: 'boolean', description: 'trueならbodyを既存本文の末尾に追記する' },
-        expected_seq: {
-          type: 'number',
-          description:
-            'get_knowledgeで読んだ時点のseq。サーバー側の現在のseqと食い違ったら書き込まずエラーを返す（他セッションの更新を無言で上書きしないため）',
-        },
-      },
-      required: ['title'],
-    },
-  },
-  {
-    name: 'search_knowledge',
-    scope: 'read',
-    description: 'ナレッジをタイトル・説明・本文で全文検索する。スニペット付きで返す',
-    inputSchema: {
-      type: 'object',
-      properties: { q: { type: 'string' }, limit: { type: 'number' } },
-      required: ['q'],
-    },
-  },
-  {
-    name: 'get_backlinks',
-    scope: 'read',
-    description: '指定ナレッジ（[[タイトル]]でリンクされている側）へのリンク元一覧を返す。idまたはtitleで指定する',
-    inputSchema: {
-      type: 'object',
-      properties: { id: { type: 'string' }, title: { type: 'string' } },
-    },
-  },
+  ...KNOWLEDGE_TOOL_DEFS,
   {
     name: 'list_lists',
     scope: 'read',
@@ -636,37 +571,6 @@ function listTaskTagsBatch(
 }
 
 /**
- * listTaskTagsBatchのナレッジ版（改修24回目）。knowledge_idごとのタグ配列を1回のIN検索で取る
- */
-function listKnowledgeTagsBatch(
-  db: Database.Database,
-  userId: string,
-  knowledgeIds: string[],
-): Map<string, TagSummary[]> {
-  const result = new Map<string, TagSummary[]>();
-  if (knowledgeIds.length === 0) return result;
-
-  const placeholders = knowledgeIds.map(() => '?').join(', ');
-  const rows = db
-    .prepare(
-      `SELECT knowledge_tags.knowledge_id as knowledge_id, tags.id as id, tags.name as name, tags.color as color
-       FROM knowledge_tags
-       JOIN tags ON tags.id = knowledge_tags.tag_id
-       WHERE knowledge_tags.knowledge_id IN (${placeholders}) AND knowledge_tags.user_id = ?
-         AND knowledge_tags.deleted_at IS NULL AND tags.deleted_at IS NULL
-       ORDER BY tags.name`,
-    )
-    .all(...knowledgeIds, userId) as (TagSummary & { knowledge_id: string })[];
-
-  for (const { knowledge_id, ...tag } of rows) {
-    const list = result.get(knowledge_id);
-    if (list) list.push(tag);
-    else result.set(knowledge_id, [tag]);
-  }
-  return result;
-}
-
-/**
  * タスク/付箋に紐づく添付の一覧（改修16回目：MCP経由で添付画像を確認できるようにする要望への
  * 対応）。UI内部で使うサムネイル（`__thumb__`prefix、apps/web側で生成）は実装の詳細なので除く
  */
@@ -751,6 +655,14 @@ export async function callTool(
   name: string,
   args: Record<string, unknown>,
 ): Promise<unknown> {
+  if (isKnowledgeTool(name)) {
+    try {
+      return callKnowledgeTool(db, env, logger, userId, name, args);
+    } catch (e) {
+      if (e instanceof KnowledgeToolError) throw new ToolError(e.message);
+      throw e;
+    }
+  }
   switch (name) {
     case 'list_tasks': {
       const limit = typeof args.limit === 'number' ? args.limit : 50;
@@ -977,147 +889,6 @@ export async function callTool(
         fields: {},
       });
       return { id, restored: true };
-    }
-
-    case 'get_knowledge_index': {
-      const rows = db
-        .prepare(
-          `SELECT id, title, description, category, updated_at FROM knowledge
-           WHERE user_id = ? AND deleted_at IS NULL ORDER BY title`,
-        )
-        .all(userId) as { id: string }[];
-      const tagsByKnowledgeId = listKnowledgeTagsBatch(db, userId, rows.map((k) => k.id));
-      return { knowledge: rows.map((k) => ({ ...k, tags: tagsByKnowledgeId.get(k.id) ?? [] })) };
-    }
-
-    case 'get_knowledge': {
-      const titles = Array.isArray(args.titles) ? args.titles.filter((t): t is string => typeof t === 'string') : [];
-      const ids = Array.isArray(args.ids) ? args.ids.filter((t): t is string => typeof t === 'string') : [];
-      if (titles.length === 0 && ids.length === 0) {
-        throw new ToolError('titlesまたはidsのいずれかを指定してください');
-      }
-
-      const rows: Row[] = [];
-      if (ids.length > 0) {
-        const placeholders = ids.map(() => '?').join(', ');
-        rows.push(
-          ...(db
-            .prepare(
-              `SELECT * FROM knowledge WHERE user_id = ? AND id IN (${placeholders}) AND deleted_at IS NULL`,
-            )
-            .all(userId, ...ids) as Row[]),
-        );
-      }
-      if (titles.length > 0) {
-        const placeholders = titles.map(() => '?').join(', ');
-        rows.push(
-          ...(db
-            .prepare(
-              `SELECT * FROM knowledge WHERE user_id = ? AND title IN (${placeholders}) AND deleted_at IS NULL`,
-            )
-            .all(userId, ...titles) as Row[]),
-        );
-      }
-
-      const seen = new Set<string>();
-      const unique = rows.filter((r) => {
-        const id = r.id as string;
-        if (seen.has(id)) return false;
-        seen.add(id);
-        return true;
-      });
-      const tagsByKnowledgeId = listKnowledgeTagsBatch(db, userId, unique.map((r) => r.id as string));
-      return { knowledge: unique.map((r) => ({ ...r, tags: tagsByKnowledgeId.get(r.id as string) ?? [] })) };
-    }
-
-    case 'upsert_knowledge': {
-      const title = requireString(args, 'title');
-      const existing = db
-        .prepare('SELECT * FROM knowledge WHERE user_id = ? AND title = ? AND deleted_at IS NULL')
-        .get(userId, title) as Row | undefined;
-
-      // 楽観ロック（改修25回目：他セッションの追記を古い本文で上書きするlost update対策）
-      const conflict = checkExpectedSeq(title, existing ? (existing.seq as number) : null, args.expected_seq);
-      if (conflict) throw new ToolError(conflict);
-
-      if (!existing && (typeof args.description !== 'string' || args.description.length === 0)) {
-        throw new ToolError('新規作成時はdescription（1行要約）が必須です');
-      }
-
-      const fields: Record<string, unknown> = {};
-      if (!existing) fields.title = title;
-      if (typeof args.description === 'string') fields.description = args.description;
-      if (typeof args.category === 'string') {
-        if (!knowledgeCategorySchema.safeParse(args.category).success) {
-          throw new ToolError("categoryは'profile' | 'project' | 'topic' | 'person' | 'decision'のいずれかである必要があります");
-        }
-        fields.category = args.category;
-      }
-      if (typeof args.body === 'string') {
-        const html = markdownToSafeHtml(args.body);
-        fields.body = args.append === true && existing ? `${existing.body as string}${html}` : html;
-      }
-
-      const id = existing ? (existing.id as string) : uuidv7();
-      applyOneOpOrThrow(db, userId, {
-        op_id: uuidv7(),
-        table: 'knowledge',
-        id,
-        op: 'upsert',
-        updated_at: Date.now(),
-        fields,
-      });
-
-      // bodyが変わった時だけ再パースする（改修24回目フォローアップ：[[リンク]]のパースとバックリンク）
-      if (typeof fields.body === 'string') {
-        syncKnowledgeLinks(db, userId, id, fields.body);
-      }
-      // 新規作成時は、このタイトルを指していた未解決リンクを解決する
-      if (!existing) {
-        resolveIncomingLinks(db, userId, title, id);
-      }
-
-      const saved = db.prepare('SELECT seq FROM knowledge WHERE id = ?').get(id) as { seq: number } | undefined;
-      return { id, title, created: !existing, seq: saved?.seq ?? null };
-    }
-
-    case 'search_knowledge': {
-      const q = requireString(args, 'q');
-      const limit = typeof args.limit === 'number' ? args.limit : 20;
-      return { knowledge: searchKnowledge(db, userId, q, limit) };
-    }
-
-    case 'get_backlinks': {
-      const idArg = typeof args.id === 'string' ? args.id : undefined;
-      const titleArg = typeof args.title === 'string' ? args.title : undefined;
-      if (!idArg && !titleArg) throw new ToolError('idまたはtitleを指定してください');
-
-      let targetId: string | null = idArg ?? null;
-      let targetTitle: string | null = titleArg ?? null;
-      if (targetId) {
-        const row = db
-          .prepare('SELECT title FROM knowledge WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
-          .get(targetId, userId) as { title: string } | undefined;
-        if (!row) throw new ToolError('ナレッジが見つかりません');
-        targetTitle = row.title;
-      } else {
-        const row = db
-          .prepare('SELECT id FROM knowledge WHERE user_id = ? AND title = ? AND deleted_at IS NULL')
-          .get(userId, targetTitle) as { id: string } | undefined;
-        targetId = row?.id ?? null;
-      }
-
-      const rows = db
-        .prepare(
-          `SELECT knowledge.id as id, knowledge.title as title
-           FROM knowledge_links
-           JOIN knowledge ON knowledge.id = knowledge_links.from_id
-           WHERE knowledge_links.user_id = ? AND knowledge_links.deleted_at IS NULL AND knowledge.deleted_at IS NULL
-             AND (knowledge_links.to_id = ? OR (knowledge_links.to_id IS NULL AND knowledge_links.to_title = ?))
-           ORDER BY knowledge.title`,
-        )
-        .all(userId, targetId, targetTitle);
-      return { backlinks: rows };
     }
 
     case 'list_lists': {

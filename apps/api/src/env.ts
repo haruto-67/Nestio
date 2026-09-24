@@ -24,6 +24,8 @@ const envSchema = z.object({
 
   DB_PATH: z.string().default('./data/nestio.db'),
   ATTACHMENT_DIR: z.string().default('./data/attachments'),
+  /** ナレッジのObsidian Vault（改修25回目、docs/vault-spec.md）。ユーザーごとに<VAULT_DIR>/<user_id>/を使う */
+  VAULT_DIR: z.string().default('./data/vault'),
   ATTACHMENT_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
   ATTACHMENT_QUOTA_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
   /** base64エンコードされた32バイト鍵。未設定なら添付は平文で保存する（改修5回目） */
