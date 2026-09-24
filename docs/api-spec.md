@@ -207,11 +207,15 @@
 | `create_trigger` | write | Hatchトリガー新規作成 |
 | `update_trigger` | write | Hatchトリガー更新（有効/無効の切り替えを含む） |
 | `delete_trigger` | write | Hatchトリガーを論理削除 |
-| `get_knowledge_index` | read | 全ナレッジの索引（`title`/`description`/`category`/`tags`/`updated_at`）を1リクエストで返す。`body`は含まない（改修24回目） |
-| `get_knowledge` | read | ナレッジの本文を取得（`titles`/`ids`どちらも配列で複数指定可） |
-| `upsert_knowledge` | write | `title`をキーに作成/更新。新規作成時は`description`必須。`append: true`で本文末尾に追記 |
-| `search_knowledge` | read | ナレッジをタイトル・説明・本文で全文検索（スニペット付き） |
-| `get_backlinks` | read | 指定ナレッジ（`id`または`title`）への`[[リンク]]`元一覧を返す |
+| `get_knowledge_index` | read | ナレッジVaultの索引をフォルダごとに返す（`title`/`description`/`category`/`tags`。本文なし）。`folder`でサブツリーだけ返せる（改修25回目） |
+| `get_knowledge` | read | 本文（Markdown）を取得。`paths`/`titles`を配列で複数指定可。`heading`で1セクションだけ、`frontmatter_only`で本文なし。`version`を返す |
+| `get_knowledge_outline` | read | 見出し一覧（レベルとテキスト） |
+| `upsert_knowledge` | write | `title`または`path`で作成/更新。新規作成時は`description`・`category`必須（project/decision/personは`path`必須）。`append: true`で末尾（`heading`指定でそのセクション末尾）に追記。`expected_version`が食い違うとエラー |
+| `move_knowledge` | write | 移動・リネーム。Vault内の`[[リンク]]`を新タイトルへ書き換える |
+| `delete_knowledge` | write | Vaultの`.trash/`へ移動 |
+| `search_knowledge` | read | タイトル・説明・タグ・本文を検索（ステートレス。スニペット付き） |
+| `get_backlinks` | read | 指定ナレッジへの`[[リンク]]`元一覧 |
+| `add_knowledge_attachment` | write | 画像を`attachments/`へ保存し`![[ファイル名]]`を返す（`data_base64`は8KBまで、または既存添付の`sha256`） |
 
 - 書き込みは内部で `/sync/push` と同じ適用ロジックを通す（seq 採番と検証を共有するため）。
   `update_task` の `parent_id` 付け替えも同じ循環参照チェック（`wouldCreateCycle`）を通る
@@ -222,11 +226,28 @@
   受け付け、サーバー側（`@nestio/shared`の`markdownToSafeHtml`）でUIが許可するHTMLタグへ変換してから保存する
   （改修8回目）。人間がUIで直接編集する場合はWYSIWYGのリッチテキスト編集のままで、Markdown記法のパースは
   行わない。この変換はMCP・11章の公開APIの書き込み経路にのみ適用される
-- `upsert_knowledge` の `body` 中の `[[タイトル]]`（`[[タイトル|表示名]]` の表示名部分は無視）は
-  保存のたびにパースされ、`knowledge_links` に反映される（改修24回目フォローアップ）。
-  Obsidianと同じくパスではなくタイトル完全一致で解決し、リンク先がまだ無ければ `to_title` だけの
-  未解決リンクとして保持する。リンク先のノートが後から作られると、その時点で未解決リンクを解決する。
-  タイトル変更（リネーム）時の参照元一括置換は未対応（`docs/phases.md` 参照）
+- ナレッジは改修25回目からObsidian形式のVault（`<VAULT_DIR>/<user_id>/`配下のmd）が唯一の保存先で、
+  ナレッジ系ツールは`/sync`の適用ロジックを通らない（`docs/vault-spec.md`）。更新系は`expected_version`
+  （内容のSHA-256先頭16桁）で競合を検知し、Obsidian・他セッションの変更を無言で上書きしない
+  （以前はDBの`knowledge`テーブルにHTMLで保存し、`knowledge_links`でリンクを管理していた）
+
+## 10.1 ナレッジVault（改修25回目）
+
+ナレッジはVaultのmdファイルが正で`/sync`の対象外のため、Web UIはこのAPIで直接読み書きする
+（CLAUDE.md「絶対に守ること」2・4の例外。2026-09-24 ユーザー承認、`docs/vault-spec.md` 8章）。
+セッションCookie必須。書き込み系は`version`必須で、食い違うと`409 conflict`。
+
+| メソッド | パス | 用途 |
+|---|---|---|
+| GET | `/vault/tree` | フォルダ一覧と全ノートの索引 |
+| GET | `/vault/note?path=` | 本文・frontmatter込みのソース・`version`・バックリンク |
+| GET | `/vault/resolve?title=` | `[[タイトル]]`のリンク先パス（無ければ`null`） |
+| GET | `/vault/search?q=` | 検索 |
+| POST | `/vault/note` | 新規作成 `{path, description, category}` |
+| PUT | `/vault/note` | ソース保存 `{path, content, version}` |
+| POST | `/vault/move` | 移動・リネーム `{path, to, version}`（リンクも書き換える） |
+| DELETE | `/vault/note` | `.trash/`へ移動 `{path, version}` |
+| GET | `/vault/attachments/:name` | 画像配信（マジックバイトで検証、`nosniff`付き） |
 
 ## 11. 公開API（外部連携用・個人用APIキー認証）
 

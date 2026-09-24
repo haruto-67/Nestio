@@ -58,9 +58,11 @@ nestio/
 
 1. **ID はクライアントが UUIDv7 で採番する。** AUTOINCREMENT を使わない
 2. **書き込み経路は `/sync/push` のみ。** リソースごとの POST/PATCH を作らない
+   （例外: ナレッジはObsidian形式のVaultが正のため `/vault/*` で読み書きする。`docs/vault-spec.md` 8章）
 3. **時刻は epoch ミリ秒（UTC）で保存し、表示時のみ Asia/Tokyo へ変換。**
    終日タスクの日付だけ `'YYYY-MM-DD'` の TEXT
 4. **UI は IndexedDB だけを読む。** コンポーネントから直接 API を叩かない
+   （例外: ナレッジ画面は `api/vault.ts` 経由で `/vault/*` を読む。オフラインでは使えない）
 5. **論理削除のみ。** アプリコードから `DELETE` を発行するのは GC ワーカーだけ
 6. **`parent_id` を書き換える時は必ず祖先チェック。** 循環すると再帰クエリが無限ループする
 7. **`execFile` を使い `shell: true` は禁止。** ユーザー入力をシェルに渡さない
