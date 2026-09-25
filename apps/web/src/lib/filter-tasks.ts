@@ -1,12 +1,7 @@
-import type { TaskRow } from '@nestio/shared';
+import { isInTodayView, type TaskRow } from '@nestio/shared';
 import type { ViewSelection } from '../state/view.js';
 import { todayJstDateString, addDaysToDateString, weekRangeOf } from './datetime.js';
 import { isDueOn, isDueInRange, taskDueDateStringJst } from './task-views.js';
-
-function isOverdueOrDueToday(t: TaskRow, today: string): boolean {
-  const d = taskDueDateStringJst(t);
-  return d !== null && d <= today;
-}
 
 /** スマートリスト・リストごとにタスクを絞り込む。リストビューは完了済みも含めて全件返す */
 export function filterTasksForView(tasks: TaskRow[], view: ViewSelection): TaskRow[] {
@@ -22,7 +17,8 @@ export function filterTasksForView(tasks: TaskRow[], view: ViewSelection): TaskR
   const today = todayJstDateString();
   switch (view.key) {
     case 'today':
-      return tasks.filter((t) => t.completed_at === null && isOverdueOrDueToday(t, today));
+      // ダッシュボードAPI（GET /api/v1/dashboard/today）と同じ判定を使う（改修26回目）
+      return tasks.filter((t) => isInTodayView(t, today));
     case 'tomorrow': {
       const tomorrow = addDaysToDateString(today, 1);
       return tasks.filter((t) => t.completed_at === null && isDueOn(t, tomorrow));

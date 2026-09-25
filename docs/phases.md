@@ -1559,6 +1559,58 @@ Nestio改修24回目の全7サブタスクが完了し、親タスクも完了�
 
 ---
 
+## 改修26回目：PCのリアルタイム更新不具合とiPadダッシュボード向けAPI（2026-09-26）
+
+### 1. PC画面で他端末の変更が再読み込みまで反映されない
+
+**原因**：`/sync/stream`（SSE）の「keepalive」は30秒待つだけで実際には何も書き込んでいなかった。
+無通信の接続は途中のNAT/ルーターが黙って捨てることがあり、EventSourceはその状態を`onerror`で
+知らせてくれないため、開きっぱなしのPCのタブは「接続中のつもりで何も届かない」状態になっていた。
+スマホはアプリを開き直すたびに起動時の同期が走るため目立たなかった。
+
+**修正**：
+- サーバー（`apps/api/src/routes/sync.ts`）：無通信が30秒続くたびに`event: ping`を実際に送る
+- クライアント（`apps/web/src/sync/sse.ts`）：bump/pingが75秒途絶えたら死んだ接続とみなして張り直す
+  （張り直し時の`onConnect`でpullし、取りこぼしを回収する）
+- クライアント（`AppProvider.tsx`）：タブが再表示された時（`visibilitychange`）にも1回同期する。
+  PCのスリープ復帰直後など、死活監視が張り直すまでの最大1分弱を埋めるため
+- `docs/sync-protocol.md` 7章に追記
+
+### 2. iPad常時表示ダッシュボード向けの読み取り専用API
+
+iPadのSwiftUIアプリから、今日のタスクとポモドーロの状態を読むための口（`docs/api-spec.md` 14章）。
+
+- `GET /api/v1/dashboard/today`・`GET /api/v1/pomodoro/current`・まとめ版`GET /api/v1/dashboard`
+- **「今日」の判定を共有化**：Webの「今日」タブの対象（未完了かつ期限が今日以前）・並び順（期限順）・
+  見出しの「X/Y 完了」の数え方を`packages/shared/src/today.ts`へ移し、Web（`filter-tasks.ts`・
+  `task-sort.ts`・`TaskListView.tsx`）とAPIの両方がこれを呼ぶ。API専用のルールを作らず、
+  タブの仕様が変わればAPIも追従させるため（タスク本文の要件）
+- 対象範囲はWebのDexieと同じく、自分のタスク＋共有を受けているリスト（直接/フォルダ経由）のタスク
+- **認証**：既存の個人用APIキー（改修22回目）にscope`dashboard`を追加。設定画面の発行フォームに
+  「ダッシュボード用」を追加した。このキーは`/public/*`を呼べない（403）。読み取り/読み書きキーでも
+  ダッシュボードは読める。新しいテーブル・マイグレーションは不要（`api_keys.scope`はTEXT）
+- **ポモドーロの状態**：状態自体は端末のlocalStorageにしか無いが、開始時に必ず終了通知の予約
+  （`scheduled_pushes` kind=`pomodoro`）がサーバーに作られ、中断で取り消される。
+  「取り消されておらず終了時刻が未来の予約」を実行中として返す。Nestioのポモドーロは単発タイマーで
+  ラウンド・一時停止が無いため`round`/`total_rounds`/`next_break_min`は`null`、`paused`は`false`。
+  `phase`は5分以下（「5分」プリセット）を`break`、それより長いものを`focus`とした
+- **レート制限**：APIキーごとに毎分`RATE_LIMIT_DASHBOARD`回（既定60）。`rateLimit()`にバケットの
+  キーを差し替える引数を足し、認証の後段で数える
+- **見落としやすい点**：`pushRoute.use('/pomodoro/*', requireAuth)`がCookie認証を
+  `/pomodoro/current`にまで掛けてしまうため、予約の口（`/pomodoro/schedule`）だけに絞った
+
+**完了条件（確認済み）**：
+- `pnpm typecheck` / `pnpm lint` / `pnpm test`（API 380件・Web 34件・shared 21件）/ `pnpm test:e2e`（5件）が通る
+- 追加テスト：`apps/api/src/routes/dashboard.test.ts`（対象・並び順・JST境界・共有リスト・401/403・
+  キー単位のレート制限・ポモドーロの開始/中断/休憩判定・設定画面の発行API）、
+  `apps/web/src/sync/sse.test.ts`（ping途絶で張り直す・停止後は監視しない）
+- devサーバーで実機確認：`curl`で30秒後に`event: ping`が届く。2つのブラウザで片方がタスクを
+  追加すると、もう片方に再読み込みなしで約90msで反映。設定画面から「ダッシュボード用」キーを発行し、
+  `/dashboard/today`の件数・並びが「今日」タブ（1/13 完了、12行）と完全一致。ポモドーロの開始で
+  `/dashboard`の`pomodoro`に出て、中断で`null`に戻る。`/public/tasks`は403、失効後は401
+
+---
+
 ## 進捗管理
 
 - 完了した項目は `[x]` にしてコミットする

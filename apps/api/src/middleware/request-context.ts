@@ -12,6 +12,8 @@ export type AppVariables = {
   userId?: string;
   /** 個人用APIキー認証（改修22回目）を通った場合のみセットされる。'read' / 'read write' */
   apiKeyScope?: string;
+  /** APIキー認証時のキーid（改修26回目：ダッシュボードAPIのキー単位レート制限に使う） */
+  apiKeyId?: string;
 };
 
 /** request_id を発番し、全リクエストの開始・終了をstructured logで記録する */

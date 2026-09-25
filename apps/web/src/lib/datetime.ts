@@ -23,14 +23,8 @@ export function formatDateJst(epochMs: number): string {
   }).format(new Date(epochMs));
 }
 
-/** 現在の日本時間での日付文字列（YYYY-MM-DD）。sv-SEロケールがこの形式を返す */
-export function todayJstDateString(): string {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: TOKYO_TZ }).format(new Date());
-}
-
-export function epochMsToJstDateString(epochMs: number): string {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: TOKYO_TZ }).format(new Date(epochMs));
-}
+// 「今日」の判定はダッシュボードAPIと共有するためpackages/sharedに置いている（改修26回目）
+export { todayJstDateString, epochMsToJstDateString } from '@nestio/shared';
 
 export function addDaysToDateString(dateStr: string, days: number): string {
   const [y, m, d] = dateStr.split('-').map(Number) as [number, number, number];

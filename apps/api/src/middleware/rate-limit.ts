@@ -76,11 +76,15 @@ function trackRejectionAndMaybeAlert(c: Context<{ Variables: AppVariables }>, ke
   }).catch((err) => logger.warn({ error: String(err) }, 'rate_limit_alert_push_failed'));
 }
 
-export function rateLimit(limitPerMinute: number) {
+/**
+ * keyOfを渡すとバケットの単位を変えられる（改修26回目：ダッシュボードAPIはAPIキー単位で数える。
+ * その場合は認証ミドルウェアの後段に置くこと）
+ */
+export function rateLimit(limitPerMinute: number, keyOf: (c: Context<{ Variables: AppVariables }>) => string = rateLimitKey) {
   const checkLimit = createLimiter();
 
   return createMiddleware<{ Variables: AppVariables }>(async (c, next) => {
-    const key = rateLimitKey(c);
+    const key = keyOf(c);
     if (!checkLimit(key, limitPerMinute)) {
       trackRejectionAndMaybeAlert(c, key);
       throw new ApiError('rate_limited', 'リクエストが多すぎます。しばらく待って再度お試しください');

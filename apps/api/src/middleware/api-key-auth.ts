@@ -18,6 +18,7 @@ export const requireApiKey = createMiddleware<{ Variables: AppVariables }>(async
   if (!verified) throw new ApiError('unauthenticated', 'APIキーが無効です');
 
   c.set('userId', verified.userId);
+  c.set('apiKeyId', verified.id);
   c.set('apiKeyScope', verified.scope);
   await next();
 });

@@ -8,7 +8,7 @@ import { createCalendarFeed, listCalendarFeeds, revokeCalendarFeed, type Calenda
 import { listApiKeys, createApiKey, revokeApiKey } from '../../api/api-keys.js';
 import { listIncomingShares, revokeListShare } from '../../api/list-shares.js';
 import { listIncomingFolderShares, revokeFolderShare } from '../../api/folder-shares.js';
-import type { ApiKeyRow, IncomingListShareView, IncomingFolderShareView } from '@nestio/shared';
+import type { ApiKeyRow, ApiKeyScopeRequest, IncomingListShareView, IncomingFolderShareView } from '@nestio/shared';
 import { exportAllData, importAllData } from '../../api/export.js';
 import { listSessions, revokeSession, type SessionInfo } from '../../api/sessions.js';
 import { formatDateTimeJst } from '../../lib/datetime.js';
@@ -19,6 +19,12 @@ interface KeymapSettingsProps {
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
 }
+
+const API_KEY_SCOPE_LABELS: Record<string, string> = {
+  read: '読み取りのみ',
+  'read write': '読み書き',
+  dashboard: 'ダッシュボード用',
+};
 
 export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettingsProps) {
   const { deviceId, me } = useApp();
@@ -43,7 +49,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
   const [apiKeyStatus, setApiKeyStatus] = useState<string | null>(null);
   const [showApiKeyForm, setShowApiKeyForm] = useState(false);
   const [newApiKeyName, setNewApiKeyName] = useState('');
-  const [newApiKeyScope, setNewApiKeyScope] = useState<'read' | 'write'>('read');
+  const [newApiKeyScope, setNewApiKeyScope] = useState<ApiKeyScopeRequest>('read');
   // 発行直後のみサーバーから平文が返る。DBにはハッシュしか残らないため、この画面を離れると二度と見られない
   const [issuedApiKey, setIssuedApiKey] = useState<string | null>(null);
   const [revokingApiKeyIds, setRevokingApiKeyIds] = useState<Set<string>>(new Set());
@@ -463,7 +469,8 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
           >
             <p className="mt-2 text-xs text-neutral-400">
               外部スクリプトやZapier等の連携から「Authorization: Bearer &lt;キー&gt;」ヘッダーで
-              /api/v1/public/以下のエンドポイントを呼べます
+              /api/v1/public/以下のエンドポイントを呼べます。「ダッシュボード用」は今日のタスクと
+              ポモドーロの状態（/api/v1/dashboard）だけを読めるキーです
             </p>
             {issuedApiKey && (
               <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs dark:border-amber-700 dark:bg-amber-950/40">
@@ -503,17 +510,18 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
                   value={newApiKeyName}
                   onChange={(e) => setNewApiKeyName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreateApiKey()}
-                  placeholder="名前（例: 自動化スクリプト）"
+                  placeholder="名前（例: 自動化スクリプト、iPad）"
                   className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-xs dark:border-neutral-700"
                 />
                 <div className="flex items-center gap-2">
                   <select
                     value={newApiKeyScope}
-                    onChange={(e) => setNewApiKeyScope(e.target.value as 'read' | 'write')}
+                    onChange={(e) => setNewApiKeyScope(e.target.value as ApiKeyScopeRequest)}
                     className="rounded-md border border-neutral-200 bg-transparent px-2 py-1 text-xs dark:border-neutral-700"
                   >
                     <option value="read">読み取りのみ</option>
                     <option value="write">読み書き</option>
+                    <option value="dashboard">ダッシュボード用</option>
                   </select>
                   <button
                     onClick={handleCreateApiKey}
@@ -529,7 +537,7 @@ export function KeymapSettings({ onClose, theme, onToggleTheme }: KeymapSettings
                 {apiKeys.map((k) => (
                   <li key={k.id} className="flex items-center justify-between text-xs text-neutral-400">
                     <span className="min-w-0 flex-1 truncate">
-                      {k.name}（{k.scope === 'read write' ? '読み書き' : '読み取りのみ'}）
+                      {k.name}（{API_KEY_SCOPE_LABELS[k.scope] ?? '読み取りのみ'}）
                     </span>
                     <button
                       onClick={() => handleRevokeApiKey(k.id)}

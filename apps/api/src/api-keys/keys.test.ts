@@ -18,7 +18,7 @@ describe('api-keys/keys', () => {
     expect(key).toMatch(/^nestio_sk_/);
 
     const verified = verifyApiKey(db, key);
-    expect(verified).toEqual({ userId, scope: 'read write' });
+    expect(verified).toEqual({ id, userId, scope: 'read write' });
 
     const row = db.prepare('SELECT last_used_at FROM api_keys WHERE id = ?').get(id) as {
       last_used_at: number | null;

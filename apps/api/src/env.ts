@@ -50,6 +50,8 @@ const envSchema = z.object({
   RATE_LIMIT_CLIENT_LOGS: z.coerce.number().int().positive().default(30),
   /** 個人用APIキーでの公開API（改修22回目、外部連携用）。ユーザー単位で絞る */
   RATE_LIMIT_PUBLIC_API: z.coerce.number().int().positive().default(60),
+  /** iPadダッシュボードAPI（改修26回目）。APIキーごとに1分あたりの回数 */
+  RATE_LIMIT_DASHBOARD: z.coerce.number().int().positive().default(60),
 });
 
 export type Env = z.infer<typeof envSchema>;

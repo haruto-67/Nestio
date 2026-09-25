@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent, type DragEvent } from 'react';
-import { uuidv7, type ListSortMode } from '@nestio/shared';
+import { uuidv7, todayCompletionStats as todayCompletionStatsOf, type ListSortMode } from '@nestio/shared';
 import { Plus } from 'lucide-react';
 import { useApp } from '../../state/AppProvider.js';
 import { useLists, useTasks, useTags, useTaskTags } from '../../db/queries.js';
@@ -7,7 +7,7 @@ import type { ViewSelection } from '../../state/view.js';
 import { filterTasksForView } from '../../lib/filter-tasks.js';
 import { buildTaskTree, flattenTaskTreeWithDepth, type FlattenedTaskEntry } from '../../lib/task-tree.js';
 import { sortTasks } from '../../lib/task-sort.js';
-import { taskDueDateStringJst, SMART_LISTS, SMART_LIST_HEADER_ACCENT_CLASS } from '../../lib/task-views.js';
+import { SMART_LISTS, SMART_LIST_HEADER_ACCENT_CLASS } from '../../lib/task-views.js';
 import { todayJstDateString } from '../../lib/datetime.js';
 import { upsertTask, upsertList, completeTask, deleteTask } from '../../state/actions.js';
 import { nextSortOrder } from '../../lib/sort-order.js';
@@ -102,16 +102,7 @@ export function TaskListView({
   // 「今日」の特別感が無いという指摘への対応）。filterTasksForViewの'today'は未完了のみを
   // 返すため、完了数は別途「期限が今日以前」の全タスクから集計する
   const todayCompletionStats =
-    view.type === 'smart' && view.key === 'today'
-      ? (() => {
-          const today = todayJstDateString();
-          const relevant = tasks.filter((t) => {
-            const d = taskDueDateStringJst(t);
-            return d !== null && d <= today;
-          });
-          return { completed: relevant.filter((t) => t.completed_at !== null).length, total: relevant.length };
-        })()
-      : null;
+    view.type === 'smart' && view.key === 'today' ? todayCompletionStatsOf(tasks, todayJstDateString()) : null;
 
   const tagIdsByTaskId = new Map<string, string[]>();
   for (const tt of taskTags) {

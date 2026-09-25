@@ -16,7 +16,10 @@ pushRoute.get('/push/vapid-public-key', (c) => {
 
 pushRoute.use('/push/subscribe', requireAuth);
 pushRoute.use('/push/test', requireAuth);
-pushRoute.use('/pomodoro/*', requireAuth);
+// '/pomodoro/*'と書くとダッシュボードAPIのGET /pomodoro/current（APIキー認証）にまで
+// Cookie認証が掛かってしまうため、予約の口だけに絞る（改修26回目）
+pushRoute.use('/pomodoro/schedule', requireAuth);
+pushRoute.use('/pomodoro/schedule/*', requireAuth);
 
 pushRoute.post('/push/subscribe', async (c) => {
   const db = c.get('db');

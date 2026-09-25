@@ -30,6 +30,7 @@ export function issueApiKey(
 }
 
 export interface VerifiedApiKey {
+  id: string;
   userId: string;
   scope: string;
 }
@@ -38,13 +39,21 @@ export interface VerifiedApiKey {
 export function verifyApiKey(db: Database.Database, key: string): VerifiedApiKey | null {
   const hash = hashKey(key);
   const row = db
-    .prepare('SELECT user_id, scope, revoked_at FROM api_keys WHERE key_hash = ?')
-    .get(hash) as { user_id: string; scope: string; revoked_at: number | null } | undefined;
+    .prepare('SELECT id, user_id, scope, revoked_at FROM api_keys WHERE key_hash = ?')
+    .get(hash) as { id: string; user_id: string; scope: string; revoked_at: number | null } | undefined;
 
   if (!row || row.revoked_at !== null) return null;
 
   db.prepare('UPDATE api_keys SET last_used_at = ? WHERE key_hash = ?').run(Date.now(), hash);
-  return { userId: row.user_id, scope: row.scope };
+  return { id: row.id, userId: row.user_id, scope: row.scope };
+}
+
+/** ダッシュボード専用キーのscope（改修26回目）。read/writeを含まないため/public/以下は叩けない */
+export const DASHBOARD_SCOPE = 'dashboard';
+
+/** ダッシュボードAPIは専用キーに加え、通常の読み取り/読み書きキーでも呼べる */
+export function canReadDashboard(scope: string): boolean {
+  return scope.split(' ').includes(DASHBOARD_SCOPE) || hasApiKeyScope(scope, 'read');
 }
 
 export function hasApiKeyScope(scope: string, required: 'read' | 'write'): boolean {

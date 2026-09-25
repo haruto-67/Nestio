@@ -1,25 +1,13 @@
-import type { TaskRow, ListSortMode } from '@nestio/shared';
+import { compareTasksByDue, type TaskRow, type ListSortMode } from '@nestio/shared';
 import { naturalCollator } from './datetime.js';
-import { taskDueDateStringJst } from './task-views.js';
 
 export function sortTasks(tasks: TaskRow[], mode: ListSortMode): TaskRow[] {
   const arr = [...tasks];
 
   switch (mode) {
     case 'due':
-      arr.sort((a, b) => {
-        // 完了済みは常に末尾（期限の近さより「もう終わっている」ことを優先して見せる）
-        const ca = a.completed_at !== null;
-        const cb = b.completed_at !== null;
-        if (ca !== cb) return ca ? 1 : -1;
-
-        const da = taskDueDateStringJst(a);
-        const db = taskDueDateStringJst(b);
-        if (da === null && db === null) return a.sort_order - b.sort_order;
-        if (da === null) return 1;
-        if (db === null) return -1;
-        return da < db ? -1 : da > db ? 1 : 0;
-      });
+      // ダッシュボードAPIの「今日」と同じ並び順にするためpackages/sharedの比較関数を使う（改修26回目）
+      arr.sort(compareTasksByDue);
       return arr;
     case 'priority':
       arr.sort((a, b) => {

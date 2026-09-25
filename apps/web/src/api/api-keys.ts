@@ -1,4 +1,4 @@
-import type { ApiKeyRow } from '@nestio/shared';
+import type { ApiKeyRow, ApiKeyScopeRequest } from '@nestio/shared';
 import { apiClient } from './client.js';
 
 export function listApiKeys(): Promise<ApiKeyRow[]> {
@@ -7,7 +7,7 @@ export function listApiKeys(): Promise<ApiKeyRow[]> {
 
 export function createApiKey(
   name: string,
-  scope: 'read' | 'write',
+  scope: ApiKeyScopeRequest,
 ): Promise<{ id: string; key: string; name: string; scope: string }> {
   return apiClient.post('/api-keys', { name, scope });
 }

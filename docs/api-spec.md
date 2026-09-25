@@ -4,7 +4,8 @@
 - 認証：httpOnly / Secure / **SameSite=Strict** の**セッション Cookie**
   - PWA では localStorage にトークンを置かない（XSS で抜かれるため）
   - SameSite=Strict により CSRF（外部サイトからの偽装リクエスト）を防ぐ
-- **レート制限**：`/sync/push`・`/auth/*`・`/mcp`・`/attachments/*`・`/public/*` にユーザー / IP 単位で適用
+- **レート制限**：`/sync/push`・`/auth/*`・`/mcp`・`/attachments/*`・`/public/*` にユーザー / IP 単位で適用。
+  ダッシュボードAPI（14章）は APIキー単位
 - リクエスト / レスポンスともに JSON（添付アップロードを除く）
 - 型定義と Zod スキーマは `packages/shared` に置き、フロントとバックで共有する
 
@@ -264,7 +265,8 @@ MCP自身も同じやり方でこの原則の対象外になっている。
 - ベースパス：`/api/v1/public/*`
 - ヘッダー：`Authorization: Bearer <個人用APIキー>`（`nestio_sk_`で始まる）
 - キーは平文を保存せずSHA-256ハッシュのみ`api_keys`に保存する（`oauth_tokens`と同じ方針）
-- スコープは`read` / `read write`の2値（設定画面では「読み取りのみ」「読み書き」として選択）
+- スコープは`read` / `read write`の2値（設定画面では「読み取りのみ」「読み書き」として選択）。
+  ほかにダッシュボード専用の`dashboard`があり、これは`/public/*`を呼べない（14章）
 
 ### APIキーの発行・管理（セッションCookie認証。設定画面から使う）
 
@@ -345,3 +347,84 @@ MCP自身も同じやり方でこの原則の対象外になっている。
 | GET | `/folder-shares/incoming` | 自分が受け取った招待の一覧（pending/accepted両方） |
 | POST | `/folder-shares/{id}/accept` | 招待された本人のみ承諾できる。承諾するとフォルダ自体・配下の全リスト・全タスクが複製される |
 | DELETE | `/folder-shares/{id}` | 共有を解除する |
+
+## 14. ダッシュボードAPI（改修26回目・読み取り専用）
+
+iPad常時表示ダッシュボード（SwiftUIアプリ）が、今日のタスクとポモドーロの状態を読むための口。
+書き込み系は持たない。
+
+### 認証
+
+- ヘッダー：`Authorization: Bearer <APIキー>`（11章と同じ`api_keys`）
+- 設定画面の「APIキー」で種類「ダッシュボード用」（scope=`dashboard`）を発行して使う。
+  このキーはこの章のエンドポイントだけを呼べる（`/public/*`は403）。`read`/`read write`のキーでも呼べる
+- キー無し・無効・失効は`401`。レート制限はAPIキーごとに毎分`RATE_LIMIT_DASHBOARD`回（既定60）
+- 日時はすべてオフセット付きISO 8601（`2026-09-26T18:00:00+09:00`）。日付の区切りはAsia/Tokyo
+
+### エンドポイント
+
+| メソッド | パス | 内容 |
+|---|---|---|
+| GET | `/dashboard/today` | 「今日」タブの内容 |
+| GET | `/pomodoro/current` | 実行中のポモドーロ。無ければ`null`（JSONの`null`そのもの） |
+| GET | `/dashboard` | 上の2つをまとめたもの：`{generated_at, today, pomodoro}` |
+
+### `GET /dashboard/today`
+
+「今日」タブと同じ判定（`packages/shared/src/today.ts`）をそのまま使う。API専用のルールは持たず、
+タブの仕様が変われば追従する。
+
+- 対象：未完了で、期限が今日以前のタスク（期限切れは表示上だけ今日に繰り越す）。
+  自分のタスクと、共有を受けているリストのタスク。サブタスクも期限があれば並ぶ
+- 並び順：期限の暦日が古い順（同じ日は作成順）
+- 繰り返しタスクは、次回の期限が今日以前なら1件として出る（Nestioの繰り返しは完了時に同じ行の期限を進める方式）
+- 完了済みは「今日」タブに出ないため`tasks`には含まれない（`done`は常に`false`）。
+  `done_count`/`total_count`はタブ見出しの「X/Y 完了」と同じく、期限が今日以前の全タスク（完了済みを含む）から数える
+
+```json
+{
+  "date": "2026-09-26",
+  "done_count": 2,
+  "total_count": 6,
+  "tasks": [
+    {
+      "id": "01a0...",
+      "title": "API 仕様書を更新",
+      "due_at": "2026-09-26T18:00:00+09:00",
+      "due_date": null,
+      "done": false,
+      "completed_at": null,
+      "list_id": "01a0...",
+      "overdue": false
+    }
+  ]
+}
+```
+
+`due_at`は時刻指定ありの期限、`due_date`は終日タスクの日付（どちらか一方だけが入る）。
+
+### `GET /pomodoro/current`
+
+```json
+{
+  "task_id": "01a0...",
+  "task_title": "API 仕様書を更新",
+  "phase": "focus",
+  "started_at": "2026-09-26T14:00:00+09:00",
+  "ends_at": "2026-09-26T14:25:00+09:00",
+  "duration_sec": 1500,
+  "round": null,
+  "total_rounds": null,
+  "next_break_min": null,
+  "paused": false
+}
+```
+
+- Nestioのポモドーロの状態は端末側（localStorage）にあるが、開始時に必ず終了通知の予約
+  （`scheduled_pushes` kind=`pomodoro`）がサーバーに作られ、「中断」で取り消される。
+  「取り消されておらず終了時刻が未来の予約」を実行中として返す
+- `phase`：5分以下（アプリの「5分」プリセット）なら`break`、それより長ければ`focus`
+- Nestioのポモドーロは単発のタイマーでラウンドと一時停止の機能が無いため、`round`/`total_rounds`/`next_break_min`は常に`null`、`paused`は常に`false`
+- タスクに紐付けずに開始した場合は`task_id`/`task_title`が`null`
+- iPadは`ends_at`から自分で1秒ごとにカウントダウンする。取得は1分ごとの想定
+  （開始・終了の反映は最大1分遅れ。後でプッシュ型にする場合は`/sync/stream`と同じSSEの仕組みを足す）
