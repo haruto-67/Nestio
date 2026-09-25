@@ -91,6 +91,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('online', handleOnline);
 
+    // タブへ戻った時にも1回同期する（改修26回目）。PCのスリープ復帰直後などはSSEの死活監視が
+    // 張り直すまで最大1分程度かかるため、ユーザーが画面を見た瞬間に最新化しておく
+    const handleVisible = () => {
+      if (document.visibilityState !== 'visible' || !sseCleanupRef.current) return;
+      syncNow().catch((err) => logClientEvent('warn', 'sync_on_visible_failed', { error: String(err) }));
+    };
+    document.addEventListener('visibilitychange', handleVisible);
+
     (async () => {
       try {
         // 回線の悪い場所ではサーバーへの接続確認自体が長時間かかることがある。
@@ -122,6 +130,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       sseCleanupRef.current?.();
       window.removeEventListener('online', handleOnline);
+      document.removeEventListener('visibilitychange', handleVisible);
     };
   }, []);
 

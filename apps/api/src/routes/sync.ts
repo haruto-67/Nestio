@@ -120,13 +120,19 @@ syncRoute.get('/sync/stream', (c) => {
           await stream.writeSSE({ event: 'bump', data: payload });
           continue;
         }
-        await Promise.race([
-          new Promise<void>((resolve) => {
-            notify = resolve;
+        const woke = await Promise.race([
+          new Promise<'bump'>((resolve) => {
+            notify = () => resolve('bump');
           }),
-          stream.sleep(SSE_KEEPALIVE_MS),
+          stream.sleep(SSE_KEEPALIVE_MS).then(() => 'idle' as const),
         ]);
         notify = null;
+        // 無通信が続くと途中のNAT/ルーターが接続を黙って捨て、クライアントは切断に気付けないまま
+        // bumpを受け取れなくなる（改修26回目：PCで他端末の変更が再読み込みまで反映されなかった原因）。
+        // 実際に1行書き込んで経路を生かし続け、クライアント側はpingの途絶で死んだ接続を検知する
+        if (woke === 'idle' && !stream.aborted) {
+          await stream.writeSSE({ event: 'ping', data: '' });
+        }
       }
     } finally {
       unsubscribe();

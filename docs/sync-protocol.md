@@ -196,6 +196,10 @@ data: {"seq": 1043, "origin_device": "01912f..."}
 - `origin_device` が自分なら無視（自分の書き込みの反響）
 - 切断時は指数バックオフで再接続。**再接続時は必ず pull を 1 回走らせる**（切断中の取りこぼし回収）
 - nginx では SSE 用に `proxy_buffering off;` と `proxy_read_timeout 3600s;` が必要
+- サーバーは無通信が 30 秒続くたびに `event: ping`（data は空）を送る。途中の NAT 等が
+  無通信の接続を黙って捨てるのを防ぐため。クライアントは bump / ping が 75 秒途絶えたら
+  死んだ接続とみなして張り直す（張り直し時の pull で取りこぼしを回収する）
+- タブが再表示された時（`visibilitychange`）にもクライアントは同期を 1 回走らせる
 
 ## 8. Outbox（クライアント側）
 
