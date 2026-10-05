@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { TOOL_DEFS, findToolDef, callTool } from './tools.js';
+import { TOOL_DEFS, ToolError, findToolDef, callTool } from './tools.js';
 import { RESOURCE_DEFS, findResourceDef, readResourceContent } from './resources.js';
 import { hasScope, type VerifiedToken } from './tokens.js';
 import type { Env } from '../env.js';
@@ -45,6 +45,24 @@ function toolResultToContent(result: unknown): { type: string; text?: string; da
     return { type: 'image', data: result.data_base64, mimeType: result.mime };
   }
   return { type: 'text', text: JSON.stringify(result) };
+}
+
+/**
+ * ツール実行中の失敗をMCPのisError結果に変換する。
+ * JSON-RPCのerrorで返すとclaude.aiは本文を捨てて「Error occurred during tool execution」に丸めるため、
+ * 競合などのメッセージがモデルに届かずリトライできなかった（2026-10-05）
+ */
+function toolErrorResult(logger: Logger, toolName: string, err: unknown): { content: { type: string; text: string }[]; isError: true } {
+  let payload: Record<string, unknown>;
+  if (err instanceof ToolError) {
+    logger.warn({ tool: toolName, err_message: err.message, code: err.details?.code }, 'mcp_tool_rejected');
+    payload = { error: err.message, ...err.details };
+  } else {
+    logger.error({ tool: toolName, err }, 'mcp_tool_failed');
+    const e = err instanceof Error ? err : new Error(String(err));
+    payload = { error: `内部エラー（${e.name}）: ${e.message}`, code: 'internal' };
+  }
+  return { content: [{ type: 'text', text: JSON.stringify(payload) }], isError: true };
 }
 
 export async function handleMcpRequest(
@@ -98,7 +116,12 @@ export async function handleMcpRequest(
           return { jsonrpc: '2.0', id, error: { code: -32000, message: 'insufficient scope' } };
         }
 
-        const result = await callTool(db, env, logger, verified.userId, toolName, params?.arguments ?? {});
+        let result: unknown;
+        try {
+          result = await callTool(db, env, logger, verified.userId, toolName, params?.arguments ?? {});
+        } catch (err) {
+          return { jsonrpc: '2.0', id, result: toolErrorResult(logger, toolName, err) };
+        }
         return {
           jsonrpc: '2.0',
           id,

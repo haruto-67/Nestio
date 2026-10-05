@@ -390,7 +390,15 @@ export const TOOL_DEFS: ToolDef[] = [
 ];
 
 // 改修22回目：公開API（routes/public-api.ts）がinstanceofで判定し404/400を出し分けるためexportする
-export class ToolError extends Error {}
+export class ToolError extends Error {
+  /** isErrorの結果にmessageと並べて返す追加情報（例: 競合時の現在のversionと本文） */
+  constructor(
+    message: string,
+    readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+  }
+}
 
 function requireString(args: Record<string, unknown>, key: string): string {
   const v = args[key];
@@ -659,7 +667,7 @@ export async function callTool(
     try {
       return callKnowledgeTool(db, env, logger, userId, name, args);
     } catch (e) {
-      if (e instanceof KnowledgeToolError) throw new ToolError(e.message);
+      if (e instanceof KnowledgeToolError) throw new ToolError(e.message, e.details);
       throw e;
     }
   }

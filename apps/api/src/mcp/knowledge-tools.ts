@@ -15,7 +15,14 @@ import type { NoteFrontmatter } from '../vault/frontmatter.js';
  * ツール名は旧DB版と同じものを維持し、引数・戻り値をVault基準（パス・version）に変えた。
  */
 
-export class KnowledgeToolError extends Error {}
+export class KnowledgeToolError extends Error {
+  constructor(
+    message: string,
+    readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+  }
+}
 
 interface ToolDefLike {
   name: string;
@@ -75,7 +82,8 @@ export const KNOWLEDGE_TOOL_DEFS: ToolDefLike[] = [
       '新規作成時はdescription（1行要約）とcategoryが必須。置き場所はpathで指定する（profile/topicは省略するとprofile/・topics/に置く。' +
       'project/decision/personはprojects/<プロジェクト名>/配下のpath必須）。本文はMarkdownのまま保存する。' +
       'append: trueで末尾に追記（headingも指定するとその見出しのセクション末尾に追記）。' +
-      '既存ノートを更新する時はget_knowledgeで得たversionをexpected_versionに渡すこと（他セッションやObsidianでの変更を無言で上書きしないため。食い違うとエラー）',
+      '既存ノートを更新する時はget_knowledgeで得たversionをexpected_versionに渡すこと（他セッションやObsidianでの変更を無言で上書きしないため。' +
+      '食い違うとエラーになり、current_version と current_body（現在の本文）を返すので、内容を確かめてからそのversionで再実行する）',
     inputSchema: {
       type: 'object',
       properties: {
@@ -177,6 +185,16 @@ function strArray(args: Record<string, unknown>, key: string): string[] | undefi
   return v.filter((t): t is string => typeof t === 'string' && t.trim().length > 0).map((t) => t.trim());
 }
 
+/**
+ * 対象ノートの指定。正式な引数名はtargetだが、upsert_knowledgeに合わせてpath/titleで呼ばれることがあるため受け付ける
+ * （2026-10-05、claude.aiがget_knowledge_outlineをtitleで呼んで失敗した）
+ */
+function requireTarget(args: Record<string, unknown>): string {
+  const t = str(args, 'target') ?? str(args, 'path') ?? str(args, 'title');
+  if (t === undefined) throw new KnowledgeToolError('target（Vault内のパスまたはタイトル）を指定してください');
+  return t;
+}
+
 function resolveTarget(vault: VaultStore, target: string): string {
   const p = vault.resolve(target);
   if (!p) throw new KnowledgeToolError(`ナレッジが見つかりません: ${target}`);
@@ -228,7 +246,19 @@ export function callKnowledgeTool(
   try {
     return dispatch(db, env, logger, userId, vault, name, args);
   } catch (e) {
-    if (e instanceof VaultError) throw new KnowledgeToolError(e.message);
+    if (e instanceof VaultError) {
+      // 競合時は現在の内容を添えて返し、呼び出し側が読み直しの往復なしにマージ・再実行できるようにする
+      if (e.code === 'conflict' && e.notePath) {
+        const current = vault.read(e.notePath);
+        throw new KnowledgeToolError(e.message, {
+          code: 'conflict',
+          path: current.path,
+          current_version: current.version,
+          current_body: current.body,
+        });
+      }
+      throw new KnowledgeToolError(e.message, { code: e.code });
+    }
     throw e;
   }
 }
@@ -290,7 +320,7 @@ function dispatch(
     }
 
     case 'get_knowledge_outline': {
-      const note = vault.read(resolveTarget(vault, requireStr(args, 'target')));
+      const note = vault.read(resolveTarget(vault, requireTarget(args)));
       return {
         path: note.path,
         title: note.title,
@@ -375,14 +405,14 @@ function dispatch(
     }
 
     case 'move_knowledge': {
-      const from = resolveTarget(vault, requireStr(args, 'target'));
+      const from = resolveTarget(vault, requireTarget(args));
       const { note, rewritten } = vault.move(from, requireStr(args, 'to'), str(args, 'expected_version'));
       logger.info({ from, to: note.path, rewritten: rewritten.length }, 'vault_note_moved');
       return { path: note.path, title: note.title, version: note.version, rewritten_links_in: rewritten };
     }
 
     case 'delete_knowledge': {
-      const p = resolveTarget(vault, requireStr(args, 'target'));
+      const p = resolveTarget(vault, requireTarget(args));
       const dest = vault.trash(p, str(args, 'expected_version'));
       logger.info({ path: p, dest }, 'vault_note_trashed');
       return { path: p, trashed_to: dest };
@@ -395,7 +425,7 @@ function dispatch(
     }
 
     case 'get_backlinks': {
-      const note = vault.read(resolveTarget(vault, requireStr(args, 'target')));
+      const note = vault.read(resolveTarget(vault, requireTarget(args)));
       return { backlinks: vault.backlinks(note.title).map((n) => ({ path: n.path, title: n.title })) };
     }
 

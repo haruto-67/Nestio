@@ -7,6 +7,8 @@ export class VaultError extends Error {
   constructor(
     readonly code: VaultErrorCode,
     message: string,
+    /** conflictの時、対象ノートのパス（呼び出し側が現在の内容を添えて返すため） */
+    readonly notePath?: string,
   ) {
     super(message);
   }

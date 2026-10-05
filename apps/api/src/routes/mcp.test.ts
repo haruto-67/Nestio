@@ -97,20 +97,31 @@ async function fullOAuthFlow(
   return { accessToken };
 }
 
+async function callToolRaw(
+  app: ReturnType<typeof setupApp>,
+  accessToken: string,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ result?: { content: { text: string }[]; isError?: boolean }; error?: { message: string } }> {
+  const res = await app.request('/api/v1/mcp', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+  });
+  return (await res.json()) as { result?: { content: { text: string }[]; isError?: boolean }; error?: { message: string } };
+}
+
 async function callTool(
   app: ReturnType<typeof setupApp>,
   accessToken: string,
   name: string,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const res = await app.request('/api/v1/mcp', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
-  });
-  const body = (await res.json()) as { result?: { content: { text: string }[] }; error?: { message: string } };
+  const body = await callToolRaw(app, accessToken, name, args);
   if (body.error) throw new Error(body.error.message);
-  return JSON.parse(body.result?.content[0]?.text ?? '{}') as Record<string, unknown>;
+  const parsed = JSON.parse(body.result?.content[0]?.text ?? '{}') as Record<string, unknown>;
+  if (body.result?.isError) throw new Error(String(parsed.error));
+  return parsed;
 }
 
 describe('MCP OAuth + tools', () => {
@@ -808,6 +819,26 @@ describe('MCP OAuth + tools', () => {
       callTool(app, accessToken, 'upsert_knowledge', { title: '育てるノート', body: '古い本文', expected_version: v1 }),
     ).rejects.toThrow('競合');
 
+    // 競合はJSON-RPCのerrorではなくisErrorの結果で返し、現在のversionと本文を添える
+    // （JSON-RPCのerrorだとclaude.aiが中身を捨てて汎用エラーに丸める。2026-10-05）
+    const conflict = await callToolRaw(app, accessToken, 'upsert_knowledge', {
+      title: '育てるノート',
+      body: 'もう一度',
+      append: true,
+      heading: '経緯',
+      expected_version: v1,
+    });
+    expect(conflict.error).toBeUndefined();
+    expect(conflict.result?.isError).toBe(true);
+    const conflictBody = JSON.parse(conflict.result?.content[0]?.text ?? '{}') as Record<string, unknown>;
+    expect(conflictBody).toMatchObject({
+      code: 'conflict',
+      path: 'topics/育てるノート.md',
+      current_version: appended.version,
+      current_body: '## 経緯\n最初の行\n\n追記した行\n\n## 現状\n今の状態\n',
+    });
+    expect(conflictBody.error).toContain('競合');
+
     const section = (await callTool(app, accessToken, 'get_knowledge', {
       titles: ['育てるノート'],
       heading: '経緯',
@@ -822,6 +853,12 @@ describe('MCP OAuth + tools', () => {
       { level: 2, text: '経緯' },
       { level: 2, text: '現状' },
     ]);
+    // upsert_knowledgeと同じtitle/pathでも呼べる
+    const byTitle = (await callTool(app, accessToken, 'get_knowledge_outline', { title: '育てるノート' })) as {
+      headings: unknown[];
+    };
+    expect(byTitle.headings).toHaveLength(2);
+    await expect(callTool(app, accessToken, 'get_knowledge_outline', {})).rejects.toThrow('target');
 
     const index = (await callTool(app, accessToken, 'get_knowledge_index', {})) as {
       tree: Record<string, Record<string, unknown>[]>;

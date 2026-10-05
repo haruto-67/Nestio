@@ -148,6 +148,7 @@ export class VaultStore {
       throw new VaultError(
         'conflict',
         `競合: 「${current.title}」は読み取り後に更新されています（version=${expectedVersion}, 現在=${current.version}）。読み直してから再実行してください`,
+        current.path,
       );
     }
   }
